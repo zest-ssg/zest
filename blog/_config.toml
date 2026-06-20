@@ -1,0 +1,39 @@
+title        = "My Blog"
+base_url     = "http://localhost:8080"
+description  = "A blog built with Zest SSG"
+author       = "Blog Author"
+language     = "zh"
+
+content_dir  = "./content"
+output_dir   = "./_site"
+layouts_dir  = "./_layouts"
+includes_dir = "./_includes"
+data_dir     = "./_data"
+assets_dir   = "./assets"
+
+default_layout          = "default"
+enable_parallel_build   = true
+enable_incremental_build = true
+
+[[taxonomies]]
+name   = "tag"
+plural = "tags"
+
+[[taxonomies]]
+name   = "category"
+plural = "categories"
+
+[[menu.main]]
+label  = "首页"
+url    = "/"
+weight = 1
+
+[[menu.main]]
+label  = "文章"
+url    = "/posts/"
+weight = 2
+
+[[menu.main]]
+label  = "关于"
+url    = "/about/"
+weight = 3

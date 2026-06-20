@@ -87,6 +87,19 @@ and CollectionType =
     | Tag
     | Category
 
+/// Menu item for navigation.
+type MenuItem = {
+    Label: string
+    Url:   string
+    Weight: int
+}
+
+/// Taxonomy definition (e.g. tags, categories, series).
+type TaxonomyConfig = {
+    Name:   string   // singular, e.g. "tag"
+    Plural: string   // plural,   e.g. "tags"
+}
+
 /// <summary>
 /// Site configuration loaded from _config.toml (or defaults).
 /// </summary>
@@ -107,6 +120,15 @@ type SiteConfig = {
     EnableMinification: bool
     EnableCacheBusting: bool
     SiteVersion: string
+    // Performance
+    EnableParallelBuild: bool
+    EnableIncrementalBuild: bool
+    // Taxonomies & navigation
+    Taxonomies: TaxonomyConfig list
+    Menus: IDictionary<string, MenuItem list>
+    // Author / social (surfaced from _data but can be inlined in _config)
+    Author: string
+    Language: string
 }
 
 module SiteConfigDefaults =
@@ -126,7 +148,13 @@ module SiteConfigDefaults =
           LiveReloadPort = 35729
           EnableMinification = false
           EnableCacheBusting = false
-          SiteVersion = "1.0" }
+          SiteVersion = "1.0"
+          EnableParallelBuild = true
+          EnableIncrementalBuild = true
+          Taxonomies = [ { Name = "tag"; Plural = "tags" }; { Name = "category"; Plural = "categories" } ]
+          Menus = dict []
+          Author = ""
+          Language = "en" }
 
 /// <summary>
 /// Result of a build operation.

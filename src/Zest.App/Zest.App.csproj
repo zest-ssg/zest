@@ -6,13 +6,17 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
 
-    <!-- Single-file publish -->
-    <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
+    <!-- Framework-dependent deployment (FSI needs assemblies on disk) -->
+    <PublishSingleFile>false</PublishSingleFile>
+    <SelfContained>false</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <AssemblyName>zest</AssemblyName>
     <DebugType>embedded</DebugType>
+
+    <!-- Strip satellite resource assemblies and debug symbols from publish output -->
+    <SatelliteResourceLanguages>none</SatelliteResourceLanguages>
+    <DebugSymbols>false</DebugSymbols>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
 
     <!-- App info -->
     <Copyright>Apache 2.0 License</Copyright>

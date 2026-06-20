@@ -253,12 +253,13 @@ module Markdown =
     let private hrPat           = Regex(@"^(---|\*\*\*|___)\s*$",        RegexOptions.Multiline ||| RegexOptions.Compiled)
 
     let private processInline (text: string) =
-        imagePat   .Replace(text,   fun m -> sprintf """<img src="%s" alt="%s" />""" m.Groups.[2].Value m.Groups.[1].Value)
-        |> fun s -> linkPat.Replace(s,   fun m -> sprintf """<a href="%s">%s</a>""" m.Groups.[2].Value m.Groups.[1].Value)
-        |> fun s -> boldPat.Replace(s,   fun m -> sprintf "<strong>%s</strong>" m.Groups.[1].Value)
-        |> fun s -> italicPat.Replace(s, fun m -> sprintf "<em>%s</em>" m.Groups.[1].Value)
-        |> fun s -> strikePat.Replace(s, fun m -> sprintf "<del>%s</del>" m.Groups.[1].Value)
-        |> fun s -> inlineCodePat.Replace(s, fun m -> sprintf "<code>%s</code>" m.Groups.[1].Value)
+        let enc = WebUtility.HtmlEncode
+        imagePat   .Replace(text,   fun m -> sprintf """<img src="%s" alt="%s" />""" (enc m.Groups.[2].Value) (enc m.Groups.[1].Value))
+        |> fun s -> linkPat.Replace(s,   fun m -> sprintf """<a href="%s">%s</a>""" (enc m.Groups.[2].Value) (enc m.Groups.[1].Value))
+        |> fun s -> boldPat.Replace(s,   fun m -> sprintf "<strong>%s</strong>" (enc m.Groups.[1].Value))
+        |> fun s -> italicPat.Replace(s, fun m -> sprintf "<em>%s</em>" (enc m.Groups.[1].Value))
+        |> fun s -> strikePat.Replace(s, fun m -> sprintf "<del>%s</del>" (enc m.Groups.[1].Value))
+        |> fun s -> inlineCodePat.Replace(s, fun m -> sprintf "<code>%s</code>" (enc m.Groups.[1].Value))
 
     let private parseTableRow (line: string) =
         line.Trim().Trim('|').Split('|')
@@ -374,7 +375,7 @@ module HtmlUtils =
 
     /// Compile a ZSS snippet inline as a `<style>` node.
     let styleBlock (zssSource: string) : HtmlNode =
-        Element("style", [], [Text(Zss.Processor.processText zssSource)])
+        Element("style", [], [Raw(Zss.Processor.processText zssSource)])
 
     /// Reference an external stylesheet (.zss → .css auto-rewritten).
     let stylesheet (href: string) : HtmlNode =

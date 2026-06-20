@@ -4,7 +4,7 @@
 
 ## Features
 
-- **Template as Code** — `.zest.fsx` files are real F# scripts executed at build time via `FSharp.Compiler.Service`. Use the full F# language in your templates: list comprehensions, string interpolation, arbitrary computations.
+- **Template as Code** — `.zest.fsx` files are real F# scripts executed at build time via `dotnet fsi`. Use the full F# language in your templates: list comprehensions, string interpolation, arbitrary computations.
 - **HTML DSL** — Compose HTML declaratively in F# with `render [ h1 [...]; p [...] ]`.
 - **Markdown** — Standard `.md` files rendered to HTML, with frontmatter support.
 - **ZSS** — A CSS superset with nesting, variables, and mixins — compiled to standard CSS.

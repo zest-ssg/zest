@@ -43,8 +43,45 @@ public static class SiteConfigLoader
             var assetsDir = GetString(model, "assets_dir", config.AssetsDir);
             var devServerPort = GetInt(model, "dev_server_port", config.DevServerPort);
             var liveReloadPort = GetInt(model, "live_reload_port", config.LiveReloadPort);
-            var enableMinification = GetBool(model, "enable_minification", config.EnableMinification);
-            var enableCacheBusting = GetBool(model, "enable_cache_busting", config.EnableCacheBusting);
+            var enableMinification    = GetBool(model, "enable_minification",     config.EnableMinification);
+            var enableCacheBusting   = GetBool(model, "enable_cache_busting",    config.EnableCacheBusting);
+            var enableParallel       = GetBool(model, "enable_parallel_build",   config.EnableParallelBuild);
+            var enableIncremental    = GetBool(model, "enable_incremental_build",config.EnableIncrementalBuild);
+            var author               = GetString(model, "author",   config.Author);
+            var language             = GetString(model, "language", config.Language);
+
+            // Parse [[taxonomies]] array
+            var taxonomies = config.Taxonomies;
+            if (model.TryGetValue("taxonomies", out var taxObj) && taxObj is Tomlyn.Model.TomlTableArray taxArr)
+            {
+                var list = new List<TaxonomyConfig>();
+                foreach (var t in taxArr)
+                    if (t.TryGetValue("name", out var n) && t.TryGetValue("plural", out var p))
+                        list.Add(new TaxonomyConfig(name: n.ToString()!, plural: p.ToString()!));
+                if (list.Count > 0)
+                    taxonomies = Microsoft.FSharp.Collections.ListModule.OfSeq(list);
+            }
+
+            // Parse [menus.*] tables → IDictionary<string, MenuItem list>
+            var menus = new Dictionary<string, Microsoft.FSharp.Collections.FSharpList<MenuItem>>();
+            if (model.TryGetValue("menu", out var menuObj) && menuObj is Tomlyn.Model.TomlTable menuTable)
+            {
+                foreach (var kv in menuTable)
+                {
+                    if (kv.Value is Tomlyn.Model.TomlTableArray entries)
+                    {
+                        var items = new List<MenuItem>();
+                        foreach (var e in entries)
+                            items.Add(new MenuItem(
+                                label:  e.TryGetValue("label",  out var lv) ? lv.ToString()! : "",
+                                url:    e.TryGetValue("url",    out var uv) ? uv.ToString()! : "#",
+                                weight: e.TryGetValue("weight", out var wv) && wv is long wl ? (int)wl : 0));
+                        items.Sort((a, b) => a.Weight.CompareTo(b.Weight));
+                        menus[kv.Key] = Microsoft.FSharp.Collections.ListModule.OfSeq(items);
+                    }
+                }
+            }
+            IDictionary<string, Microsoft.FSharp.Collections.FSharpList<MenuItem>> menusDict = menus;
 
             return new SiteConfig(
                 title: title,
@@ -62,7 +99,13 @@ public static class SiteConfigLoader
                 liveReloadPort: liveReloadPort,
                 enableMinification: enableMinification,
                 enableCacheBusting: enableCacheBusting,
-                siteVersion: siteVersion
+                siteVersion: siteVersion,
+                enableParallelBuild: enableParallel,
+                enableIncrementalBuild: enableIncremental,
+                taxonomies: taxonomies,
+                menus: menusDict,
+                author: author,
+                language: language
             );
         }
         catch (Exception ex)

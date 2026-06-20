@@ -107,6 +107,53 @@ $primary: #6c63ff;
 }
 ```
 
+## @export — CSS 变量导出
+
+将 ZSS 变量输出为 CSS 自定义属性（`:root { --xxx: ... }`）：
+
+```zss
+$primary: #3b82f6
+$radius:  0.5r
+@export $primary
+@export $radius
+// 生成：
+// :root { --primary: #3b82f6; }
+// :root { --radius: 0.5rem; }
+```
+
+## @each — 循环生成
+
+```zss
+@each $size in (sm, md, lg, xl) {
+  .text-#{$size} {
+    fs: var(--text-$size)
+  }
+}
+// 展开为 .text-sm / .text-md / .text-lg / .text-xl
+```
+
+## 响应式断点简写
+
+在规则集内用 `@sm`、`@md`、`@lg`、`@xl`、`@2xl` 代替完整的 `@media` 查询：
+
+```zss
+.grid {
+  d: grid
+  gtc: 1fr
+
+  @md { gtc: repeat(2, 1fr) }   // min-width: 768px
+  @lg { gtc: repeat(3, 1fr) }   // min-width: 1024px
+}
+```
+
+| 简写 | 等价 media query |
+|------|-----------------|
+| `@sm` | `(min-width:640px)` |
+| `@md` | `(min-width:768px)` |
+| `@lg` | `(min-width:1024px)` |
+| `@xl` | `(min-width:1280px)` |
+| `@2xl` | `(min-width:1536px)` |
+
 ## 集成
 
 `assets/` 目录下的 ZSS 文件在 `zest build` 时**自动编译为 CSS**。输出目录结构保持镜像：

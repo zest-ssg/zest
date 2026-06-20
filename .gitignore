@@ -26,6 +26,7 @@ Thumbs.db
 
 # Zest site output
 docs/_site/
+blog/_site/
 
 # NuGet packages
 packages/
