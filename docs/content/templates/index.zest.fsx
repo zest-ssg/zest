@@ -121,6 +121,38 @@ each items (fun item -> li [text item])
 // {{ data key }}           → 全局数据值
 ```
 
+## Collections API
+
+脚本中可直接调用（无需额外 `open`）：
+
+```fsharp
+let all   = site_pages ()          // 全部页面
+let posts = pages_by_dir "posts"   // 按目录过滤
+let tagged = pages_by_tag "fsharp" // 按标签过滤
+let recent = recent_pages 5        // 最新 N 篇（按 date 降序）
+
+// 读取站点数据
+let author = site_data "site.author"
+
+// 引入局部模板 (_includes/)
+let nav = include_partial "nav.html"
+```
+
+### 列表页示例
+
+```fsharp
+render [
+    h1 [Text "所有文章"]
+    divC "post-grid" [
+        for p in pages_by_dir "posts" |> List.sortByDescending (fun p -> p.Date) ->
+            divC "card" [
+                h2 [a p.Url [Text p.Title]]
+                pC "date" [Text (p.Date |> Option.map string |> Option.defaultValue "")]
+            ]
+    ]
+]
+```
+
 ## 集合
 
 按标签或 URL 分组页面：
@@ -136,8 +168,8 @@ Collections.renderPageList posts                   // 渲染 <ul>
 `_data/*.toml` 中的全局数据通过以下方式访问：
 
 ```fsharp
-TemplateData.siteData globalData "site.author"
-TemplateData.siteSection globalData "site.social"
+site_data "site.author"       // 脚本内直接用
+TemplateData.siteSection globalData "site.social"  // 底层 API
 ```
 
 ## 分页

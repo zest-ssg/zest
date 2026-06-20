@@ -22,12 +22,9 @@ public class DevServerService : IDisposable
     private CancellationTokenSource? _cts;
     private FileSystemWatcher? _watcher;
     private readonly BuildService _buildService = new();
-    private DateTime _lastBuildTime;
-    private int _totalBuilds;
+    private string? _outputDir;
 
     public int Port => _config.DevServerPort;
-    public int TotalBuilds => _totalBuilds;
-    public DateTime LastBuildTime => _lastBuildTime;
 
     public DevServerService(SiteConfig config) => _config = config;
 
@@ -35,11 +32,13 @@ public class DevServerService : IDisposable
     {
         _cts = new();
 
+        _outputDir = Path.GetFullPath(Path.Combine(
+            Directory.GetCurrentDirectory(),
+            _config.OutputDir.TrimStart('.', '\\', '/')));
+
         // Initial build
         Console.WriteLine("[Zest] Building site for development...");
         var result = _buildService.Execute(_config);
-        _lastBuildTime = DateTime.Now;
-        _totalBuilds = 1;
         BuildService.PrintResult(result, _config);
 
         // HTTP server
@@ -90,17 +89,30 @@ public class DevServerService : IDisposable
 
         void OnChange(object sender, FileSystemEventArgs e)
         {
-            // Skip output directory changes
-            if (e.FullPath.Contains($"\\{_config.OutputDir.TrimStart('.', '\\', '/')}\\") ||
-                e.FullPath.Contains($"/{_config.OutputDir.TrimStart('.', '/')}/"))
+            // Skip output directory changes (use normalized path comparison)
+            if (_outputDir != null && e.FullPath.StartsWith(_outputDir, StringComparison.OrdinalIgnoreCase))
                 return;
+
+            // Skip hidden/system directories (starting with _ or .) and build artifacts
+            var parts = e.FullPath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            for (int i = 0; i < parts.Length - 1; i++)
+            {
+                var p = parts[i];
+                if (p.StartsWith("_") || p.StartsWith(".") ||
+                    string.Equals(p, "bin", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(p, "obj", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(p, "node_modules", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(p, "packages", StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
 
             var ext = Path.GetExtension(e.Name).ToLowerInvariant();
             var relevant = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 ".fsx", ".zest.fsx", ".md", ".markdown",
-                ".html", ".css", ".zss", ".js", ".toml", ".json", ".yaml", ".yml",
-                ".png", ".jpg", ".jpeg", ".svg", ".gif"
+                ".html", ".css", ".zss", ".js", ".toml",
+                ".json", ".yaml", ".yml",
+                ".png", ".jpg", ".jpeg", ".svg", ".gif", ".webp"
             };
             if (!relevant.Contains(ext)) return;
 
@@ -125,9 +137,6 @@ public class DevServerService : IDisposable
         var result = _buildService.Execute(_config);
         sw.Stop();
 
-        _lastBuildTime = DateTime.Now;
-        _totalBuilds++;
-
         BuildService.PrintResult(result, _config);
         BroadcastReload();
     }
@@ -149,78 +158,96 @@ public class DevServerService : IDisposable
     {
         try
         {
-            var outputDir = Path.GetFullPath(Path.Combine(
-                Directory.GetCurrentDirectory(), _config.OutputDir.TrimStart('.', '\\', '/')));
+            var outputDir = _outputDir!;
+            var urlPath = ctx.Request.Url?.AbsolutePath ?? "/";
 
-            var filePath = ResolveFilePath(outputDir, ctx.Request.Url?.AbsolutePath ?? "/");
+            string filePath;
+            try
+            {
+                filePath = HttpHelper.ResolveFilePath(outputDir, urlPath);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                ctx.Response.StatusCode = 403;
+                await HttpHelper.WriteStringResponse(ctx, 403, "<h1>403 — Forbidden</h1>");
+                return;
+            }
 
             if (!File.Exists(filePath))
             {
                 ctx.Response.StatusCode = 404;
-                var msg = Encoding.UTF8.GetBytes("<h1>404 - Not Found</h1>");
-                ctx.Response.ContentType = "text/html; charset=utf-8";
-                ctx.Response.ContentLength64 = msg.Length;
-                await ctx.Response.OutputStream.WriteAsync(msg);
+                await HttpHelper.WriteStringResponse(ctx, 404, "<h1>404 — Not Found</h1>");
+                return;
             }
-            else
+
+            var ext = Path.GetExtension(filePath).ToLowerInvariant();
+
+            // Handle .zss files: compile to CSS on-the-fly
+            if (ext == ".zss")
             {
-                var ext = Path.GetExtension(filePath).ToLowerInvariant();
+                await ServeZssFile(ctx, filePath);
+                return;
+            }
 
-                // Handle .zss files: compile to CSS on-the-fly for dev server
-                if (ext == ".zss")
-                {
-                    try
-                    {
-                        // Check if .zss file exists in the assets directory
-                        var assetsDir = Path.GetFullPath(Path.Combine(
-                            Directory.GetCurrentDirectory(), _config.AssetsDir.TrimStart('.', '\\', '/')));
-                        var zssPath = Path.Combine(assetsDir, ctx.Request.Url?.AbsolutePath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar) ?? "");
+            // Read file
+            var bytes = await File.ReadAllBytesAsync(filePath);
 
-                        if (File.Exists(zssPath))
-                        {
-                            var css = Zest.Engine.Zss.Processor.processFile(zssPath);
-                            var cssBytes = Encoding.UTF8.GetBytes(css);
-                            ctx.Response.ContentType = "text/css; charset=utf-8";
-                            ctx.Response.ContentLength64 = cssBytes.Length;
-                            await ctx.Response.OutputStream.WriteAsync(cssBytes);
-                            return;
-                        }
-                    }
-                    catch { }
-                }
+            // Inject live reload script into HTML
+            if (ext == ".html")
+            {
+                var html = Encoding.UTF8.GetString(bytes);
+                html = html.Replace("</body>", GetLiveReloadScript() + "\n</body>");
 
-                ctx.Response.ContentType = ext switch
-                {
-                    ".html" => "text/html; charset=utf-8",
-                    ".css" => "text/css; charset=utf-8",
-                    ".zss" => "text/css; charset=utf-8",
-                    ".js" => "application/javascript; charset=utf-8",
-                    ".png" => "image/png",
-                    ".jpg" or ".jpeg" => "image/jpeg",
-                    ".gif" => "image/gif",
-                    ".svg" => "image/svg+xml",
-                    ".ico" => "image/x-icon",
-                    ".woff" => "font/woff",
-                    ".woff2" => "font/woff2",
-                    ".json" => "application/json",
-                    _ => "application/octet-stream"
-                };
+                // Also inject into head-less fragments
+                if (!html.Contains("</body>"))
+                    html += GetLiveReloadScript();
 
-                var bytes = await File.ReadAllBytesAsync(filePath);
-
-                if (ext == ".html")
-                {
-                    var html = Encoding.UTF8.GetString(bytes);
-                    html = html.Replace("</body>", GetLiveReloadScript() + "\n</body>");
-                    bytes = Encoding.UTF8.GetBytes(html);
-                }
-
+                ctx.Response.ContentType = "text/html; charset=utf-8";
+                bytes = Encoding.UTF8.GetBytes(html);
                 ctx.Response.ContentLength64 = bytes.Length;
                 await ctx.Response.OutputStream.WriteAsync(bytes);
             }
+            else
+            {
+                ctx.Response.ContentType = HttpHelper.GetMimeType(filePath);
+                ctx.Response.ContentLength64 = bytes.Length;
+                await ctx.Response.OutputStream.WriteAsync(bytes);
+            }
+
+            await ctx.Response.OutputStream.FlushAsync();
         }
-        catch { }
-        finally { ctx.Response.OutputStream.Close(); }
+        catch (Exception ex)
+        {
+            try
+            {
+                ctx.Response.StatusCode = 500;
+                await HttpHelper.WriteStringResponse(ctx, 500,
+                    $"<h1>500 — Internal Server Error</h1><p>{System.Net.WebUtility.HtmlEncode(ex.Message)}</p>");
+            }
+            catch { }
+        }
+        finally
+        {
+            try { ctx.Response.OutputStream.Close(); } catch { }
+        }
+    }
+
+    private async Task ServeZssFile(HttpListenerContext ctx, string filePath)
+    {
+        try
+        {
+            var css = Zest.Engine.Zss.Processor.processFile(filePath);
+            var cssBytes = Encoding.UTF8.GetBytes(css);
+            ctx.Response.ContentType = "text/css; charset=utf-8";
+            ctx.Response.ContentLength64 = cssBytes.Length;
+            await ctx.Response.OutputStream.WriteAsync(cssBytes);
+            await ctx.Response.OutputStream.FlushAsync();
+        }
+        catch
+        {
+            // Fallback: serve .zss as-is if ZSS compilation fails
+            await HttpHelper.WriteFileResponse(ctx, filePath);
+        }
     }
 
     private async Task AcceptWebSocketClients(CancellationToken ct)
@@ -293,16 +320,38 @@ public class DevServerService : IDisposable
     private static byte[] EncodeWebSocketFrame(string text)
     {
         var payload = Encoding.UTF8.GetBytes(text);
-        var frame = new byte[payload.Length + 2];
-        frame[0] = 0x81;
-        frame[1] = (byte)payload.Length;
-        Array.Copy(payload, 0, frame, 2, payload.Length);
+        byte[] frame;
+        if (payload.Length <= 125)
+        {
+            frame = new byte[payload.Length + 2];
+            frame[0] = 0x81;
+            frame[1] = (byte)payload.Length;
+            Array.Copy(payload, 0, frame, 2, payload.Length);
+        }
+        else if (payload.Length <= 65535)
+        {
+            frame = new byte[payload.Length + 4];
+            frame[0] = 0x81;
+            frame[1] = 126;
+            frame[2] = (byte)(payload.Length >> 8);
+            frame[3] = (byte)(payload.Length & 0xFF);
+            Array.Copy(payload, 0, frame, 4, payload.Length);
+        }
+        else
+        {
+            frame = new byte[payload.Length + 10];
+            frame[0] = 0x81;
+            frame[1] = 127;
+            var len = (ulong)payload.Length;
+            for (int i = 7; i >= 0; i--) { frame[2 + i] = (byte)(len & 0xFF); len >>= 8; }
+            Array.Copy(payload, 0, frame, 10, payload.Length);
+        }
         return frame;
     }
 
     private static string ComputeWebSocketAcceptKey(string key)
     {
-        const string magic = "258EAFA5-E914-47DA-95CA-5AB5E0285C";
+        const string magic = "258EAFA5-E914-47DA-95CA-C5AB5E0285C2";
         using var sha1 = System.Security.Cryptography.SHA1.Create();
         return Convert.ToBase64String(sha1.ComputeHash(Encoding.UTF8.GetBytes(key + magic)));
     }
@@ -310,30 +359,28 @@ public class DevServerService : IDisposable
     private string GetLiveReloadScript() => $@"
 <script>
 (function(){{
-    var ws = new WebSocket('ws://localhost:{_config.LiveReloadPort}/livereload');
-    ws.onmessage = function(e) {{ if (e.data === 'reload') window.location.reload(); }};
-    ws.onclose = function() {{ setTimeout(function(){{ window.location.reload(); }}, 2000); }};
+    var port = {_config.LiveReloadPort};
+    var connected = false;
+    function connect() {{
+        var ws = new WebSocket('ws://localhost:' + port + '/livereload');
+        ws.onmessage = function(e) {{
+            if (e.data === 'reload') {{
+                connected = true;
+                window.location.reload();
+            }}
+        }};
+        ws.onclose = function() {{
+            if (connected) {{
+                // Was once connected — a real disconnect, reload after delay
+                setTimeout(function(){{ window.location.reload(); }}, 1000);
+            }} else {{
+                // Never connected — retry silently after a delay
+                setTimeout(connect, 3000);
+            }}
+        }};
+        ws.onerror = function() {{}};
+    }}
+    connect();
 }})();
 </script>";
-
-    /// <summary>
-    /// Resolve a URL path to a physical file path, handling directory-style routes.
-    /// e.g. "/guide/" → "/guide/index.html", "/guide" → "/guide/index.html"
-    /// </summary>
-    private static string ResolveFilePath(string outputDir, string urlPath)
-    {
-        if (urlPath == "/") urlPath = "/index.html";
-
-        var relative = urlPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-
-        if (relative.EndsWith(Path.DirectorySeparatorChar))
-            relative = relative + "index.html";
-
-        var fullPath = Path.Combine(outputDir, relative);
-
-        if (!File.Exists(fullPath) && string.IsNullOrEmpty(Path.GetExtension(relative)))
-            fullPath = Path.Combine(outputDir, relative, "index.html");
-
-        return fullPath;
-    }
 }

@@ -58,7 +58,13 @@ public static class ServeController
                 liveReloadPort: config.LiveReloadPort,
                 enableMinification: config.EnableMinification,
                 enableCacheBusting: config.EnableCacheBusting,
-                siteVersion: config.SiteVersion
+                siteVersion: config.SiteVersion,
+                enableParallelBuild: config.EnableParallelBuild,
+                enableIncrementalBuild: config.EnableIncrementalBuild,
+                taxonomies: config.Taxonomies,
+                menus: config.Menus,
+                author: config.Author,
+                language: config.Language
             );
         }
 

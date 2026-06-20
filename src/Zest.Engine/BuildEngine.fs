@@ -1,9 +1,11 @@
 namespace Zest.Engine
 
 open System
+open System.Collections.Concurrent
 open System.Collections.Generic
 open System.IO
 open System.Diagnostics
+open System.Threading.Tasks
 open Zest.Engine
 open Zest.Engine.Scripting
 open Zest.Engine.Zss
@@ -28,57 +30,47 @@ module BuildEngine =
                 let ext = Path.GetExtension(f).ToLowerInvariant()
                 List.contains ext [".html"; ".htm"; ".zest.fsx"; ".fsx"])
             |> Array.map (fun f ->
-                Path.GetFileNameWithoutExtension(f), (f, File.ReadAllText(f)))
+                let rec stripExts (name: string) =
+                    let e = Path.GetExtension(name)
+                    if String.IsNullOrEmpty e then name
+                    else stripExts (Path.GetFileNameWithoutExtension(name))
+                let key = stripExts (Path.GetFileName(f))
+                key, (f, File.ReadAllText(f)))
             |> Map.ofArray
 
-    /// 从 _data/ 目录加载 TOML 文件为全局数据字典。
     let private loadGlobalData (dataDir: string) : IDictionary<string, obj> =
         let dict = Dictionary<string, obj>()
         if not (Directory.Exists dataDir) then dict :> _
         else
-            let tomlFiles = Directory.GetFiles(dataDir, "*.toml", SearchOption.AllDirectories)
-            for file in tomlFiles do
+            for file in Directory.GetFiles(dataDir, "*.toml", SearchOption.AllDirectories) do
                 try
-                    let name = Path.GetFileNameWithoutExtension(file)
-                    let text = File.ReadAllText(file)
-                    let model = Tomlyn.Toml.ToModel(text)
+                    let name  = Path.GetFileNameWithoutExtension(file)
+                    let model = Tomlyn.Toml.ToModel(File.ReadAllText(file))
                     if model <> null then
-                        for kv in model do
-                            dict.[name + "." + kv.Key] <- kv.Value
-                        // 也按文件名直接注册顶层
+                        for kv in model do dict.[name + "." + kv.Key] <- kv.Value
                         dict.[name] <- model :> obj
-                with ex ->
-                    eprintfn "[Zest] Failed to load data '%s': %s" file ex.Message
+                with ex -> eprintfn "[Zest] Failed to load data '%s': %s" file ex.Message
             dict :> _
 
     let private buildReplacements (page: Page) (config: SiteConfig) (globalData: IDictionary<string, obj>) =
         let d = Dictionary<string, string>()
-
-        // Page fields
         d.["page.title"] <- page.Title
         d.["page.url"]   <- page.Url
         d.["page.slug"]  <- page.Slug
         if page.Date.IsSome then d.["page.date"] <- page.Date.Value.ToString("yyyy-MM-dd")
         if not page.Tags.IsEmpty then d.["page.tags"] <- String.Join(", ", page.Tags)
-
-        // Site config fields
         d.["site.title"]       <- config.Title
         d.["site.description"] <- config.Description
         d.["site.base_url"]    <- config.BaseUrl
         d.["site.version"]     <- config.SiteVersion
-
-        // Global data (e.g. site.author, site.copyright, social.github, ...)
+        d.["site.author"]      <- config.Author
+        d.["site.language"]    <- config.Language
         for kv in globalData do
             let key = "site." + kv.Key
-            if not (d.ContainsKey key) then
-                d.[key] <- kv.Value.ToString()
-
-        // Page data extras
+            if not (d.ContainsKey key) then d.[key] <- kv.Value.ToString()
         for kv in page.Data do
             let key = if kv.Key.Contains "." then kv.Key else "page." + kv.Key
-            if not (d.ContainsKey key) then
-                d.[key] <- kv.Value.ToString()
-
+            if not (d.ContainsKey key) then d.[key] <- kv.Value.ToString()
         d :> IDictionary<string, string>
 
     let private replacePlaceholders (text: string) (replacements: IDictionary<string, string>) =
@@ -86,23 +78,18 @@ module BuildEngine =
             let key = m.Groups.[1].Value.ToLowerInvariant()
             match replacements.TryGetValue key with
             | true, v -> v
-            | _ -> m.Value  // keep unresolved placeholders as-is
-        )
+            | _ -> m.Value)
 
     let rec private applyLayout (name: string) (content: string) (layouts: Map<string, string * string>)
                                 (replacements: IDictionary<string, string>) =
         match layouts.TryFind name with
         | None -> content
-        | Some (layoutPath, layoutText) ->
-
-            // Build context: content + all placeholders
+        | Some (_, layoutText) ->
             let ctx = Dictionary<string, string>()
             for kv in replacements do ctx.[kv.Key] <- kv.Value
             ctx.["content"]      <- content
             ctx.["page.content"] <- content
-
             let rendered = replacePlaceholders layoutText ctx
-            // 检测嵌套布局
             let nestedLayout =
                 if layoutText.StartsWith "---" then
                     let endIdx = layoutText.IndexOf("---", 3)
@@ -116,42 +103,63 @@ module BuildEngine =
                 else None
             match nestedLayout with
             | Some nl when nl <> name -> applyLayout nl rendered layouts replacements
-            | _                       -> rendered
+            | _ -> rendered
+
+    let private loadIncludes (includesDir: string) : IDictionary<string, string> =
+        let d = Dictionary<string, string>()
+        if Directory.Exists includesDir then
+            for f in Directory.GetFiles(includesDir, "*.*", SearchOption.AllDirectories) do
+                d.[Path.GetFileName(f)] <- File.ReadAllText(f)
+        d :> _
+
+    // ── Incremental build cache ──────────────────────────────────────────
+    [<Struct>]
+    type private CacheEntry = { Mtime: DateTime; OutputHash: int }
+    let private buildCache = ConcurrentDictionary<string, CacheEntry>()
+
+    let private needsRebuild (srcPath: string) (outPath: string) =
+        let mtime = File.GetLastWriteTimeUtc(srcPath)
+        match buildCache.TryGetValue(srcPath) with
+        | true, e when e.Mtime = mtime && File.Exists(outPath) -> false
+        | _ -> true
+
+    let private updateCache (srcPath: string) (html: string) =
+        buildCache.[srcPath] <- { Mtime = File.GetLastWriteTimeUtc(srcPath); OutputHash = html.GetHashCode() }
 
     let private copyAssets (projectRoot: string) (outputDir: string) =
-        let assetsSource = Path.Combine(projectRoot, "assets")
-        if not (Directory.Exists assetsSource) then 0
+        let src = Path.Combine(projectRoot, "assets")
+        if not (Directory.Exists src) then 0
         else
-            let assetsTarget = Path.Combine(outputDir, "assets")
-            Directory.CreateDirectory(assetsTarget) |> ignore
-            let mutable count = 0
-            for file in Directory.GetFiles(assetsSource, "*", SearchOption.AllDirectories) do
-                let ext      = Path.GetExtension(file).ToLowerInvariant()
-                let relative = Path.GetRelativePath(assetsSource, file)
+            let dst = Path.Combine(outputDir, "assets")
+            Directory.CreateDirectory(dst) |> ignore
+            let mutable n = 0
+            for file in Directory.GetFiles(src, "*", SearchOption.AllDirectories) do
+                let ext = Path.GetExtension(file).ToLowerInvariant()
+                let rel = Path.GetRelativePath(src, file)
                 if ext = ".zss" then
-                    let cssRel    = Path.ChangeExtension(relative, ".css")
-                    let targetFile = Path.Combine(assetsTarget, cssRel)
-                    let targetDir  = Path.GetDirectoryName(targetFile)
-                    if targetDir <> null then Directory.CreateDirectory(targetDir) |> ignore
-                    Processor.processFileTo file targetFile |> ignore
+                    let target = Path.Combine(dst, Path.ChangeExtension(rel, ".css"))
+                    let dir    = Path.GetDirectoryName(target)
+                    if dir <> null then Directory.CreateDirectory(dir) |> ignore
+                    Processor.processFileTo file target |> ignore
                 else
-                    let targetFile = Path.Combine(assetsTarget, relative)
-                    let targetDir  = Path.GetDirectoryName(targetFile)
-                    if targetDir <> null then Directory.CreateDirectory(targetDir) |> ignore
-                    let srcInfo = FileInfo(file)
-                    let tgtInfo = FileInfo(targetFile)
-                    if not tgtInfo.Exists || srcInfo.LastWriteTimeUtc > tgtInfo.LastWriteTimeUtc then
-                        File.Copy(file, targetFile, overwrite = true)
-                count <- count + 1
-            count
+                    let target = Path.Combine(dst, rel)
+                    let dir    = Path.GetDirectoryName(target)
+                    if dir <> null then Directory.CreateDirectory(dir) |> ignore
+                    let si = FileInfo(file)
+                    let ti = FileInfo(target)
+                    if not ti.Exists || si.LastWriteTimeUtc > ti.LastWriteTimeUtc then
+                        File.Copy(file, target, overwrite = true)
+                n <- n + 1
+            n
 
     let execute (config: SiteConfig) : BuildResult =
         let sw     = Stopwatch.StartNew()
-        let errors = ResizeArray<string>()
-        let mutable totalPages    = 0
-        let mutable processedPages = 0
-        let mutable assetsCopied  = 0
+        let errors = ConcurrentBag<string>()
+        let mutable processed = 0
+        let mutable cached    = 0
+        let mutable assets    = 0
         try
+            ScriptRunner.resetSession()
             let root       = Directory.GetCurrentDirectory()
             let contentDir = resolvePath root config.ContentDir
             let outputDir  = resolvePath root config.OutputDir
@@ -159,53 +167,88 @@ module BuildEngine =
             let dataDir    = resolvePath root config.DataDir
 
             Directory.CreateDirectory(outputDir) |> ignore
-            let layouts     = loadLayouts layoutsDir
-            let globalData  = loadGlobalData dataDir
+            let layouts    = loadLayouts layoutsDir
+            let globalData = loadGlobalData dataDir
+            let includes   = loadIncludes (resolvePath root config.IncludesDir)
+            ScriptRunner.setIncludes includes
 
-            let contentFiles =
+            // Expose menu items in globalData
+            for kv in config.Menus do
+                let json =
+                    kv.Value
+                    |> List.map (fun m -> sprintf """{"label":"%s","url":"%s","weight":%d}""" m.Label m.Url m.Weight)
+                    |> String.concat ","
+                (globalData :?> Dictionary<string, obj>).["menu." + kv.Key] <- box ("[" + json + "]")
+
+            ScriptRunner.setGlobalData globalData
+
+            let allFiles =
                 if not (Directory.Exists contentDir) then
                     Directory.CreateDirectory(contentDir) |> ignore; [||]
                 else
-                    [| yield! Directory.GetFiles(contentDir, "*.zest.fsx",  SearchOption.AllDirectories)
-                       yield! Directory.GetFiles(contentDir, "*.fsx",       SearchOption.AllDirectories)
-                       yield! Directory.GetFiles(contentDir, "*.md",        SearchOption.AllDirectories)
-                       yield! Directory.GetFiles(contentDir, "*.markdown",  SearchOption.AllDirectories) |]
+                    [| yield! Directory.GetFiles(contentDir, "*.zest.fsx", SearchOption.AllDirectories)
+                       yield! Directory.GetFiles(contentDir, "*.fsx",      SearchOption.AllDirectories)
+                       yield! Directory.GetFiles(contentDir, "*.md",       SearchOption.AllDirectories)
+                       yield! Directory.GetFiles(contentDir, "*.markdown", SearchOption.AllDirectories) |]
                     |> Array.filter (fun f -> not (isExcluded contentDir f))
                     |> Array.distinct
 
-            for filePath in contentFiles do
-                try
-                    match ScriptEvaluator.evaluate filePath config globalData with
-                    | Error e -> errors.Add(e)
-                    | Ok page ->
-                        let layoutName    = page.Layout |> Option.defaultValue config.DefaultLayout
-                        let replacements  = buildReplacements page config globalData
-                        let finalContent  = applyLayout layoutName page.Content layouts replacements
-                        let outPath     = Path.Combine(outputDir, page.OutputPath)
-                        let outDir      = Path.GetDirectoryName(outPath)
-                        if outDir <> null then Directory.CreateDirectory(outDir) |> ignore
-                        File.WriteAllText(outPath, finalContent)
-                        totalPages    <- totalPages    + 1
-                        processedPages <- processedPages + 1
-                with ex ->
-                    errors.Add(sprintf "Failed to process '%s': %s" filePath ex.Message)
+            let total = allFiles.Length
 
-            assetsCopied <- copyAssets root outputDir
+            let mdFiles  = allFiles |> Array.filter (fun f -> let e = Path.GetExtension(f).ToLowerInvariant() in e = ".md" || e = ".markdown")
+            let fsxFiles = allFiles |> Array.filter (fun f -> let e = Path.GetExtension(f).ToLowerInvariant() in e <> ".md" && e <> ".markdown")
+
+            let evalResults = ConcurrentBag<Result<Page, string>>()
+
+            // Markdown pages: parallel
+            if config.EnableParallelBuild && mdFiles.Length > 0 then
+                Parallel.ForEach(mdFiles, fun f ->
+                    try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
+                    with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)) |> ignore
+            else
+                for f in mdFiles do
+                    try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
+                    with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
+
+            // FSI scripts: serial (single FSI session)
+            for f in fsxFiles do
+                try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
+                with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
+
+            // Write output
+            for r in evalResults do
+                match r with
+                | Error e -> errors.Add(e)
+                | Ok page ->
+                    let outPath = Path.Combine(outputDir, page.OutputPath)
+                    if config.EnableIncrementalBuild && not (needsRebuild page.SourcePath outPath) then
+                        Threading.Interlocked.Increment(&cached) |> ignore
+                    else
+                        let replacements = buildReplacements page config globalData
+                        let layoutName   = page.Layout |> Option.defaultValue config.DefaultLayout
+                        let finalHtml    = applyLayout layoutName page.Content layouts replacements
+                        let dir = Path.GetDirectoryName(outPath)
+                        if dir <> null then Directory.CreateDirectory(dir) |> ignore
+                        File.WriteAllText(outPath, finalHtml)
+                        updateCache page.SourcePath finalHtml
+                        Threading.Interlocked.Increment(&processed) |> ignore
+
+            assets <- copyAssets root outputDir
             sw.Stop()
-            { TotalPages     = totalPages
-              ProcessedPages = processedPages
-              CachedPages    = 0
-              AssetsCopied   = assetsCopied
+            { TotalPages     = total
+              ProcessedPages = processed
+              CachedPages    = cached
+              AssetsCopied   = assets
               AssetsMinified = 0
               DurationMs     = sw.ElapsedMilliseconds
               Errors         = errors |> Seq.toList }
         with ex ->
             errors.Add(sprintf "Build failed: %s" ex.Message)
             sw.Stop()
-            { TotalPages     = totalPages
-              ProcessedPages = processedPages
-              CachedPages    = 0
-              AssetsCopied   = assetsCopied
+            { TotalPages     = 0
+              ProcessedPages = processed
+              CachedPages    = cached
+              AssetsCopied   = assets
               AssetsMinified = 0
               DurationMs     = sw.ElapsedMilliseconds
               Errors         = errors |> Seq.toList }

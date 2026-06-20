@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text;
 using Zest.Engine;
 
 namespace Zest.Infra.Services;
@@ -56,7 +55,10 @@ public class PreviewService : IDisposable
                 var ctx = await _listener.GetContextAsync().WaitAsync(ct);
                 _ = Task.Run(() => HandleRequest(ctx));
             }
-            catch { break; }
+            catch
+            {
+                break;
+            }
         }
     }
 
@@ -64,80 +66,54 @@ public class PreviewService : IDisposable
     {
         try
         {
-            var outputDir = Path.GetFullPath(Path.Combine(
-                Directory.GetCurrentDirectory(), _config.OutputDir.TrimStart('.', '\\', '/')));
+            var outputDir = GetOutputDir();
+            var urlPath = ctx.Request.Url?.AbsolutePath ?? "/";
 
-            var filePath = ResolveFilePath(outputDir, ctx.Request.Url?.AbsolutePath ?? "/");
+            string filePath;
+            try
+            {
+                filePath = HttpHelper.ResolveFilePath(outputDir, urlPath);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                ctx.Response.StatusCode = 403;
+                await HttpHelper.WriteStringResponse(ctx, 403, "<h1>403 — Forbidden</h1>");
+                return;
+            }
 
             if (!File.Exists(filePath))
             {
-                ctx.Response.StatusCode = 404;
-                var custom404 = Path.Combine(outputDir, "404.html");
-                if (File.Exists(custom404))
-                {
-                    var bytes = await File.ReadAllBytesAsync(custom404);
-                    ctx.Response.ContentType = "text/html; charset=utf-8";
-                    ctx.Response.ContentLength64 = bytes.Length;
-                    await ctx.Response.OutputStream.WriteAsync(bytes);
-                }
-                else
-                {
-                    var msg = Encoding.UTF8.GetBytes("<h1>404 — Page Not Found</h1><p>The requested resource was not found.</p>");
-                    ctx.Response.ContentType = "text/html; charset=utf-8";
-                    ctx.Response.ContentLength64 = msg.Length;
-                    await ctx.Response.OutputStream.WriteAsync(msg);
-                }
+                await HttpHelper.WriteNotFoundResponse(ctx, outputDir);
+                return;
             }
-            else
-            {
-                var ext = Path.GetExtension(filePath).ToLowerInvariant();
-                ctx.Response.ContentType = ext switch
-                {
-                    ".html" => "text/html; charset=utf-8",
-                    ".css"  => "text/css; charset=utf-8",
-                    ".js"   => "application/javascript; charset=utf-8",
-                    ".png"  => "image/png",
-                    ".jpg" or ".jpeg" => "image/jpeg",
-                    ".gif"  => "image/gif",
-                    ".svg"  => "image/svg+xml",
-                    ".ico"  => "image/x-icon",
-                    ".woff" => "font/woff",
-                    ".woff2" => "font/woff2",
-                    ".json" => "application/json",
-                    ".xml"  => "application/xml",
-                    _       => "application/octet-stream"
-                };
 
-                var bytes = await File.ReadAllBytesAsync(filePath);
-                ctx.Response.ContentLength64 = bytes.Length;
-                ctx.Response.OutputStream.Write(bytes);
-            }
+            await HttpHelper.WriteFileResponse(ctx, filePath);
         }
-        catch { }
-        finally { ctx.Response.OutputStream.Close(); }
+        catch (Exception ex)
+        {
+            try
+            {
+                ctx.Response.StatusCode = 500;
+                await HttpHelper.WriteStringResponse(ctx, 500,
+                    $"<h1>500 — Internal Server Error</h1><p>{ex.Message}</p>");
+            }
+            catch { }
+        }
+        finally
+        {
+            try { ctx.Response.OutputStream.Close(); } catch { }
+        }
     }
 
-    /// <summary>
-    /// Resolve a URL path to a physical file path, handling directory-style routes.
-    /// e.g. "/guide/" → "/guide/index.html", "/guide" → "/guide/index.html"
-    /// </summary>
-    private static string ResolveFilePath(string outputDir, string urlPath)
+    private string GetOutputDir()
     {
-        if (urlPath == "/") urlPath = "/index.html";
+        var dir = Path.GetFullPath(Path.Combine(
+            Directory.GetCurrentDirectory(),
+            _config.OutputDir.TrimStart('.', '\\', '/')));
 
-        // Strip leading slash, normalize separators
-        var relative = urlPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+        if (!Directory.Exists(dir))
+            Directory.CreateDirectory(dir);
 
-        // If path ends with separator (e.g. "/guide/"), append index.html
-        if (relative.EndsWith(Path.DirectorySeparatorChar))
-            relative = relative + "index.html";
-
-        var fullPath = Path.Combine(outputDir, relative);
-
-        // If no extension and file doesn't exist, try "/index.html" suffix
-        if (!File.Exists(fullPath) && string.IsNullOrEmpty(Path.GetExtension(relative)))
-            fullPath = Path.Combine(outputDir, relative, "index.html");
-
-        return fullPath;
+        return dir;
     }
 }

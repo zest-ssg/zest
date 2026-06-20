@@ -21,10 +21,16 @@ type ZssNode =
     | Mixin    of name: string * parameters: string list * body: ZssNode list
     | Include  of name: string * arguments: string list
     | Extend   of selector: string
-    | Apply    of classes: string list          // @apply utility-class-name
+    | Apply    of classes: string list
     | Import   of path: string
     | Comment  of text: string
     | RawBlock of atRule: string * content: string
+    // New: emit $var as CSS custom property --var in :root
+    | CssVarExport of name: string * value: string
+    // New: @each $item in (a,b,c) { ... } loop
+    | Each of varName: string * items: string list * body: ZssNode list
+    // New: responsive shorthand  @sm/@md/@lg/@xl wrapping
+    | Responsive of breakpoint: string * body: ZssNode list
 
 // ============================================================
 // Shorthand property map
@@ -155,11 +161,12 @@ module ColorFunctions =
                   (int (float b1*w + float b2*(1.0-w)))
         | _ -> hex1
 
+    let private lightenPat = Regex(@"lighten\(([^,)]+),\s*(\d+)%\)", RegexOptions.Compiled)
+    let private darkenPat  = Regex(@"darken\(([^,)]+),\s*(\d+)%\)",  RegexOptions.Compiled)
+    let private alphaPat   = Regex(@"alpha\(([^,)]+),\s*([\d.]+)\)", RegexOptions.Compiled)
+    let private mixPat     = Regex(@"mix\(([^,)]+),\s*([^,)]+),\s*(\d+)%\)", RegexOptions.Compiled)
+
     let resolve (value: string) : string =
-        let lightenPat = Regex(@"lighten\(([^,)]+),\s*(\d+)%\)", RegexOptions.Compiled)
-        let darkenPat  = Regex(@"darken\(([^,)]+),\s*(\d+)%\)",  RegexOptions.Compiled)
-        let alphaPat   = Regex(@"alpha\(([^,)]+),\s*([\d.]+)\)", RegexOptions.Compiled)
-        let mixPat     = Regex(@"mix\(([^,)]+),\s*([^,)]+),\s*(\d+)%\)", RegexOptions.Compiled)
         value
         |> fun s -> lightenPat.Replace(s, fun m -> lighten m.Groups.[1].Value (int m.Groups.[2].Value))
         |> fun s -> darkenPat.Replace( s, fun m -> darken  m.Groups.[1].Value (int m.Groups.[2].Value))
@@ -184,6 +191,10 @@ module Parser =
     let private applyPat     = Regex(@"^@apply\s+(.+?)\s*;?\s*$", RegexOptions.Compiled)
     let private importPat    = Regex(@"^@import\s+[""'](.+?)[""']\s*;?\s*$", RegexOptions.Compiled)
     let private atRulePat    = Regex(@"^(@[\w-]+[^{]*)\{?\s*$", RegexOptions.Compiled)
+
+    let private eachPat    = Regex(@"^@each\s+\$([\w-]+)\s+in\s+\(([^)]+)\)\s*\{?\s*$", RegexOptions.Compiled)
+    let private exportPat  = Regex(@"^@export\s+\$([\w-]+)\s*;?\s*$", RegexOptions.Compiled)
+    let private rspBpMap   = dict ["sm","(min-width:640px)";"md","(min-width:768px)";"lg","(min-width:1024px)";"xl","(min-width:1280px)";"2xl","(min-width:1536px)"]
 
     let private extractVars (lines: string seq) =
         let d = Dictionary<string, string>()
@@ -293,6 +304,38 @@ module Parser =
                 let m = importPat.Match(t)
                 if m.Success then nodes.Add(Import(m.Groups.[1].Value))
                 i <- i + 1
+
+            // @export $var — emit as CSS custom property in :root
+            elif t.StartsWith("@export") then
+                let m = exportPat.Match(t)
+                if m.Success then
+                    let vname = m.Groups.[1].Value
+                    match vars.TryGetValue(vname) with
+                    | true, vval -> nodes.Add(CssVarExport(vname, vval))
+                    | _ -> ()
+                i <- i + 1
+
+            // @each $item in (a,b,c) { ... }
+            elif t.StartsWith("@each") then
+                let m = eachPat.Match(t)
+                if m.Success then
+                    let varName = m.Groups.[1].Value
+                    let items   = m.Groups.[2].Value.Split(',') |> Array.map (fun s -> s.Trim()) |> Array.toList
+                    let hasBrace = t.Contains("{")
+                    i <- if hasBrace then i + 1 else i + 1
+                    let body, newI = parseBlock i lines vars
+                    i <- newI
+                    nodes.Add(Each(varName, items, body))
+                else i <- i + 1
+
+            // Responsive shorthand: @sm, @md, @lg, @xl, @2xl
+            elif (let key = t.TrimEnd('{', ' ').Trim().TrimStart('@') in rspBpMap.ContainsKey key) && t.StartsWith("@") then
+                let key = t.TrimEnd('{', ' ').Trim().TrimStart('@')
+                let hasBrace = t.Contains("{")
+                i <- if hasBrace then i + 1 else i + 1
+                let body, newI = parseBlock i lines vars
+                i <- newI
+                nodes.Add(Responsive(key, body))
 
             // Generic at-rule block  (@media, @keyframes, @supports, etc.)
             elif t.StartsWith("@") then
@@ -422,6 +465,34 @@ module Compiler =
                 match node with
 
                 | Variable _ | Mixin _ -> ()  // already consumed
+
+                | CssVarExport(name, value) ->
+                    sb.AppendLine(sprintf ":root { --%s: %s; }" name value) |> ignore
+
+                | Each(varName, items, body) ->
+                    for item in items do
+                        let localVars = Dictionary<string, string>(dict [varName, item])
+                        let expandedBody =
+                            body |> List.map (function
+                                | RuleSet(sel, decls, ch) ->
+                                    let newSel = sel.Replace("#{$" + varName + "}", item).Replace("$" + varName, item)
+                                    let newDecls = decls |> List.map (fun d -> { d with Value = d.Value.Replace("$" + varName, item) })
+                                    RuleSet(newSel, newDecls, ch)
+                                | other -> other)
+                        emitNodes expandedBody parent
+
+                | Responsive(bp, body) ->
+                    let query =
+                        match bp with
+                        | "sm"  -> "(min-width:640px)"
+                        | "md"  -> "(min-width:768px)"
+                        | "lg"  -> "(min-width:1024px)"
+                        | "xl"  -> "(min-width:1280px)"
+                        | "2xl" -> "(min-width:1536px)"
+                        | _     -> bp
+                    sb.AppendLine(sprintf "@media %s {" query) |> ignore
+                    emitNodes body parent
+                    sb.AppendLine("}") |> ignore
 
                 | Import path ->
                     sb.AppendLine(sprintf "@import '%s';" path) |> ignore

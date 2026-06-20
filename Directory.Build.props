@@ -1,0 +1,16 @@
+<Project>
+  <PropertyGroup>
+    <FSharpCoreImplicitPackageVersion>10.1.204</FSharpCoreImplicitPackageVersion>
+    <!-- Strip satellite resource dirs and symbols from publish -->
+    <SatelliteResourceLanguages>none</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <!-- Remove language satellite dirs from publish output -->
+  <Target Name="RemoveSatelliteDirs" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+        Condition="$([System.String]::new('%(ResolvedFileToPublish.RelativePath)').Contains('\')) And
+                   $([System.String]::new('%(ResolvedFileToPublish.RelativePath)').EndsWith('.resources.dll'))" />
+    </ItemGroup>
+  </Target>
+</Project>
