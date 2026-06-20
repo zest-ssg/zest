@@ -149,12 +149,10 @@ public class DevServerService : IDisposable
     {
         try
         {
-            var urlPath = ctx.Request.Url?.AbsolutePath ?? "/";
-            if (urlPath == "/") urlPath = "/index.html";
-
             var outputDir = Path.GetFullPath(Path.Combine(
                 Directory.GetCurrentDirectory(), _config.OutputDir.TrimStart('.', '\\', '/')));
-            var filePath = Path.Combine(outputDir, urlPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+
+            var filePath = ResolveFilePath(outputDir, ctx.Request.Url?.AbsolutePath ?? "/");
 
             if (!File.Exists(filePath))
             {
@@ -176,7 +174,7 @@ public class DevServerService : IDisposable
                         // Check if .zss file exists in the assets directory
                         var assetsDir = Path.GetFullPath(Path.Combine(
                             Directory.GetCurrentDirectory(), _config.AssetsDir.TrimStart('.', '\\', '/')));
-                        var zssPath = Path.Combine(assetsDir, urlPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+                        var zssPath = Path.Combine(assetsDir, ctx.Request.Url?.AbsolutePath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar) ?? "");
 
                         if (File.Exists(zssPath))
                         {
@@ -317,4 +315,25 @@ public class DevServerService : IDisposable
     ws.onclose = function() {{ setTimeout(function(){{ window.location.reload(); }}, 2000); }};
 }})();
 </script>";
+
+    /// <summary>
+    /// Resolve a URL path to a physical file path, handling directory-style routes.
+    /// e.g. "/guide/" → "/guide/index.html", "/guide" → "/guide/index.html"
+    /// </summary>
+    private static string ResolveFilePath(string outputDir, string urlPath)
+    {
+        if (urlPath == "/") urlPath = "/index.html";
+
+        var relative = urlPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+
+        if (relative.EndsWith(Path.DirectorySeparatorChar))
+            relative = relative + "index.html";
+
+        var fullPath = Path.Combine(outputDir, relative);
+
+        if (!File.Exists(fullPath) && string.IsNullOrEmpty(Path.GetExtension(relative)))
+            fullPath = Path.Combine(outputDir, relative, "index.html");
+
+        return fullPath;
+    }
 }

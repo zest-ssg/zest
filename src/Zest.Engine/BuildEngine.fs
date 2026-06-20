@@ -7,6 +7,7 @@ open System.Diagnostics
 open Zest.Engine
 open Zest.Engine.Scripting
 open Zest.Engine.Zss
+open System.Text.RegularExpressions
 
 /// 核心构建管线：内容发现 → 求值 → 布局应用 → 资产处理 → 输出。
 module BuildEngine =
@@ -50,14 +51,57 @@ module BuildEngine =
                     eprintfn "[Zest] Failed to load data '%s': %s" file ex.Message
             dict :> _
 
-    let rec private applyLayout (name: string) (content: string) (layouts: Map<string, string * string>) =
+    let private buildReplacements (page: Page) (config: SiteConfig) (globalData: IDictionary<string, obj>) =
+        let d = Dictionary<string, string>()
+
+        // Page fields
+        d.["page.title"] <- page.Title
+        d.["page.url"]   <- page.Url
+        d.["page.slug"]  <- page.Slug
+        if page.Date.IsSome then d.["page.date"] <- page.Date.Value.ToString("yyyy-MM-dd")
+        if not page.Tags.IsEmpty then d.["page.tags"] <- String.Join(", ", page.Tags)
+
+        // Site config fields
+        d.["site.title"]       <- config.Title
+        d.["site.description"] <- config.Description
+        d.["site.base_url"]    <- config.BaseUrl
+        d.["site.version"]     <- config.SiteVersion
+
+        // Global data (e.g. site.author, site.copyright, social.github, ...)
+        for kv in globalData do
+            let key = "site." + kv.Key
+            if not (d.ContainsKey key) then
+                d.[key] <- kv.Value.ToString()
+
+        // Page data extras
+        for kv in page.Data do
+            let key = if kv.Key.Contains "." then kv.Key else "page." + kv.Key
+            if not (d.ContainsKey key) then
+                d.[key] <- kv.Value.ToString()
+
+        d :> IDictionary<string, string>
+
+    let private replacePlaceholders (text: string) (replacements: IDictionary<string, string>) =
+        Regex.Replace(text, "\\{\\{\\s*([\\w\\.]+)\\s*\\}\\}", fun (m: Match) ->
+            let key = m.Groups.[1].Value.ToLowerInvariant()
+            match replacements.TryGetValue key with
+            | true, v -> v
+            | _ -> m.Value  // keep unresolved placeholders as-is
+        )
+
+    let rec private applyLayout (name: string) (content: string) (layouts: Map<string, string * string>)
+                                (replacements: IDictionary<string, string>) =
         match layouts.TryFind name with
         | None -> content
         | Some (layoutPath, layoutText) ->
-            let rendered =
-                layoutText
-                    .Replace("{{ content }}",      content)
-                    .Replace("{{ page.content }}", content)
+
+            // Build context: content + all placeholders
+            let ctx = Dictionary<string, string>()
+            for kv in replacements do ctx.[kv.Key] <- kv.Value
+            ctx.["content"]      <- content
+            ctx.["page.content"] <- content
+
+            let rendered = replacePlaceholders layoutText ctx
             // 检测嵌套布局
             let nestedLayout =
                 if layoutText.StartsWith "---" then
@@ -71,7 +115,7 @@ module BuildEngine =
                     else None
                 else None
             match nestedLayout with
-            | Some nl when nl <> name -> applyLayout nl rendered layouts
+            | Some nl when nl <> name -> applyLayout nl rendered layouts replacements
             | _                       -> rendered
 
     let private copyAssets (projectRoot: string) (outputDir: string) =
@@ -134,8 +178,9 @@ module BuildEngine =
                     match ScriptEvaluator.evaluate filePath config globalData with
                     | Error e -> errors.Add(e)
                     | Ok page ->
-                        let layoutName  = page.Layout |> Option.defaultValue config.DefaultLayout
-                        let finalContent = applyLayout layoutName page.Content layouts
+                        let layoutName    = page.Layout |> Option.defaultValue config.DefaultLayout
+                        let replacements  = buildReplacements page config globalData
+                        let finalContent  = applyLayout layoutName page.Content layouts replacements
                         let outPath     = Path.Combine(outputDir, page.OutputPath)
                         let outDir      = Path.GetDirectoryName(outPath)
                         if outDir <> null then Directory.CreateDirectory(outDir) |> ignore

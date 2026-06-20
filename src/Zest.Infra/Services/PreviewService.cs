@@ -64,12 +64,10 @@ public class PreviewService : IDisposable
     {
         try
         {
-            var urlPath = ctx.Request.Url?.AbsolutePath ?? "/";
-            if (urlPath == "/") urlPath = "/index.html";
-
             var outputDir = Path.GetFullPath(Path.Combine(
                 Directory.GetCurrentDirectory(), _config.OutputDir.TrimStart('.', '\\', '/')));
-            var filePath = Path.Combine(outputDir, urlPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+
+            var filePath = ResolveFilePath(outputDir, ctx.Request.Url?.AbsolutePath ?? "/");
 
             if (!File.Exists(filePath))
             {
@@ -117,5 +115,29 @@ public class PreviewService : IDisposable
         }
         catch { }
         finally { ctx.Response.OutputStream.Close(); }
+    }
+
+    /// <summary>
+    /// Resolve a URL path to a physical file path, handling directory-style routes.
+    /// e.g. "/guide/" → "/guide/index.html", "/guide" → "/guide/index.html"
+    /// </summary>
+    private static string ResolveFilePath(string outputDir, string urlPath)
+    {
+        if (urlPath == "/") urlPath = "/index.html";
+
+        // Strip leading slash, normalize separators
+        var relative = urlPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+
+        // If path ends with separator (e.g. "/guide/"), append index.html
+        if (relative.EndsWith(Path.DirectorySeparatorChar))
+            relative = relative + "index.html";
+
+        var fullPath = Path.Combine(outputDir, relative);
+
+        // If no extension and file doesn't exist, try "/index.html" suffix
+        if (!File.Exists(fullPath) && string.IsNullOrEmpty(Path.GetExtension(relative)))
+            fullPath = Path.Combine(outputDir, relative, "index.html");
+
+        return fullPath;
     }
 }
