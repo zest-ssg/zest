@@ -1,8 +1,0 @@
-# Zest SSG — Site global data
-author = "Zest Team"
-copyright = "MIT License"
-language = "en"
-
-[social]
-github  = "https://github.com/example/zest"
-twitter = "https://twitter.com/example"

@@ -28,6 +28,10 @@ Thumbs.db
 docs/_site/
 blog/_site/
 
+# Independent git repos (have their own remote)
+docs/
+blog/
+
 # NuGet packages
 packages/
 *.nuget.props
