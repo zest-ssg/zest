@@ -1,0 +1,36 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.sln.docstates
+*.userprefs
+
+# Build outputs
+*.exe
+*.dll
+*.pdb
+*.xml
+*.nupkg
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Zest site output
+docs/_site/
+
+# NuGet packages
+packages/
+*.nuget.props
+*.nuget.targets
+
+# Logs
+*.log

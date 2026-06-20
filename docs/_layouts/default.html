@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ page.title }} | {{ site.title }}</title>
+  <meta name="description" content="{{ site.description }}">
+  <link rel="stylesheet" href="/assets/css/style.css">
+  <script src="/assets/js/site-init.js" defer></script>
+</head>
+<body>
+  <nav class="site-nav">
+    <a href="/" class="logo">Zest SSG</a>
+    <ul>
+      <li><a href="/">首页</a></li>
+      <li><a href="/guide/">指南</a></li>
+      <li><a href="/programming/">编程</a></li>
+      <li><a href="/zss/">ZSS</a></li>
+      <li><a href="/templates/">模板</a></li>
+      <li><a href="/archive/">归档</a></li>
+    </ul>
+  </nav>
+
+  <main>
+    {{ content }}
+  </main>
+
+  <footer class="site-footer">
+    <p>由 <strong>Zest SSG</strong> 强力驱动 &mdash; 递归式缩写：Zealous Efficient Static Toolkit</p>
+  </footer>
+</body>
+</html>
