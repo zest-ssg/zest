@@ -1,0 +1,299 @@
+// Zest Demo Site — theme.zss
+// Demonstrates ZSS syntax: variables, nesting, mixins, shorthands
+
+// ── Variables ─────────────────────────────────────────────
+$primary:    #6c63ff;
+$secondary:  #e8e8ff;
+$text:       #1a1a2e;
+$muted:      #6b7280;
+$border:     #e5e7eb;
+$accent:     #f59e0b;
+$bg:         #ffffff;
+$code-bg:    #f3f4f6;
+$max-width:  760px;
+$radius:     0.5r;
+$font-sans:  system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+$font-mono:  'Fira Code', 'Cascadia Code', monospace;
+
+// ── Mixins ────────────────────────────────────────────────
+@mixin flex-row($gap: 0) {
+  d: flex;
+  ai: center;
+  gap: $gap;
+}
+
+@mixin card($pad: 1.5r) {
+  bgc: $bg;
+  bdr: $radius;
+  bxsh: 0 2px 12px rgba(0,0,0,0.07);
+  p: $pad;
+}
+
+@mixin btn($bg, $color) {
+  d: inline-block;
+  bgc: $bg;
+  c: $color;
+  p: 0.55r 1.2r;
+  bdr: $radius;
+  td: none;
+  fw: 600;
+  fs: 0.9r;
+  tr: background 0.2s;
+  &:hover { o: 0.88; }
+}
+
+// ── Reset ─────────────────────────────────────────────────
+* { m: 0; p: 0; bxz: border-box; }
+
+// ── Base ──────────────────────────────────────────────────
+body {
+  ff: $font-sans;
+  lh: 1.7;
+  c: $text;
+  bgc: $bg;
+  mw: $max-width;
+  m: 0 auto;
+  p: 0 1.5r;
+  min-height: 100vh;
+}
+
+// ── Navigation ────────────────────────────────────────────
+.site-nav {
+  @include flex-row(1.5r);
+  py: 1.25r;
+  mb: 2.5r;
+  bd: 0 0 1px $border;
+
+  .logo {
+    fw: 800;
+    fs: 1.15r;
+    c: $primary;
+    td: none;
+    mr: auto;
+  }
+
+  ul {
+    @include flex-row(1.25r);
+    ls: none;
+  }
+
+  a {
+    c: $muted;
+    td: none;
+    fs: 0.9r;
+    tr: color 0.2s;
+    &:hover { c: $primary; }
+  }
+}
+
+// ── Footer ────────────────────────────────────────────────
+.site-footer {
+  mt: 4r;
+  pt: 1.5r;
+  bd: 1px 0 0 $border;
+  c: $muted;
+  fs: 0.88r;
+  ta: center;
+}
+
+// ── Typography ────────────────────────────────────────────
+h1 { fs: 2r;    fw: 800; lh: 1.25; mb: 1r; }
+h2 { fs: 1.45r; fw: 700; mt: 2.5r; mb: 0.75r; }
+h3 { fs: 1.15r; fw: 600; mt: 2r;   mb: 0.5r; }
+p  { mb: 1r; }
+a  { c: $primary; }
+
+ul, ol { mb: 1r; pl: 1.5r; }
+li { mb: 0.25r; }
+
+// ── Code ──────────────────────────────────────────────────
+code {
+  ff: $font-mono;
+  fs: 0.88r;
+  bgc: $code-bg;
+  p: 0.15r 0.4r;
+  bdr: 0.25r;
+  c: #e53e6e;
+}
+
+pre {
+  bgc: #1e1e2e;
+  c: #cdd6f4;
+  p: 1.25r 1.5r;
+  bdr: $radius;
+  ov: auto;
+  mb: 1.5r;
+  lh: 1.6;
+
+  code {
+    bgc: transparent;
+    c: inherit;
+    p: 0;
+    bdr: 0;
+    fs: 0.87r;
+  }
+}
+
+// ── Blockquote ────────────────────────────────────────────
+blockquote {
+  bl: 4px solid $primary;
+  pl: 1.25r;
+  ml: 0;
+  c: $muted;
+  fs: 0.97r;
+  mb: 1.5r;
+}
+
+// ── Tables ────────────────────────────────────────────────
+table {
+  w: 100p;
+  border-collapse: collapse;
+  mb: 1.5r;
+  fs: 0.92r;
+
+  th, td {
+    p: 0.55r 1r;
+    ta: left;
+    bd: 1px solid $border;
+  }
+
+  th { bgc: $secondary; fw: 600; }
+  tr:nth-child(even) { bgc: #f9fafb; }
+}
+
+// ── Buttons ───────────────────────────────────────────────
+.btn-primary  { @include btn($primary, #fff); }
+.btn-secondary {
+  @include btn($secondary, $primary);
+  bd: 1.5px solid $primary;
+}
+
+// ── Hero ──────────────────────────────────────────────────
+.hero {
+  ta: center;
+  py: 4r;
+  mb: 3r;
+
+  &-tagline {
+    fs: 1.15r;
+    c: $muted;
+    mw: 520px;
+    m: 0.75r auto 2r;
+  }
+
+  &-actions {
+    @include flex-row(1r);
+    jc: center;
+    flex-wrap: wrap;
+  }
+
+  h1 { fs: 2.8r; mb: 0.5r; }
+}
+
+// ── Feature grid ──────────────────────────────────────────
+.features { mb: 3r; }
+
+.feature-grid {
+  d: grid;
+  gtc: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.25r;
+}
+
+.feature-card {
+  @include card(1.25r);
+  h3 { fs: 1.05r; mb: 0.5r; }
+  p  { fs: 0.9r; c: $muted; mb: 0.75r; }
+  a  { fs: 0.88r; fw: 600; }
+}
+
+// ── Quick start ───────────────────────────────────────────
+.quick-start {
+  mb: 3r;
+  h2 { mt: 0; }
+}
+
+// ── Docs layout ───────────────────────────────────────────
+.docs-layout {
+  d: grid;
+  gtc: 220px 1fr;
+  gap: 3r;
+  ai: start;
+
+  @media (max-width: 640px) {
+    gtc: 1fr;
+  }
+}
+
+.docs-sidebar {
+  pos: sticky;
+  t: 1.5r;
+
+  h3 {
+    fs: 0.78r;
+    fw: 700;
+    tt: uppercase;
+    ls: 0.07em;
+    c: $muted;
+    mt: 1.5r;
+    mb: 0.5r;
+    &:first-child { mt: 0; }
+  }
+
+  ul { ls: none; pl: 0; mb: 0; }
+
+  li { mb: 0.2r; }
+
+  a {
+    c: $text;
+    td: none;
+    fs: 0.9r;
+    d: block;
+    p: 0.2r 0.4r;
+    bdr: 0.3r;
+    &:hover { bgc: $secondary; c: $primary; }
+  }
+}
+
+.docs-content {
+  mn-width: 0;
+  h1:first-child { mt: 0; }
+}
+
+// ── Post layout ───────────────────────────────────────────
+.post {
+  &-header { mb: 2r; }
+
+  &-meta {
+    fs: 0.88r;
+    c: $muted;
+    @include flex-row(0.75r);
+  }
+
+  &-content { lh: 1.8; }
+
+  &-nav {
+    mt: 3r;
+    pt: 1.5r;
+    bd: 1px 0 0 $border;
+  }
+}
+
+// ── Tags ──────────────────────────────────────────────────
+.tag {
+  d: inline-block;
+  bgc: $secondary;
+  c: $primary;
+  fs: 0.78r;
+  fw: 600;
+  p: 0.15r 0.6r;
+  bdr: 9999px;
+  td: none;
+}
+
+// ── Responsive ────────────────────────────────────────────
+@media (max-width: 560px) {
+  body { p: 0 1r; }
+  h1 { fs: 1.6r; }
+  .hero h1 { fs: 2r; }
+  .site-nav ul { d: none; }
+}

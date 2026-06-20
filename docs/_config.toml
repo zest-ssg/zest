@@ -1,0 +1,17 @@
+# Zest SSG — Demo & Documentation Site
+title = "Zest SSG"
+base_url = "http://localhost:8080"
+description = "F#-powered static site generator with .zest.fsx templates and ZSS stylesheets"
+
+content_dir = "./content"
+output_dir  = "./_site"
+layouts_dir = "./_layouts"
+includes_dir = "./_includes"
+data_dir    = "./_data"
+assets_dir  = "./assets"
+
+default_layout   = "default"
+permalink_format = "/:slug/"
+
+dev_server_port  = 8080
+live_reload_port = 35729
