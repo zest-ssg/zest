@@ -4,6 +4,7 @@ open System
 open System.Collections.Generic
 open System.IO
 open System.Diagnostics
+open System.Text
 open System.Text.Json
 open Zest.Engine
 
@@ -67,7 +68,7 @@ module ScriptRunner =
             includes = includesRef |> Seq.map (fun kv -> kv.Key, kv.Value) |> dict
             siteData = siteData
         |}
-        File.WriteAllText(path, JsonSerializer.Serialize(payload))
+        File.WriteAllText(path, JsonSerializer.Serialize(payload), Encoding.UTF8)
 
     // ── DSL preamble ──────────────────────────────────────────────────────
 
@@ -180,6 +181,8 @@ let site_data key = match _siteData.TryGetValue(key) with true, v -> v | _ -> ""
         psi.UseShellExecute        <- false
         psi.RedirectStandardOutput <- true
         psi.RedirectStandardError  <- true
+        psi.StandardOutputEncoding <- Encoding.UTF8
+        psi.StandardErrorEncoding  <- Encoding.UTF8
         psi.CreateNoWindow         <- true
         use proc = Process.Start(psi)
         let stdout = proc.StandardOutput.ReadToEnd()
@@ -232,7 +235,7 @@ let site_data key = match _siteData.TryGetValue(key) with true, v -> v | _ -> ""
 
             let tmpFsx = Path.Combine(Path.GetTempPath(), sprintf "zest-page-%s.fsx" (Guid.NewGuid().ToString("N")))
             try
-                File.WriteAllText(tmpFsx, (buildPreamble ctxFilePath) + "\n" + stripped)
+                File.WriteAllText(tmpFsx, (buildPreamble ctxFilePath) + "\n" + stripped, Encoding.UTF8)
                 match runFsi tmpFsx with
                 | Ok html -> Ok html
                 | Error msg -> Error(sprintf "FSI evaluation reported errors — %s" msg)
