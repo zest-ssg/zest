@@ -63,14 +63,23 @@ module FrontMatterParser =
                 (meta, body)
 
     /// 解析 .zest.fsx 文件头部的 // @key value 注释。
+    /// 只解析文件开头的连续注释块，遇到非注释行即停止，
+    /// 避免误解析代码块中的示例元数据。
     let parseFsxComments (text: string) : FrontMeta =
-        let metaPattern = Regex(@"//\s*@(\w+)\s+(.+)", RegexOptions.Multiline)
-        let pairs =
-            metaPattern.Matches(text)
-            |> Seq.cast<Match>
-            |> Seq.map (fun m ->
-                m.Groups.[1].Value.ToLowerInvariant() + ": " + m.Groups.[2].Value.Trim().Trim('"', '\''))
-        parsePairs pairs FrontMeta.empty
+        let lines = text.Split('\n')
+        let metaLines = ResizeArray<string>()
+        let mutable inHeader = true
+        for line in lines do
+            let t = line.Trim()
+            if inHeader then
+                let m = Regex.Match(t, @"^//\s*@(\w+)\s+(.+)$")
+                if m.Success then
+                    metaLines.Add(m.Groups.[1].Value.ToLowerInvariant() + ": " + m.Groups.[2].Value.Trim().Trim('"', '\''))
+                elif t <> "" && not (t.StartsWith("//")) then
+                    inHeader <- false  // 遇到非注释、非空行，结束元数据解析
+            else
+                ()  // 跳过文件其余部分
+        parsePairs metaLines FrontMeta.empty
 
     /// 统一入口：先尝试 YAML，再尝试注释风格。返回 (meta, body)。
     let parse (ext: string) (text: string) : FrontMeta * string =
