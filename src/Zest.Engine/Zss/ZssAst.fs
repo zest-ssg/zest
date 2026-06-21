@@ -48,7 +48,7 @@ type ZssNode =
     /// Comment text
     | Comment  of text: string * pos: SourcePos
     /// Raw at-rule block (@media, @keyframes, @supports, etc.)
-    | AtRule   of name: string * params: string * body: ZssNode list * pos: SourcePos
+    | AtRule   of name: string * prms: string * body: ZssNode list * pos: SourcePos
     /// @export $var — emit as CSS custom property in :root
     | CssVarExport of name: string * value: string * pos: SourcePos
     /// @each $item in (a,b,c) { body }

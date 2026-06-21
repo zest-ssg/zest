@@ -29,12 +29,9 @@ public class BuildService
         var errorsList = errors.ToArray();
 
         if (errorsList.Length == 0)
-            Logger.Info("Build", $"Build complete in {result.DurationMs}ms — {totalPages} pages ({processed} processed, {cached} cached)");
+            Logger.Info("Build", $"Done in {result.DurationMs}ms — {totalPages} pages ({processed} processed, {cached} cached, {assetsCopied} assets)");
         else
             Logger.Error("Build", $"Build completed with {errorsList.Length} error(s) in {result.DurationMs}ms");
-
-        if (assetsCopied > 0 || assetsMinified > 0)
-            Logger.Info("Build", $"Assets: {assetsCopied} copied, {assetsMinified} minified");
 
         foreach (var err in errorsList)
             Logger.Error("Build", err);

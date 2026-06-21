@@ -2,6 +2,8 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 
+#nullable enable
+
 namespace Zest.Infra.Services;
 
 /// <summary>

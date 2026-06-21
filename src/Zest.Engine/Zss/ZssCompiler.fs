@@ -275,8 +275,8 @@ module Compiler =
 
                 | Content _ -> ()  // handled in expandMixin
 
-                | AtRule(name, params, body, _) ->
-                    let fullRule = if params.Length > 0 then sprintf "%s %s" name params else name
+                | AtRule(name, prms, body, _) ->
+                    let fullRule = if prms.Length > 0 then sprintf "%s %s" name prms else name
                     sb.AppendLine(sprintf "%s {" fullRule) |> ignore
                     emitNodes body ""
                     sb.AppendLine("}") |> ignore
@@ -303,6 +303,7 @@ module Compiler =
                         decls @ (expandedChildren |> List.collect (function
                             | RuleSet("", ds, [], _) -> ds
                             | _ -> []))
+
                     let nestedRules =
                         expandedChildren |> List.filter (function
                             | RuleSet("", _, _, _) -> false
