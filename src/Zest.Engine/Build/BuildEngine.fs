@@ -7,6 +7,8 @@ open System.IO
 open System.Diagnostics
 open System.Threading.Tasks
 open Zest.Engine
+open Zest.Engine.Parsing
+open Zest.Engine.Routing
 open Zest.Engine.Scripting
 open Zest.Engine.Zss
 open System.Text.RegularExpressions
@@ -59,6 +61,11 @@ module BuildEngine =
         d.["page.slug"]  <- page.Slug
         if page.Date.IsSome then d.["page.date"] <- page.Date.Value.ToString("yyyy-MM-dd")
         if not page.Tags.IsEmpty then d.["page.tags"] <- String.Join(", ", page.Tags)
+        // page.description: 优先使用页面描述，回退到站点描述
+        d.["page.description"] <-
+            match page.Data.TryGetValue("description") with
+            | true, v when v <> null -> v.ToString()
+            | _ -> config.Description
         d.["site.title"]       <- config.Title
         d.["site.description"] <- config.Description
         d.["site.base_url"]    <- config.BaseUrl
@@ -80,16 +87,30 @@ module BuildEngine =
             | true, v -> v
             | _ -> m.Value)
 
+    /// 处理 {{include filename}} 标签，递归展开嵌套 include。
+    let private processIncludes (text: string) (includes: IDictionary<string, string>) =
+        let pat = Regex(@"\{\{\s*include\s+([\w\.]+)\s*\}\}", RegexOptions.Compiled)
+        let rec processText (t: string) (depth: int) =
+            if depth > 10 then t  // 防止无限递归
+            else
+                pat.Replace(t, fun (m: Match) ->
+                    let name = m.Groups.[1].Value
+                    match includes.TryGetValue(name) with
+                    | true, content -> processText content (depth + 1)
+                    | _ -> m.Value)
+        processText text 0
+
     let rec private applyLayout (name: string) (content: string) (layouts: Map<string, string * string>)
-                                (replacements: IDictionary<string, string>) =
+                                (replacements: IDictionary<string, string>) (includes: IDictionary<string, string>) =
         match layouts.TryFind name with
         | None -> content
         | Some (_, layoutText) ->
+            let withIncludes = processIncludes layoutText includes
             let ctx = Dictionary<string, string>()
             for kv in replacements do ctx.[kv.Key] <- kv.Value
             ctx.["content"]      <- content
             ctx.["page.content"] <- content
-            let rendered = replacePlaceholders layoutText ctx
+            let rendered = replacePlaceholders withIncludes ctx
             let nestedLayout =
                 if layoutText.StartsWith "---" then
                     let endIdx = layoutText.IndexOf("---", 3)
@@ -102,7 +123,7 @@ module BuildEngine =
                     else None
                 else None
             match nestedLayout with
-            | Some nl when nl <> name -> applyLayout nl rendered layouts replacements
+            | Some nl when nl <> name -> applyLayout nl rendered layouts replacements includes
             | _ -> rendered
 
     let private loadIncludes (includesDir: string) : IDictionary<string, string> =
@@ -167,10 +188,31 @@ module BuildEngine =
             let dataDir    = resolvePath root config.DataDir
 
             Directory.CreateDirectory(outputDir) |> ignore
+            // Clean output directory before build to avoid stale files
+            Console.WriteLine("[Zest] Cleaning output directory...")
+            try
+                for f in Directory.GetFiles(outputDir, "*", SearchOption.AllDirectories) do
+                    File.Delete(f)
+                for d in Directory.GetDirectories(outputDir) do
+                    Directory.Delete(d, recursive = true)
+            with _ -> ()
+            Console.WriteLine("[Zest] Loading layouts...")
             let layouts    = loadLayouts layoutsDir
+            Console.WriteLine("[Zest] Loading global data...")
             let globalData = loadGlobalData dataDir
+            Console.WriteLine("[Zest] Loading includes...")
             let includes   = loadIncludes (resolvePath root config.IncludesDir)
+            Console.WriteLine("[Zest] Setting up script runner...")
             ScriptRunner.setIncludes includes
+
+            // 将站点配置注入 globalData，使脚本中 site_data "site.title" 等可用
+            let gData = globalData :?> Dictionary<string, obj>
+            gData.["site.title"]       <- box config.Title
+            gData.["site.description"] <- box config.Description
+            gData.["site.base_url"]    <- box config.BaseUrl
+            gData.["site.author"]      <- box config.Author
+            gData.["site.language"]    <- box config.Language
+            gData.["site.version"]     <- box config.SiteVersion
 
             // Expose menu items in globalData
             for kv in config.Menus do
@@ -178,9 +220,10 @@ module BuildEngine =
                     kv.Value
                     |> List.map (fun m -> sprintf """{"label":"%s","url":"%s","weight":%d}""" m.Label m.Url m.Weight)
                     |> String.concat ","
-                (globalData :?> Dictionary<string, obj>).["menu." + kv.Key] <- box ("[" + json + "]")
+                gData.["menu." + kv.Key] <- box ("[" + json + "]")
 
             ScriptRunner.setGlobalData globalData
+            Console.WriteLine("[Zest] Scanning content files...")
 
             let allFiles =
                 if not (Directory.Exists contentDir) then
@@ -194,13 +237,24 @@ module BuildEngine =
                     |> Array.distinct
 
             let total = allFiles.Length
+            Console.WriteLine(sprintf "[Zest] Found %d files, extracting metadata..." total)
+
+            // ── 第一遍：快速提取所有页面元数据，填充 collections API ──
+            let metaPages =
+                allFiles
+                |> Array.choose (fun f -> ScriptEvaluator.extractMeta f config)
+                |> Array.toList
+            ScriptRunner.setAllPages metaPages
+            Console.WriteLine("[Zest] Evaluating scripts...")
+            ScriptRunner.resetSession ()
 
             let mdFiles  = allFiles |> Array.filter (fun f -> let e = Path.GetExtension(f).ToLowerInvariant() in e = ".md" || e = ".markdown")
             let fsxFiles = allFiles |> Array.filter (fun f -> let e = Path.GetExtension(f).ToLowerInvariant() in e <> ".md" && e <> ".markdown")
 
             let evalResults = ConcurrentBag<Result<Page, string>>()
 
-            // Markdown pages: parallel
+            // Markdown pages
+            Console.WriteLine(sprintf "[Zest] Evaluating %d markdown files..." mdFiles.Length)
             if config.EnableParallelBuild && mdFiles.Length > 0 then
                 Parallel.ForEach(mdFiles, fun f ->
                     try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
@@ -209,11 +263,87 @@ module BuildEngine =
                 for f in mdFiles do
                     try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
                     with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
+            Console.WriteLine(sprintf "[Zest] Markdown done, evaluating FSI scripts...")
 
-            // FSI scripts: serial (single FSI session)
+            // FSI scripts: batch evaluate in a single FSI process for performance
+            let fsxResults =
+                if fsxFiles.Length > 0 then
+                    Console.WriteLine(sprintf "[Zest] Found %d fsx files, building batch list..." fsxFiles.Length)
+                    // Build list of (id, scriptText) for batch evaluation
+                    let scriptsToEval =
+                        fsxFiles
+                        |> Array.choose (fun f ->
+                            try
+                                let text = File.ReadAllText(f)
+                                if ScriptRunner.isPageScript (Path.GetExtension(f).ToLowerInvariant()) text then
+                                    Some (f, text)
+                                else None
+                            with _ -> None)
+                        |> Array.toList
+
+                    if scriptsToEval.IsEmpty then
+                        // All scripts are non-page scripts, evaluate individually as before
+                        for f in fsxFiles do
+                            try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
+                            with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
+                        Map.empty
+                    else
+                        // Batch evaluate all page scripts in one FSI process
+                        Console.WriteLine(sprintf "[Zest] Batch evaluating %d page scripts..." scriptsToEval.Length)
+                        let batchResults = ScriptRunner.evaluatePageScriptsBatch scriptsToEval
+                        Console.WriteLine("[Zest] Batch evaluation complete.")
+                        batchResults
+                else Map.empty
+
+            // Process batch results and evaluate non-page scripts individually
             for f in fsxFiles do
-                try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
-                with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
+                match Map.tryFind f fsxResults with
+                | Some batchResult ->
+                    // This was batch-evaluated; construct Page from result
+                    match batchResult with
+                    | Ok htmlContent ->
+                        try
+                            let text = File.ReadAllText(f)
+                            let ext = Path.GetExtension(f).ToLowerInvariant()
+                            let contentDir = resolvePath root config.ContentDir
+                            let relPath, rawSlug =
+                                let rel = Path.GetRelativePath(contentDir, f)
+                                let fn = Path.GetFileNameWithoutExtension(f)
+                                let raw = if fn.EndsWith(".zest") then fn.[..fn.Length - 6] else fn
+                                rel, raw
+                            let slug = PermalinkRouter.slugify rawSlug
+                            let meta, _ = FrontMatterParser.parse ext text
+                            let mergedData = Dictionary<string, obj>()
+                            for kv in globalData do mergedData.[kv.Key] <- kv.Value
+                            for kv in meta.Extra do mergedData.[kv.Key] <- box kv.Value
+                            meta.Description |> Option.iter (fun v -> mergedData.["description"] <- box v)
+                            let url, outputPath =
+                                match meta.Permalink with
+                                | Some p when p.Length > 0 -> PermalinkRouter.computePermalink p
+                                | _ -> PermalinkRouter.defaultRoute relPath slug
+                            evalResults.Add(Ok { Page.empty with
+                                                    SourcePath = f
+                                                    Url = url
+                                                    OutputPath = outputPath
+                                                    Layout = Some (meta.Layout |> Option.defaultValue config.DefaultLayout)
+                                                    Title = meta.Title |> Option.defaultValue rawSlug
+                                                    Content = htmlContent
+                                                    Data = mergedData
+                                                    Permalink = meta.Permalink
+                                                    Tags = meta.Tags
+                                                    Date = meta.Date
+                                                    Slug = slug })
+                        with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
+                    | Error evalErr ->
+                        eprintfn "[Zest] WARN: 脚本求值失败 '%s'：%s — 回退到 Markdown 模式" f evalErr
+                        try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
+                        with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
+                | None ->
+                    // Not batch-evaluated (non-page script); evaluate individually
+                    try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
+                    with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
+
+            Console.WriteLine(sprintf "[Zest] Processing %d eval results, writing output..." evalResults.Count)
 
             // Write output
             for r in evalResults do
@@ -226,14 +356,16 @@ module BuildEngine =
                     else
                         let replacements = buildReplacements page config globalData
                         let layoutName   = page.Layout |> Option.defaultValue config.DefaultLayout
-                        let finalHtml    = applyLayout layoutName page.Content layouts replacements
+                        let finalHtml    = applyLayout layoutName page.Content layouts replacements includes
                         let dir = Path.GetDirectoryName(outPath)
                         if dir <> null then Directory.CreateDirectory(dir) |> ignore
-                        File.WriteAllText(outPath, finalHtml)
+                        File.WriteAllText(outPath, finalHtml, System.Text.Encoding.UTF8)
                         updateCache page.SourcePath finalHtml
                         Threading.Interlocked.Increment(&processed) |> ignore
 
+            Console.WriteLine("[Zest] Copying assets...")
             assets <- copyAssets root outputDir
+            Console.WriteLine(sprintf "[Zest] Copied %d assets." assets)
             sw.Stop()
             { TotalPages     = total
               ProcessedPages = processed

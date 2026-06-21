@@ -16,7 +16,7 @@ public class BuildService
     }
 
     /// <summary>
-    /// Print build result to console.
+    /// Print build result to console using the Logger.
     /// </summary>
     public static void PrintResult(BuildResult result, SiteConfig config)
     {
@@ -28,27 +28,20 @@ public class BuildService
         var errors = result.Errors;
         var errorsList = errors.ToArray();
 
-        var color = errorsList.Length == 0 ? ConsoleColor.Green : ConsoleColor.Red;
-        Console.ForegroundColor = color;
-        Console.WriteLine($"[Zest] Build complete in {result.DurationMs}ms");
-        Console.ResetColor();
-        Console.WriteLine($"       Pages: {totalPages} total, {processed} processed, {cached} cached");
+        if (errorsList.Length == 0)
+            Logger.Info("Build", $"Build complete in {result.DurationMs}ms — {totalPages} pages ({processed} processed, {cached} cached)");
+        else
+            Logger.Error("Build", $"Build completed with {errorsList.Length} error(s) in {result.DurationMs}ms");
 
         if (assetsCopied > 0 || assetsMinified > 0)
-            Console.WriteLine($"       Assets: {assetsCopied} copied, {assetsMinified} minified");
+            Logger.Info("Build", $"Assets: {assetsCopied} copied, {assetsMinified} minified");
 
-        if (errorsList.Length > 0)
-        {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"       Errors: {errorsList.Length}");
-            foreach (var err in errorsList)
-                Console.WriteLine($"         - {err}");
-            Console.ResetColor();
-        }
+        foreach (var err in errorsList)
+            Logger.Error("Build", err);
 
         var outputDir = Path.GetFullPath(Path.Combine(
             Directory.GetCurrentDirectory(), config.OutputDir.TrimStart('.', '\\', '/')));
-        Console.WriteLine($"       Output: {outputDir}");
+        Logger.VerboseLog($"Output: {outputDir}");
     }
 
     /// <summary>

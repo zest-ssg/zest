@@ -130,6 +130,10 @@ type SiteConfig = {
     Author: string
     Language: string
 }
+with
+    /// Create a copy with a different dev server port.
+    member this.WithDevServerPort(port: int) =
+        { this with DevServerPort = port }
 
 module SiteConfigDefaults =
     let create () =

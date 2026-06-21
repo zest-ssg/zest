@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -10,6 +10,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Zest.Infra", "src\Zest.Infra\Zest.Infra.csproj", "{363648D6-568D-4C75-B95F-AC6DDEBB3FBB}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Zest.App", "src\Zest.App\Zest.App.csproj", "{CBBCFFC2-061C-4D89-AA46-C01685CE664B}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Zest.Dsl", "src\Zest.Dsl\Zest.Dsl.fsproj", "{F093031B-8B0C-420E-84C0-7BA6EC60592F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -57,6 +59,18 @@ Global
 		{CBBCFFC2-061C-4D89-AA46-C01685CE664B}.Release|x64.Build.0 = Release|Any CPU
 		{CBBCFFC2-061C-4D89-AA46-C01685CE664B}.Release|x86.ActiveCfg = Release|Any CPU
 		{CBBCFFC2-061C-4D89-AA46-C01685CE664B}.Release|x86.Build.0 = Release|Any CPU
+		{F093031B-8B0C-420E-84C0-7BA6EC60592F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F093031B-8B0C-420E-84C0-7BA6EC60592F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F093031B-8B0C-420E-84C0-7BA6EC60592F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F093031B-8B0C-420E-84C0-7BA6EC60592F}.Debug|x64.Build.0 = Debug|Any CPU
+		{F093031B-8B0C-420E-84C0-7BA6EC60592F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F093031B-8B0C-420E-84C0-7BA6EC60592F}.Debug|x86.Build.0 = Debug|Any CPU
+		{F093031B-8B0C-420E-84C0-7BA6EC60592F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F093031B-8B0C-420E-84C0-7BA6EC60592F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F093031B-8B0C-420E-84C0-7BA6EC60592F}.Release|x64.ActiveCfg = Release|Any CPU
+		{F093031B-8B0C-420E-84C0-7BA6EC60592F}.Release|x64.Build.0 = Release|Any CPU
+		{F093031B-8B0C-420E-84C0-7BA6EC60592F}.Release|x86.ActiveCfg = Release|Any CPU
+		{F093031B-8B0C-420E-84C0-7BA6EC60592F}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -65,5 +79,6 @@ Global
 		{DFF61191-9AC2-4A58-89D7-1197E0AE4490} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{363648D6-568D-4C75-B95F-AC6DDEBB3FBB} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{CBBCFFC2-061C-4D89-AA46-C01685CE664B} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{F093031B-8B0C-420E-84C0-7BA6EC60592F} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

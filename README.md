@@ -1,25 +1,38 @@
-# Zest SSG — Zenith Efficient Static Toolkit
+<p align="center">
+  <img src="Zest.png" alt="Zest" width="128" height="128">
+</p>
 
-**Zest** is a recursive acronym for **Z**enith **E**fficient **S**tatic **T**oolkit — a hybrid F# + C# static site generator that treats templates as real code, just like 11ty.js.
+<h1 align="center">Zest SSG</h1>
+
+<p align="center"><em>Zenith Efficient Static Toolkit</em></p>
+
+<p align="center">
+  <a href="LICENSE">License</a> · <a href="#quick-start">Quick Start</a> · <a href="#documentation">Docs</a>
+</p>
+
+---
+
+**Zest** is a hybrid F# + C# static site generator where templates are real code — not strings. Built on the philosophy that your templating language and your host language should be one and the same.
 
 ## Features
 
-- **Template as Code** — `.zest.fsx` files are real F# scripts executed at build time via `dotnet fsi`. Use the full F# language in your templates: list comprehensions, string interpolation, arbitrary computations.
-- **HTML DSL** — Compose HTML declaratively in F# with `render [ h1 [...]; p [...] ]`.
-- **Markdown** — Standard `.md` files rendered to HTML, with frontmatter support.
-- **ZSS** — A CSS superset with nesting, variables, and mixins — compiled to standard CSS.
-- **TOML Config** — Zero-config defaults; customize via `_config.toml` and `_data/*.toml`.
-- **Live Reload Dev Server** — `zest serve` watches for changes and auto-rebuilds.
-- **Blog-ready Output** — Clean directory structure: `/archive/`, `/2026/`, `/posts/`.
-- **Single-file Publish** — `dotnet publish` produces a single `zest.exe` binary.
+- **Template as Code** — `.zest.fsx` files are real F# scripts executed at build time via `dotnet fsi`. Full F# language support: list comprehensions, pattern matching, string interpolation, arbitrary computation.
+- **HTML DSL** — Compose HTML declaratively: `render [ h1 []; p [] ]`.
+- **Markdown** — Standard `.md` files with frontmatter support.
+- **ZSS** — A CSS superset with nesting, F#-style `let` bindings, math expressions, color functions, and mixins — compiled to standard CSS.
+- **TOML Config** — Zero-config defaults; customize via `_config.toml` and `_data/*.toml`. No YAML.
+- **Live Reload** — `zest serve` watches for changes and auto-rebuilds.
+- **Batch Evaluation** — Multiple F# page scripts evaluated in a single FSI process for fast builds.
+- **Incremental Builds** — File change detection skips unchanged pages and assets.
+- **Cross-Platform** — Builds for Windows x64, Linux x64/ARM64, macOS ARM64.
 
 ## Quick Start
 
 ```bash
-# Build
+# Build your site
 zest build
 
-# Develop
+# Develop with live reload
 zest serve --port 8080
 
 # Preview a built site
@@ -46,6 +59,34 @@ render [
 ]
 ```
 
+## Example: ZSS Stylesheet
+
+```zss
+// F#-style let bindings with math expressions
+let primary    = #3b82f6
+let space1     = 0.25r
+let space4     = space1 * 4     // 1rem
+let primary-light = primary |> lighten(45%)
+
+// Two-letter property shorthands
+.tag
+  c: $primary
+  bgc: $primary-light
+  py: $space4
+  bdr: 9999px
+```
+
+Compiles to:
+
+```css
+.tag {
+  color: #3b82f6;
+  background-color: #adf4ff;
+  padding-block: 1rem;
+  border-radius: 9999px;
+}
+```
+
 ## Project Structure
 
 ```
@@ -69,9 +110,12 @@ my-site/
 
 ## Architecture
 
-- **Zest.App** — CLI entry point (C#)
-- **Zest.Engine** — Core engine: builds, HTML DSL, ScriptRunner, Markdown, ZSS compiler (F#)
-- **Zest.Infra** — Configuration loading, file watching, dev server, build orchestration (C#)
+| Project | Language | Responsibility |
+|---------|----------|----------------|
+| **Zest.App** | C# | CLI entry point, command routing |
+| **Zest.Engine** | F# | Core engine: builds, HTML DSL, ScriptRunner, Markdown, ZSS compiler |
+| **Zest.Dsl** | F# | Precompiled DSL helpers for FSI script evaluation |
+| **Zest.Infra** | C# | Configuration loading, file watching, dev server |
 
 ## Build from Source
 
@@ -80,12 +124,69 @@ git clone https://github.com/YOUR_USER/zest
 cd zest
 dotnet build Zest.sln
 
-# Single-file publish
-dotnet publish src/Zest.App/Zest.App.csproj -c Release
-
-# The binary is at:
-# src/Zest.App/bin/Release/net10.0/win-x64/publish/zest.exe
+# Publish for your platform
+dotnet publish src/Zest.App/Zest.App.csproj -c Release -r win-x64 --self-contained false
+# Linux:  -r linux-x64
+# macOS:  -r osx-arm64
 ```
+
+## Documentation
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `zest build` | Build the site to `_site/` |
+| `zest serve` | Start dev server with live reload |
+| `zest preview` | Preview the built site |
+| `zest init <name>` | Scaffold a new project |
+
+### ZSS Reference
+
+| Feature | Syntax |
+|---------|--------|
+| Variables (SCSS) | `$name: value;` |
+| Variables (F#) | `let name = value` |
+| Math | `let x = 0.25r * 4` |
+| Color functions | `lighten(#hex, %)`, `darken(#hex, %)`, `mix(a, b, %)` |
+| Pipe operator | `value \|> fn(args)` → `fn(value, args)` |
+| Unit shorthands | `r`→`rem`, `p`→`%` |
+| Property shorthands | `py`→`padding-block`, `mx`→`margin-inline`, `bgc`→`background-color` |
+| Nesting | Indent or brace mode |
+| Mixins | `@mixin`, `@include` |
+| Loops | `@each`, `@for` |
+| Conditionals | `@if`, `@else` |
+
+### HTML DSL Reference
+
+```fsharp
+// Elements
+h1 [ text "Title" ]
+p  [ text "Paragraph" ]
+a  [ href "https://example.com"; text "Link" ]
+
+// Attributes
+div [ class' "container"; id "main" ] [ ... ]
+
+// List comprehensions
+ul [ for item in items -> li [ text item ] ]
+
+// Conditionals
+if condition then
+    p [ text "Yes" ]
+else
+    p [ text "No" ]
+```
+
+## Design Philosophy
+
+**Zest is not a general-purpose static site generator.** It is a specific answer to specific constraints.
+
+1. **F# as the Template** — The template is the program. No string-based templating languages.
+2. **ZSS as the Layout Engine** — Not a CSS pre-processor, but a layout engine that emits CSS.
+3. **TOML as the Contract** — No YAML. Ever.
+4. **JavaScript as Order** — No Node.js, no npm, no bundlers. JavaScript exists only for client-side order.
+5. **The Zealous Few** — Built for those who love F#, hate YAML, and prefer simple tools.
 
 ## License
 
