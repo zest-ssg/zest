@@ -1,0 +1,9 @@
+title       = "Zest 博客"
+description = "一个用 Zest SSG 构建的示例博客"
+author      = "Zest 团队"
+copyright   = "2026"
+language    = "zh-CN"
+
+[social]
+github  = "https://github.com/example/zest"
+twitter = "https://twitter.com/example"
