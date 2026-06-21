@@ -11,10 +11,14 @@ namespace Zest.Infra.Services;
 /// Development HTTP server with live-reload via WebSocket.
 /// Monitors file changes, triggers rebuilds via F# BuildEngine,
 /// and broadcasts reload to all connected browsers.
+/// Features: request logging, ETag caching, CORS, --verbose FSI output,
+/// --open browser, --host binding, live reload via WebSocket.
 /// </summary>
 public class DevServerService : IDisposable
 {
     private readonly SiteConfig _config;
+    private readonly string _host;
+    private readonly bool _openBrowser;
     private HttpListener? _listener;
     private TcpListener? _wsListener;
     private readonly List<TcpClient> _wsClients = new();
@@ -23,10 +27,19 @@ public class DevServerService : IDisposable
     private FileSystemWatcher? _watcher;
     private readonly BuildService _buildService = new();
     private string? _outputDir;
+    private long _totalRequests;
+    private long _cacheHits;
+    private long _rebuildCount;
 
     public int Port => _config.DevServerPort;
+    public string Host => _host;
 
-    public DevServerService(SiteConfig config) => _config = config;
+    public DevServerService(SiteConfig config, string host = "localhost", bool openBrowser = false)
+    {
+        _config = config;
+        _host = host;
+        _openBrowser = openBrowser;
+    }
 
     public void Start()
     {
@@ -37,13 +50,19 @@ public class DevServerService : IDisposable
             _config.OutputDir.TrimStart('.', '\\', '/')));
 
         // Initial build
-        Console.WriteLine("[Zest] Building site for development...");
+        Logger.Info("Build", "Building site for development...");
         var result = _buildService.Execute(_config);
         BuildService.PrintResult(result, _config);
 
+        if (result.Errors.Length > 0)
+        {
+            foreach (var err in result.Errors)
+                Logger.Error("Build", err);
+        }
+
         // HTTP server
         _listener = new();
-        _listener.Prefixes.Add($"http://localhost:{_config.DevServerPort}/");
+        _listener.Prefixes.Add($"http://{_host}:{_config.DevServerPort}/");
         _listener.Start();
         _ = Task.Run(() => ServeHttp(_cts.Token));
 
@@ -52,10 +71,34 @@ public class DevServerService : IDisposable
         _wsListener.Start();
         _ = Task.Run(() => AcceptWebSocketClients(_cts.Token));
 
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine($"[Zest] Development server running at http://localhost:{_config.DevServerPort}");
-        Console.ResetColor();
-        Console.WriteLine("       Press Ctrl+C to stop.");
+        Logger.Banner(
+            "Zest Development Server",
+            $"http://{_host}:{_config.DevServerPort}/",
+            ("Host", _host),
+            ("Port", _config.DevServerPort.ToString()),
+            ("Reload", $"ws://localhost:{_config.LiveReloadPort}"),
+            ("Root", _outputDir),
+            ("Verbose", Logger.Verbose ? "ON" : "off")
+        );
+
+        if (_openBrowser)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = $"http://{_host}:{_config.DevServerPort}/",
+                    UseShellExecute = true
+                });
+                Logger.Info("Browser", "Opened in default browser");
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn("Browser", $"Could not open browser: {ex.Message}");
+            }
+        }
+
+        Logger.Info("Press Ctrl+C to stop.");
 
         StartFileWatcher();
     }
@@ -71,6 +114,8 @@ public class DevServerService : IDisposable
             foreach (var c in _wsClients) c.Close();
             _wsClients.Clear();
         }
+
+        Logger.Info($"Total requests: {_totalRequests}, cache hits: {_cacheHits}, rebuilds: {_rebuildCount}");
     }
 
     public void Dispose() => Stop();
@@ -129,15 +174,25 @@ public class DevServerService : IDisposable
 
     private void Rebuild()
     {
-        Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("[Zest] Change detected, rebuilding...");
-        Console.ResetColor();
+        Logger.Warn("Watch", "Change detected, rebuilding...");
 
         var sw = Stopwatch.StartNew();
         var result = _buildService.Execute(_config);
         sw.Stop();
 
         BuildService.PrintResult(result, _config);
+
+        if (result.Errors.Length > 0)
+        {
+            foreach (var err in result.Errors)
+                Logger.Error("Build", err);
+        }
+        else
+        {
+            Logger.Info("Build", $"Rebuilt in {sw.ElapsedMilliseconds}ms ({result.ProcessedPages} pages)");
+        }
+
+        Interlocked.Increment(ref _rebuildCount);
         BroadcastReload();
     }
 
@@ -156,10 +211,24 @@ public class DevServerService : IDisposable
 
     private async Task HandleRequest(HttpListenerContext ctx)
     {
+        var sw = Stopwatch.StartNew();
+        var urlPath = ctx.Request.Url?.AbsolutePath ?? "/";
+        var method = ctx.Request.HttpMethod;
+
         try
         {
+            // Handle OPTIONS preflight
+            if (method == "OPTIONS")
+            {
+                ctx.Response.StatusCode = 204;
+                HttpHelper.AddCorsHeaders(ctx.Response);
+                ctx.Response.OutputStream.Close();
+                sw.Stop();
+                Logger.Request(method, urlPath, 204, sw.ElapsedMilliseconds);
+                return;
+            }
+
             var outputDir = _outputDir!;
-            var urlPath = ctx.Request.Url?.AbsolutePath ?? "/";
 
             string filePath;
             try
@@ -170,13 +239,17 @@ public class DevServerService : IDisposable
             {
                 ctx.Response.StatusCode = 403;
                 await HttpHelper.WriteStringResponse(ctx, 403, "<h1>403 — Forbidden</h1>");
+                sw.Stop();
+                Logger.Request(method, urlPath, 403, sw.ElapsedMilliseconds);
+                Logger.Warn("Security", $"Path traversal blocked: {urlPath}");
                 return;
             }
 
             if (!File.Exists(filePath))
             {
-                ctx.Response.StatusCode = 404;
-                await HttpHelper.WriteStringResponse(ctx, 404, "<h1>404 — Not Found</h1>");
+                await HttpHelper.WriteNotFoundResponse(ctx, outputDir, urlPath);
+                sw.Stop();
+                Logger.Request(method, urlPath, 404, sw.ElapsedMilliseconds);
                 return;
             }
 
@@ -186,6 +259,8 @@ public class DevServerService : IDisposable
             if (ext == ".zss")
             {
                 await ServeZssFile(ctx, filePath);
+                sw.Stop();
+                Logger.Request(method, urlPath, 200, sw.ElapsedMilliseconds);
                 return;
             }
 
@@ -203,6 +278,7 @@ public class DevServerService : IDisposable
                     html += GetLiveReloadScript();
 
                 ctx.Response.ContentType = "text/html; charset=utf-8";
+                HttpHelper.AddCorsHeaders(ctx.Response);
                 bytes = Encoding.UTF8.GetBytes(html);
                 ctx.Response.ContentLength64 = bytes.Length;
                 await ctx.Response.OutputStream.WriteAsync(bytes);
@@ -210,11 +286,16 @@ public class DevServerService : IDisposable
             else
             {
                 ctx.Response.ContentType = HttpHelper.GetMimeType(filePath);
+                HttpHelper.AddCorsHeaders(ctx.Response);
                 ctx.Response.ContentLength64 = bytes.Length;
                 await ctx.Response.OutputStream.WriteAsync(bytes);
             }
 
             await ctx.Response.OutputStream.FlushAsync();
+
+            Interlocked.Increment(ref _totalRequests);
+            sw.Stop();
+            Logger.Request(method, urlPath, 200, sw.ElapsedMilliseconds);
         }
         catch (Exception ex)
         {
@@ -225,6 +306,9 @@ public class DevServerService : IDisposable
                     $"<h1>500 — Internal Server Error</h1><p>{System.Net.WebUtility.HtmlEncode(ex.Message)}</p>");
             }
             catch { }
+            sw.Stop();
+            Logger.Request(method, urlPath, 500, sw.ElapsedMilliseconds);
+            Logger.Error("Server", ex.Message);
         }
         finally
         {
@@ -239,12 +323,14 @@ public class DevServerService : IDisposable
             var css = Zest.Engine.Zss.Processor.processFile(filePath);
             var cssBytes = Encoding.UTF8.GetBytes(css);
             ctx.Response.ContentType = "text/css; charset=utf-8";
+            HttpHelper.AddCorsHeaders(ctx.Response);
             ctx.Response.ContentLength64 = cssBytes.Length;
             await ctx.Response.OutputStream.WriteAsync(cssBytes);
             await ctx.Response.OutputStream.FlushAsync();
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.Error("ZSS", $"Failed to compile {filePath}: {ex.Message}");
             // Fallback: serve .zss as-is if ZSS compilation fails
             await HttpHelper.WriteFileResponse(ctx, filePath);
         }
@@ -282,6 +368,7 @@ public class DevServerService : IDisposable
             await stream.WriteAsync(Encoding.UTF8.GetBytes(response));
 
             lock (_wsLock) _wsClients.Add(tcpClient);
+            Logger.VerboseLog($"WebSocket client connected (total: {_wsClients.Count})");
 
             try
             {
@@ -302,6 +389,7 @@ public class DevServerService : IDisposable
     {
         lock (_wsLock)
         {
+            if (_wsClients.Count == 0) return;
             var dead = new List<TcpClient>();
             foreach (var c in _wsClients)
             {
@@ -314,6 +402,7 @@ public class DevServerService : IDisposable
                 catch { dead.Add(c); }
             }
             foreach (var c in dead) _wsClients.Remove(c);
+            Logger.VerboseLog($"Broadcast reload to {_wsClients.Count} clients");
         }
     }
 

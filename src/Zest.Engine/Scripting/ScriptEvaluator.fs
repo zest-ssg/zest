@@ -52,6 +52,43 @@ module ScriptEvaluator =
         meta.Description |> Option.iter (fun v -> d.["description"] <- box v)
         d :> IDictionary<string, obj>
 
+    /// 快速提取页面元数据（不执行脚本），用于 collections API 的第一遍扫描。
+    let extractMeta (filePath: string) (config: SiteConfig) : Page option =
+        try
+            let text       = File.ReadAllText(filePath)
+            let ext        = Path.GetExtension(filePath).ToLowerInvariant()
+            let contentDir = resolveContentDir config
+            let relPath, rawSlug = computeSlug filePath contentDir
+            let meta, bodyText = FrontMatterParser.parse ext text
+            let slug = PermalinkRouter.slugify rawSlug
+            let title =
+                meta.Title
+                |> Option.orElse (
+                    if ext = ".md" || ext = ".markdown" then
+                        Regex.Match(bodyText, @"^#\s+(.+)$", RegexOptions.Multiline)
+                        |> fun m -> if m.Success then Some(m.Groups.[1].Value.Trim()) else None
+                    else None)
+                |> Option.defaultValue rawSlug
+            let url, outputPath =
+                match meta.Permalink with
+                | Some p when p.Length > 0 -> PermalinkRouter.computePermalink p
+                | _ -> PermalinkRouter.defaultRoute relPath slug
+            let d = Dictionary<string, obj>()
+            meta.Description |> Option.iter (fun v -> d.["description"] <- box v)
+            for kv in meta.Extra do d.[kv.Key] <- box kv.Value
+            Some { Page.empty with
+                    SourcePath = filePath
+                    Url        = url
+                    OutputPath = outputPath
+                    Title      = title
+                    Slug       = slug
+                    Tags       = meta.Tags
+                    Date       = meta.Date
+                    Data       = d :> IDictionary<string, obj> }
+        with ex ->
+            eprintfn "[Zest] WARN: extractMeta failed for '%s': %s" filePath ex.Message
+            None
+
     /// 将单个内容文件求值为 Page（失败时返回 Error）。
     /// 自动检测文件是否使用 page { ... } CE 块并执行 F# 脚本。
     let evaluate
@@ -106,7 +143,7 @@ module ScriptEvaluator =
                             Slug         = slug }
                 | Error evalErr ->
                     // 脚本求值失败，回退到 Markdown
-                    eprintfn "[Zest] 脚本求值失败 '%s'：%s — 回退到 Markdown 模式" filePath evalErr
+                    eprintfn "[Zest] WARN: 脚本求值失败 '%s'：%s — 回退到 Markdown 模式" filePath evalErr
                     // fallback to Markdown
                     let title =
                         meta.Title

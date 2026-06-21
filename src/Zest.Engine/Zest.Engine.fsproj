@@ -8,14 +8,33 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="DomainModels.fs" />
-    <Compile Include="StyleCompiler.fs" />
-    <Compile Include="PermalinkRouter.fs" />
-    <Compile Include="FrontMatterParser.fs" />
-    <Compile Include="HtmlDsl.fs" />
-    <Compile Include="ScriptRunner.fs" />
-    <Compile Include="ScriptEvaluator.fs" />
-    <Compile Include="BuildEngine.fs" />
+    <Compile Include="Domain/DomainModels.fs" />
+    <Compile Include="Zss/ZssAst.fs" />
+    <Compile Include="Zss/ZssEvaluator.fs" />
+    <Compile Include="Zss/ZssParserCore.fs" />
+    <Compile Include="Zss/ZssParserBrace.fs" />
+    <Compile Include="Zss/ZssParserIndent.fs" />
+    <Compile Include="Zss/ZssParser.fs" />
+    <Compile Include="Zss/ZssUtilities.fs" />
+    <Compile Include="Zss/ZssCompiler.fs" />
+    <Compile Include="Zss/StyleCompiler.fs" />
+    <Compile Include="Routing/PermalinkRouter.fs" />
+    <Compile Include="Parsing/FrontMatterParser.fs" />
+    <Compile Include="Html/HtmlElements.fs" />
+    <Compile Include="Html/HtmlAttributes.fs" />
+    <Compile Include="Html/HtmlModifiers.fs" />
+    <Compile Include="Html/HtmlComponents.fs" />
+    <Compile Include="Html/HtmlRenderer.fs" />
+    <Compile Include="Html/PageDsl.fs" />
+    <Compile Include="Html/Markdown.fs" />
+    <Compile Include="Html/HtmlUtils.fs" />
+    <Compile Include="Html/ShortcodeRegistry.fs" />
+    <Compile Include="Html/Collections.fs" />
+    <Compile Include="Html/Pagination.fs" />
+    <Compile Include="Html/TemplateData.fs" />
+    <Compile Include="Scripting/ScriptRunner.fs" />
+    <Compile Include="Scripting/ScriptEvaluator.fs" />
+    <Compile Include="Build/BuildEngine.fs" />
   </ItemGroup>
 
   <ItemGroup>

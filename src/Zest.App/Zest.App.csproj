@@ -18,14 +18,36 @@
     <DebugSymbols>false</DebugSymbols>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
 
+    <!-- Publish trimming: exclude unused files -->
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <PublishTrimmed>false</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+
     <!-- App info -->
     <Copyright>Apache 2.0 License</Copyright>
     <Description>Zest SSG — Zenith Efficient Static Toolkit</Description>
+    <ApplicationIcon>..\..\Zest.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Zest.Engine\Zest.Engine.fsproj" />
     <ProjectReference Include="..\Zest.Infra\Zest.Infra.csproj" />
+    <ProjectReference Include="..\Zest.Dsl\Zest.Dsl.fsproj" />
+  </ItemGroup>
+
+  <!-- Exclude unused files from publish output -->
+  <ItemGroup>
+    <!-- Remove satellite resource assemblies (empty locale folders) -->
+    <SatelliteAssemblies Remove="@(SatelliteAssemblies)" />
+    <!-- Exclude XML documentation files -->
+    <None Remove="**\*.xml" />
+    <None Remove="**\*.pdb" />
+    <!-- Exclude source files from publish -->
+    <None Remove="**\*.fs" />
+    <None Remove="**\*.fsi" />
+    <None Remove="**\*.fsproj" />
+    <None Remove="**\*.cs" />
+    <None Remove="**\*.csproj" />
   </ItemGroup>
 
 </Project>
