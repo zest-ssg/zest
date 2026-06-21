@@ -1,0 +1,397 @@
+// Zest Demo Site — style.zss (ZSS 2.0)
+// 演示 ZSS 2.0 新特性：F# 风格语法、管道运算符、数学表达式、@apply、@use 模块
+
+// ── 引入内置工具箱 ────────────────────────────────────────
+@use "zest:reset"
+@use "zest:palette"
+@use "zest:utilities"
+@use "zest:animations"
+
+// ── 变量（F# 风格 let 绑定）──────────────────────────────
+let primary    = #6c63ff
+let secondary  = #e8e8ff
+let text       = #1a1a2e
+let muted      = #6b7280
+let border     = #e5e7eb
+let accent     = #f59e0b
+let bg         = #ffffff
+let codeBg     = #f3f4f6
+let maxWidth   = 760px
+let radius     = 0.5r
+let fontSans   = system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif
+let fontMono   = 'Fira Code', 'Cascadia Code', monospace
+
+// 使用数学表达式计算间距
+let spaceBase  = 0.25r
+let space1     = spaceBase * 1     // 0.25rem
+let space2     = spaceBase * 2     // 0.5rem
+let space3     = spaceBase * 3     // 0.75rem
+let space4     = spaceBase * 4     // 1rem
+let space5     = spaceBase * 5     // 1.25rem
+let space6     = spaceBase * 6     // 1.5rem
+let space8     = spaceBase * 8     // 2rem
+
+// 使用颜色函数派生颜色
+let primaryLight = primary |> lighten(10%)
+let primaryDark  = primary |> darken(10%)
+let primaryGlow  = primary |> alpha(0.15)
+
+// ── 导出 CSS 变量 ─────────────────────────────────────────
+@export $primary
+@export $radius
+@export $text
+@export $bg
+
+// ── 混入 ──────────────────────────────────────────────────
+@mixin flexRow($gap: 0)
+  d: flex
+  ai: center
+  gap: $gap
+
+@mixin card($pad: 1.5r)
+  @apply d-block bg-white
+  bdr = radius
+  bxsh = 0 2px 12px rgba(0,0,0,0.07)
+  p = $pad
+
+@mixin btn($bg, $color)
+  d: inline-block
+  bgc = $bg
+  c = $color
+  p = 0.55r 1.2r
+  bdr = radius
+  td: none
+  fw: 600
+  fs = 0.9r
+  tr: background 0.2s
+  &:hover
+    o: 0.88
+
+// ── Base ──────────────────────────────────────────────────
+body
+  ff = fontSans
+  lh: 1.7
+  c = $text
+  bgc = $bg
+  mw = $maxWidth
+  m: 0 auto
+  p: 0 1.5r
+  min-height: 100vh
+
+// ── Navigation ────────────────────────────────────────────
+.site-nav
+  @include flexRow(1.5r)
+  py = space5
+  mb = space8
+  bd: 0 0 1px $border
+
+  .logo
+    fw: 800
+    fs = 1.15r
+    c = $primary
+    td: none
+    mr: auto
+
+  ul
+    @include flexRow(1.25r)
+    ls: none
+
+  a
+    c = $muted
+    td: none
+    fs = 0.9r
+    tr: color 0.2s
+    &:hover
+      c = $primary
+
+// ── Footer ────────────────────────────────────────────────
+.site-footer
+  mt = space8
+  pt = space6
+  bd: 1px 0 0 $border
+  c = $muted
+  fs = 0.88r
+  ta: center
+
+// ── Typography ────────────────────────────────────────────
+h1
+  fs = 2r
+  fw: 800
+  lh: 1.25
+  mb = space4
+
+h2
+  fs = 1.45r
+  fw: 700
+  mt = space8
+  mb = 0.75r
+
+h3
+  fs = 1.15r
+  fw: 600
+  mt = space6
+  mb = 0.5r
+
+p
+  mb = space4
+a
+  c = $primary
+
+ul, ol
+  mb = space4
+  pl = 1.5r
+
+li
+  mb = 0.25r
+
+// ── Code ──────────────────────────────────────────────────
+code
+  ff = $fontMono
+  fs = 0.88r
+  bgc = $codeBg
+  p = 0.15r 0.4r
+  bdr = 0.25r
+  c = #e53e6e
+
+pre
+  bgc: #1e1e2e
+  c: #cdd6f4
+  p = 1.25r 1.5r
+  bdr = radius
+  ov: auto
+  mb = 1.5r
+  lh: 1.6
+
+  code
+    bgc: transparent
+    c: inherit
+    p: 0
+    bdr: 0
+    fs = 0.87r
+
+// ── Blockquote ────────────────────────────────────────────
+blockquote
+  bl: 4px solid $primary
+  pl = 1.25r
+  ml: 0
+  c = $muted
+  fs = 0.97r
+  mb = 1.5r
+
+// ── Tables ────────────────────────────────────────────────
+table
+  w: 100p
+  border-collapse: collapse
+  mb = 1.5r
+  fs = 0.92r
+
+  th, td
+    p = 0.55r 1r
+    ta: left
+    bd: 1px solid $border
+
+  th
+    bgc = $secondary
+    fw: 600
+
+  tr:nth-child(even)
+    bgc: #f9fafb
+
+// ── Buttons ───────────────────────────────────────────────
+.btn-primary
+  @include btn($primary, #fff)
+
+.btn-secondary
+  @include btn($secondary, $primary)
+  bd: 1.5px solid $primary
+
+// ── Hero ──────────────────────────────────────────────────
+.hero
+  ta: center
+  py = space8
+  mb = space6
+
+  &-tagline
+    fs = 1.15r
+    c = $muted
+    mw: 520px
+    m = 0.75r auto 2r
+
+  &-actions
+    @include flexRow(1r)
+    jc: center
+    flex-wrap: wrap
+
+  h1
+    fs = 2.8r
+    mb = 0.5r
+
+// ── Feature grid ──────────────────────────────────────────
+.features
+  mb = space6
+
+.feature-grid
+  d: grid
+  gtc: repeat(auto-fit, minmax(200px, 1fr))
+  gap = 1.25r
+
+.feature-card
+  @include card(1.25r)
+  tr: box-shadow 0.2s
+
+  &:hover
+    bxsh = 0 4px 16px rgba(0,0,0,0.1)
+    trf = scale(1.02)
+
+  h3
+    fs = 1.05r
+    mb = 0.5r
+
+  p
+    fs = 0.9r
+    c = $muted
+    mb = 0.75r
+
+  a
+    fs = 0.88r
+    fw: 600
+
+// ── Quick start ───────────────────────────────────────────
+.quick-start
+  mb = space6
+
+  h2
+    mt: 0
+
+// ── Docs layout ───────────────────────────────────────────
+.docs-layout
+  d: grid
+  gtc: 220px 1fr
+  gap = space8
+  ai: start
+
+  @media (max-width: 640px)
+    gtc: 1fr
+
+.docs-sidebar
+  pos: sticky
+  t = 1.5r
+
+  h3
+    fs = 0.78r
+    fw: 700
+    tt: uppercase
+    ls = 0.07em
+    c = $muted
+    mt = 1.5r
+    mb = 0.5r
+
+    &:first-child
+      mt: 0
+
+  ul
+    ls: none
+    pl: 0
+    mb: 0
+
+  li
+    mb = 0.2r
+
+  a
+    c = $text
+    td: none
+    fs = 0.9r
+    d: block
+    p = 0.2r 0.4r
+    bdr = 0.3r
+    &:hover
+      bgc = $secondary
+      c = $primary
+
+.docs-content
+  mn-width: 0
+
+  h1:first-child
+    mt: 0
+
+// ── Post layout ───────────────────────────────────────────
+.post
+
+  &-header
+    mb = space8
+
+  &-meta
+    fs = 0.88r
+    c = $muted
+    @include flexRow(0.75r)
+
+  &-content
+    lh: 1.8
+
+  &-nav
+    mt = space6
+    pt = space6
+    bd: 1px 0 0 $border
+
+// ── Tags ──────────────────────────────────────────────────
+.tag
+  d: inline-block
+  bgc = $secondary
+  c = $primary
+  fs = 0.78r
+  fw: 600
+  p = 0.15r 0.6r
+  bdr: 9999px
+  td: none
+
+// ── ZSS 2.0 演示组件 ─────────────────────────────────────
+
+// 使用 @apply 工具类
+.utility-demo
+  @apply d-flex ai-center jc-center p-4
+  bgc = $primary |> lighten(10%)
+  c = #fff
+  bdr = radius
+  fw: 600
+
+// 使用管道运算符 + 颜色函数
+.color-demo
+  bgc = $primary |> lighten(15%)
+  bdc = $primary |> darken(20%) |> alpha(0.3)
+  bxsh = $primary |> alpha(0.2)
+  p = space4
+  bdr = radius
+
+// 使用数学表达式
+.math-demo
+  w = 100p - 40px
+  h = space4 * 3
+  p = space2 + 4px
+  bdr = radius * 1.5
+
+// 使用动画工具箱
+.loading-demo
+  @apply animate-spin
+  w = 2r
+  h = 2r
+  bdr: 3px solid $secondary
+  border-top-color = $primary
+
+.notification-demo
+  @apply animate-slide-in-right
+  bgc = $primary
+  c = #fff
+  p = space3 space4
+  bdr = radius
+  mb = space4
+
+// ── Responsive ────────────────────────────────────────────
+@media (max-width: 560px)
+  body
+    p: 0 1r
+  h1
+    fs = 1.6r
+  .hero h1
+    fs = 2r
+  .site-nav ul
+    d: none

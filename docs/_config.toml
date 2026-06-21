@@ -1,0 +1,21 @@
+# Zest SSG — 文档站点
+title        = "Zest SSG"
+base_url     = "http://localhost:8080"
+description  = "基于 F# 的现代化静态站点生成器 — .zest.fsx 模板 + ZSS 2.0 样式 + TOML 配置"
+language     = "zh-CN"
+
+content_dir  = "./content"
+output_dir   = "./_site"
+layouts_dir  = "./_layouts"
+includes_dir = "./_includes"
+data_dir     = "./_data"
+assets_dir   = "./assets"
+
+default_layout   = "default"
+permalink_format = "/:slug/"
+
+dev_server_port  = 8080
+live_reload_port = 35729
+
+enable_parallel_build    = true
+enable_incremental_build = true
