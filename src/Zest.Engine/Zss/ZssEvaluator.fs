@@ -43,6 +43,7 @@ module Evaluator =
                 "bd",  "border";       "bdc","border-color";   "bds","border-style"
                 "bdw", "border-width"; "bdr","border-radius";  "bdrs","border-radius"
                 "bdt", "border-top";  "bdrr","border-right";   "bdb","border-bottom"; "bdl","border-left"
+                "bl",  "border-left"; "br",  "border-right";   "bt",  "border-top";    "bb",  "border-bottom"
                 "bdtw","border-top-width";"bdrw","border-right-width"
                 "bdbw","border-bottom-width";"bdlw","border-left-width"
                 "bdts","border-top-style";"bdrss","border-right-style"
@@ -431,6 +432,33 @@ module Evaluator =
                     numStr + unit
                 with _ -> resolved
 
+    /// Resolve bare let-bound variable names (F#-style) in values.
+    /// Only resolves names that exist in the vars dictionary (non-$-prefixed).
+    let resolveBareVars (value: string) (vars: IDictionary<string, string>) : string =
+        // Only replace if the entire value is a known bare variable, or if it's
+        // a token in a space-separated list (e.g. "system-ui, fontSans, sans-serif" → 
+        // "system-ui, 'Segoe UI', Roboto, sans-serif")
+        // This avoids replacing CSS keywords like "red", "auto", "none", etc.
+        let words = value.Split([|' '; ','|], StringSplitOptions.RemoveEmptyEntries)
+        let mutable changed = false
+        let resolved =
+            words |> Array.map (fun w ->
+                match vars.TryGetValue(w) with
+                | true, vv when not (w.StartsWith("$")) ->
+                    // Don't replace CSS keywords
+                    let cssKeywords = set ["none"; "auto"; "inherit"; "initial"; "unset"; "normal";
+                                           "bold"; "italic"; "left"; "right"; "center"; "top"; "bottom";
+                                           "solid"; "dashed"; "dotted"; "double"; "transparent";
+                                           "block"; "inline"; "flex"; "grid"; "hidden"; "visible";
+                                           "static"; "relative"; "absolute"; "fixed"; "sticky";
+                                           "nowrap"; "wrap"; "baseline"; "stretch"; "cover"; "contain"]
+                    if not (cssKeywords.Contains(w.ToLower())) then
+                        changed <- true
+                        vv
+                    else w
+                | _ -> w)
+        if changed then String.Join(", ", resolved) else value
+
     // ── Built-in utility functions ──────────────────────────
 
     module BuiltinFunctions =
@@ -524,3 +552,8 @@ module Evaluator =
         |> ColorFunctions.resolve
         |> fun v -> BuiltinFunctions.resolve v vars
         |> ValueShorthand.resolve
+        // Resolve bare let-bound variable references (F#-style: e.g. fontSans, space4)
+        |> fun v -> resolveBareVars v vars
+        // Re-evaluate math after bare var substitution (e.g. space8 → 0.25r * 8 → 2rem)
+        |> fun v -> MathExpr.eval v vars
+        |> fun v -> ValueShorthand.resolve v

@@ -1,6 +1,7 @@
 namespace Zest.Engine.Zss
 
 open System
+open System.Collections.Generic
 open System.IO
 open System.Text
 open System.Text.RegularExpressions
@@ -14,38 +15,61 @@ open System.Text.RegularExpressions
 
 module Processor =
 
-    /// Preprocess source: resolve @use directives by inlining built-in modules.
-    let private resolveUses (source: string) : string =
-        let usePat = Regex(@"^\s*@use\s+[""']([^""']+)[""'](?:\s+as\s+(\w+))?\s*;?\s*$", RegexOptions.Multiline)
-        usePat.Replace(source, fun m ->
-            let path = m.Groups.[1].Value
-            match Utilities.resolveUse path with
-            | Some content -> content
-            | None -> m.Value  // keep as-is for external imports
-        )
-
     /// Process ZSS source text → CSS string
+    /// Uses AST-level merge: built-in modules parsed with brace parser,
+    /// user content parsed with mode-detected parser, then ASTs merged.
     let processText (source: string) : string =
-        // Detect mode BEFORE resolving @use, because built-in modules
-        // may use brace syntax while the user file uses indent syntax.
-        let cleaned = ParserCore.stripComments source
-        let lines = cleaned.Split('\n') |> Array.map (fun l -> l.TrimEnd('\r'))
-        let mode = ParserCore.detectMode lines
+        let usePat = Regex(@"^\s*@use\s+[""']([^""']+)[""'](?:\s+as\s+(\w+))?\s*;?\s*$", RegexOptions.Multiline)
 
-        let resolved = resolveUses source
-        let cleanedResolved = ParserCore.stripComments resolved
-        let linesResolved = cleanedResolved.Split('\n') |> Array.map (fun l -> l.TrimEnd('\r'))
-        let vars = ParserCore.extractVars linesResolved
+        // Step 1: Extract and remove @use lines, collect built-in module contents
+        let userSource, builtinContents =
+            let uses = usePat.Matches(source)
+            let builtins = ResizeArray<string>()
+            let userSrc = usePat.Replace(source, "")
+            for m in uses do
+                match Utilities.resolveUse (m.Groups.[1].Value) with
+                | Some content -> builtins.Add(content)
+                | None -> ()
+            userSrc, List.ofSeq builtins
 
-        let nodes =
+        // Step 2: Parse built-in modules with brace parser and collect their AST + variables
+        let builtinNodes, builtinVars =
+            let allNodes = ResizeArray<ZssNode>()
+            let allVars = new Dictionary<string, string>()
+            for content in builtinContents do
+                let cleaned = ParserCore.stripComments content
+                let lines = cleaned.Split('\n') |> Array.map (fun l -> l.TrimEnd('\r'))
+                let vars = ParserCore.extractVars lines
+                for kv in vars do allVars.[kv.Key] <- kv.Value
+                let nodes, _ = ParserBrace.parseBraceBlock 0 lines vars
+                allNodes.AddRange(nodes)
+            Seq.toList allNodes, (allVars :> IDictionary<string, string>)
+
+        // Step 3: Parse user content (sans @use lines) with mode-detected parser
+        let cleanedUser = ParserCore.stripComments userSource
+        let userLines = cleanedUser.Split('\n') |> Array.map (fun l -> l.TrimEnd('\r'))
+        let mode = ParserCore.detectMode userLines
+        let userVars = ParserCore.extractVars userLines
+        // Merge builtin vars into user vars (user vars take precedence for !default)
+        let mergedVars =
+            let d = new Dictionary<string, string>()
+            for kv in builtinVars do d.[kv.Key] <- kv.Value
+            for kv in userVars do d.[kv.Key] <- kv.Value
+            d :> IDictionary<string, string>
+
+        let userNodes =
             match mode with
             | ParserCore.BraceMode ->
-                let result, _ = ParserBrace.parseBraceBlock 0 linesResolved vars
+                let result, _ = ParserBrace.parseBraceBlock 0 userLines mergedVars
                 result
             | ParserCore.IndentMode ->
-                let result, _ = ParserIndent.parseIndentBlock 0 linesResolved 0 vars
+                let result, _ = ParserIndent.parseIndentBlock 0 userLines 0 mergedVars
                 result
-        let css = Compiler.compile nodes
+
+        // Step 4: Merge ASTs — builtins first, then user (so user overrides builtins)
+        let mergedNodes = builtinNodes @ userNodes
+
+        let css = Compiler.compile mergedNodes
 
         // Report any parse errors
         let errors = Parser.getErrors()

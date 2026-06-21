@@ -239,10 +239,16 @@ module ParserIndent =
                 // Generic at-rule
                 elif t.StartsWith("@") then
                     let atRuleStr = t.TrimEnd('{', ' ').Trim()
+                    let hasBrace = t.Contains("{")
                     i <- i + 1
                     let childIndent = if i < lines.Length then getIndent lines.[i] else baseIndent
                     let body, newI =
-                        if childIndent > baseIndent then parseIndentBlock i lines childIndent vars
+                        if hasBrace then
+                            // Brace-syntax body (e.g. @keyframes, @media with braces)
+                            // Use brace-mode parsing for the body
+                            ParserBrace.parseBraceBlock i lines vars
+                        elif childIndent > baseIndent then
+                            parseIndentBlock i lines childIndent vars
                         else ([], i)
                     i <- newI
                     let parts = atRuleStr.Split([|' '|], 2)

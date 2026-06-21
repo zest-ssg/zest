@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Net;
 using Zest.Engine;
 
+#nullable enable
+
 namespace Zest.Infra.Services;
 
 /// <summary>

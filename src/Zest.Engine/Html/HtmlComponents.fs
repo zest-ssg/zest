@@ -123,7 +123,7 @@ module HtmlComponents =
     let pictureFrom sources src alt =
         picture [
             for (s, t) in sources -> sourceEl s t
-            img src alt
+            yield img src alt
         ]
 
     // ---- Accordion ----

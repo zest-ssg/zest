@@ -189,20 +189,15 @@ module BuildEngine =
 
             Directory.CreateDirectory(outputDir) |> ignore
             // Clean output directory before build to avoid stale files
-            Console.WriteLine("[Zest] Cleaning output directory...")
             try
                 for f in Directory.GetFiles(outputDir, "*", SearchOption.AllDirectories) do
                     File.Delete(f)
                 for d in Directory.GetDirectories(outputDir) do
                     Directory.Delete(d, recursive = true)
             with _ -> ()
-            Console.WriteLine("[Zest] Loading layouts...")
             let layouts    = loadLayouts layoutsDir
-            Console.WriteLine("[Zest] Loading global data...")
             let globalData = loadGlobalData dataDir
-            Console.WriteLine("[Zest] Loading includes...")
             let includes   = loadIncludes (resolvePath root config.IncludesDir)
-            Console.WriteLine("[Zest] Setting up script runner...")
             ScriptRunner.setIncludes includes
 
             // 将站点配置注入 globalData，使脚本中 site_data "site.title" 等可用
@@ -223,7 +218,6 @@ module BuildEngine =
                 gData.["menu." + kv.Key] <- box ("[" + json + "]")
 
             ScriptRunner.setGlobalData globalData
-            Console.WriteLine("[Zest] Scanning content files...")
 
             let allFiles =
                 if not (Directory.Exists contentDir) then
@@ -237,7 +231,6 @@ module BuildEngine =
                     |> Array.distinct
 
             let total = allFiles.Length
-            Console.WriteLine(sprintf "[Zest] Found %d files, extracting metadata..." total)
 
             // ── 第一遍：快速提取所有页面元数据，填充 collections API ──
             let metaPages =
@@ -245,7 +238,6 @@ module BuildEngine =
                 |> Array.choose (fun f -> ScriptEvaluator.extractMeta f config)
                 |> Array.toList
             ScriptRunner.setAllPages metaPages
-            Console.WriteLine("[Zest] Evaluating scripts...")
             ScriptRunner.resetSession ()
 
             let mdFiles  = allFiles |> Array.filter (fun f -> let e = Path.GetExtension(f).ToLowerInvariant() in e = ".md" || e = ".markdown")
@@ -254,7 +246,6 @@ module BuildEngine =
             let evalResults = ConcurrentBag<Result<Page, string>>()
 
             // Markdown pages
-            Console.WriteLine(sprintf "[Zest] Evaluating %d markdown files..." mdFiles.Length)
             if config.EnableParallelBuild && mdFiles.Length > 0 then
                 Parallel.ForEach(mdFiles, fun f ->
                     try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
@@ -263,13 +254,10 @@ module BuildEngine =
                 for f in mdFiles do
                     try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
                     with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
-            Console.WriteLine(sprintf "[Zest] Markdown done, evaluating FSI scripts...")
 
             // FSI scripts: batch evaluate in a single FSI process for performance
             let fsxResults =
                 if fsxFiles.Length > 0 then
-                    Console.WriteLine(sprintf "[Zest] Found %d fsx files, building batch list..." fsxFiles.Length)
-                    // Build list of (id, scriptText) for batch evaluation
                     let scriptsToEval =
                         fsxFiles
                         |> Array.choose (fun f ->
@@ -289,9 +277,7 @@ module BuildEngine =
                         Map.empty
                     else
                         // Batch evaluate all page scripts in one FSI process
-                        Console.WriteLine(sprintf "[Zest] Batch evaluating %d page scripts..." scriptsToEval.Length)
                         let batchResults = ScriptRunner.evaluatePageScriptsBatch scriptsToEval
-                        Console.WriteLine("[Zest] Batch evaluation complete.")
                         batchResults
                 else Map.empty
 
@@ -343,8 +329,6 @@ module BuildEngine =
                     try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
                     with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
 
-            Console.WriteLine(sprintf "[Zest] Processing %d eval results, writing output..." evalResults.Count)
-
             // Write output
             for r in evalResults do
                 match r with
@@ -363,9 +347,7 @@ module BuildEngine =
                         updateCache page.SourcePath finalHtml
                         Threading.Interlocked.Increment(&processed) |> ignore
 
-            Console.WriteLine("[Zest] Copying assets...")
             assets <- copyAssets root outputDir
-            Console.WriteLine(sprintf "[Zest] Copied %d assets." assets)
             sw.Stop()
             { TotalPages     = total
               ProcessedPages = processed

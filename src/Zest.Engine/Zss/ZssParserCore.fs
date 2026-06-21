@@ -177,10 +177,12 @@ module ParserCore =
 
     let getIndent (line: string) : int =
         let mutable n = 0
+        let mutable counting = true
         for c in line do
-            if c = ' ' then n <- n + 1
-            elif c = '\t' then n <- n + 4
-            else ()
+            if counting then
+                if c = ' ' then n <- n + 1
+                elif c = '\t' then n <- n + 4
+                else counting <- false
         n
 
     // ── Shared mixin parameter parser ───────────────────────

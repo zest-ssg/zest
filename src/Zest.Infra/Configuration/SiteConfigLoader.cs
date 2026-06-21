@@ -1,6 +1,8 @@
 using Tomlyn;
 using Zest.Engine;
 
+#nullable enable
+
 namespace Zest.Infra.Configuration;
 
 /// <summary>

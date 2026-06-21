@@ -30,11 +30,7 @@ public static class BuildController
             }
         }
 
-        Console.WriteLine("[Zest] Loading config...");
-        Console.Out.Flush();
         var config = SiteConfigLoader.Load();
-        Console.WriteLine("[Zest] Config loaded: " + config.Title);
-        Console.Out.Flush();
         var buildSvc = new BuildService();
         var result = buildSvc.Execute(config);
 

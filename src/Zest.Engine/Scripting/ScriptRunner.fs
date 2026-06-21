@@ -205,6 +205,7 @@ module ScriptRunner =
         let dllPath = getIsolatedDslDll ()
         let sb = Text.StringBuilder()
         sb.AppendLine("#r @\"" + dllPath + "\"") |> ignore
+        sb.AppendLine("open System") |> ignore
         sb.AppendLine("open Zest.Dsl") |> ignore
         sb.AppendLine("Zest.Dsl.Context.current <- Some (Zest.Dsl.ZestContext(@\"" + ctxFile + "\"))") |> ignore
         sb.AppendLine("open Zest.Dsl.Dsl") |> ignore

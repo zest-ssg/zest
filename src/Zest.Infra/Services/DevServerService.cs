@@ -5,6 +5,8 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Zest.Engine;
 
+#nullable enable
+
 namespace Zest.Infra.Services;
 
 /// <summary>
@@ -28,7 +30,6 @@ public class DevServerService : IDisposable
     private readonly BuildService _buildService = new();
     private string? _outputDir;
     private long _totalRequests;
-    private long _cacheHits;
     private long _rebuildCount;
 
     public int Port => _config.DevServerPort;
@@ -115,7 +116,7 @@ public class DevServerService : IDisposable
             _wsClients.Clear();
         }
 
-        Logger.Info($"Total requests: {_totalRequests}, cache hits: {_cacheHits}, rebuilds: {_rebuildCount}");
+        Logger.Info($"Total requests: {_totalRequests}, rebuilds: {_rebuildCount}");
     }
 
     public void Dispose() => Stop();
@@ -151,7 +152,7 @@ public class DevServerService : IDisposable
                     return;
             }
 
-            var ext = Path.GetExtension(e.Name).ToLowerInvariant();
+            var ext = Path.GetExtension(e.Name!)?.ToLowerInvariant() ?? "";
             var relevant = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 ".fsx", ".zest.fsx", ".md", ".markdown",
