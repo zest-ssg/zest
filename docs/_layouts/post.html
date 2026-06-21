@@ -6,11 +6,15 @@ layout: "default"
     <h1>{{ page.title }}</h1>
     <div class="post-meta">
       <time>{{ page.date }}</time>
-      <span class="tags">{{ page.tags }}</span>
+      {{ if page.tags }}
+      <div class="tags">
+        {{ page.tags }}
+      </div>
+      {{ end }}
     </div>
   </header>
   <div class="post-content">{{ content }}</div>
   <nav class="post-nav">
-    <a href="/guide/">&larr; Back to Guide</a>
+    <a href="/guide/">&larr; 返回指南</a>
   </nav>
 </article>
