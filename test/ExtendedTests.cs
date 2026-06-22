@@ -357,6 +357,104 @@ let accent = #f59e0b
   anim: slideIn 0.3s ease-out
 ", expectContains: new[] { "@keyframes slideIn", "transform: translateX(-100%)", "transform: translateX(0)", "animation: slideIn 0.3s ease-out" });
 
+        // ── 46. CSS关键字不应被变量替换 ──
+        RunTest("CSS keywords not replaced by variables", @"
+let myColor = #3b82f6
+.card
+  d: block
+  pos: relative
+  overflow: hidden
+  bgc: myColor
+", expectContains: new[] { "display: block", "position: relative", "overflow: hidden", "background-color: #3b82f6" });
+
+        // ── 47. URL中的冒号不应被误解析 ──
+        RunTest("URL colon not misparsed", @"
+.card
+  bg: url(http://example.com/img.png) no-repeat center
+  bgc: #fff
+", expectContains: new[] { ".card", "background:", "url(http://example.com/img.png)" });
+
+        // ── 48. calc()中的冒号不应被误解析 ──
+        RunTest("calc() expression not misparsed", @"
+.container
+  w: calc(100% - 20px)
+  h: calc(50vh + 10px)
+", expectContains: new[] { ".container", "width: calc(100% - 20px)", "height: calc(50vh + 10px)" });
+
+        // ── 49. 复合选择器正确识别 ──
+        RunTest("Compound selectors correctly identified", @"
+div.card#main
+  bgc: #fff
+
+ul.nav li a
+  c: blue
+  td: none
+
+input[type=""text""]
+  bdr: 1px solid #ccc
+", expectContains: new[] { "div.card#main", "ul.nav li a", "input[type=\"text\"]" });
+
+        // ── 50. 伪选择器与声明区分 ──
+        RunTest("Pseudo-selectors vs declarations", @"
+.btn
+  bgc: #3b82f6
+  &:hover
+    bgc: #2563eb
+  &:focus-visible
+    outline: 2px solid #3b82f6
+  &::before
+    content: ""★""
+", expectContains: new[] { ".btn", ".btn:hover", ".btn:focus-visible", ".btn::before" });
+
+        // ── 51. 解析错误恢复 ──
+        RunTest("Parse error recovery", @"
+.card
+  bgc: #fff
+  invalid line without separator
+  bdr: 0.5r
+  c: #333
+", expectContains: new[] { ".card", "background-color: #fff", "border-radius: 0.5rem", "color: #333" });
+
+        // ── 52. 空规则集处理 ──
+        RunTest("Empty rule set handling", @"
+.card
+.container
+  bgc: #fff
+", expectContains: new[] { ".container", "background-color: #fff" });
+
+        // ── 53. 多重变量引用 ──
+        RunTest("Multiple variable references", @"
+let spacing = 1r
+let primary = #3b82f6
+let radius = 0.5r
+
+.card
+  p: spacing
+  bgc: primary
+  bdr: radius
+  m: spacing spacing spacing spacing
+", expectContains: new[] { "padding: 1rem", "background-color: #3b82f6", "border-radius: 0.5rem", "margin: 1rem 1rem 1rem 1rem" });
+
+        // ── 54. 嵌套at-rule ──
+        RunTest("Nested at-rules", @"
+@layer base
+  .card
+    bgc: #fff
+    bdr: 0.5r
+  .btn
+    bgc: #3b82f6
+    c: #fff
+", expectContains: new[] { "@layer base", ".card", ".btn" });
+
+        // ── 55. 连字符属性名不被变量替换 ──
+        RunTest("Hyphenated property names not replaced", @"
+let space4 = 1rem
+.card
+  margin-top: space4
+  padding-left: space4
+  border-right-width: 2px
+", expectContains: new[] { "margin-top: 1rem", "padding-left: 1rem", "border-right-width: 2px" });
+
         Console.WriteLine($"\n=== Extended Results: {Passed} passed, {Failed} failed ===");
     }
 

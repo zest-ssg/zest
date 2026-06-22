@@ -44,7 +44,8 @@ module ParserIndent =
                 if varPattern.IsMatch(t) then
                     let m = varPattern.Match(t)
                     let isDefault = m.Groups.[3].Success
-                    let v = resolveVars (m.Groups.[2].Value.Trim()) vars
+                    let rawV = resolveVars (m.Groups.[2].Value.Trim()) vars
+                    let v = Evaluator.resolveValue rawV vars
                     if isDefault then
                         if not (vars.ContainsKey(m.Groups.[1].Value)) then vars.[m.Groups.[1].Value] <- v
                     else
@@ -56,7 +57,8 @@ module ParserIndent =
                 elif letPattern.IsMatch(t) then
                     let m = letPattern.Match(t)
                     let name = m.Groups.[1].Value
-                    let v = resolveVars (m.Groups.[2].Value.Trim()) vars
+                    let rawV = resolveVars (m.Groups.[2].Value.Trim()) vars
+                    let v = Evaluator.resolveValue rawV vars
                     vars.[name] <- v
                     nodes.Add(Variable(name, v, false, { Line = lineNum; Col = indent + 1 }))
                     i <- i + 1
@@ -259,12 +261,46 @@ module ParserIndent =
                 // Rule set (selector line) — children are indented
                 elif t.Contains(":") || t.Contains("=") then
                     // Could be a declaration or a selector
-                    // Heuristic: if it looks like `prop: value` or `prop = value`, it's a declaration
-                    // If it has a CSS selector pattern (starts with ., #, tag, etc.), it's a rule
+                    // Improved heuristic: check if it looks like a CSS declaration
+                    // A declaration has: property: value or property = value
+                    // A selector has: .class, #id, tag, &, *, [attr], :pseudo, etc.
                     let isSelector =
-                        t.StartsWith(".") || t.StartsWith("#") || t.StartsWith("&") ||
-                        t.StartsWith("*") || t.StartsWith("[") || t.StartsWith(":") ||
-                        (Regex.IsMatch(t, @"^[a-zA-Z][\w-]*\s*[,.>+~:&\[ ]") && not (t.Contains(": ") || t.Contains("=")))
+                        // Quick check: if it starts with a selector character, it's a selector
+                        if t.StartsWith(".") || t.StartsWith("#") || t.StartsWith("&") ||
+                           t.StartsWith("*") || t.StartsWith("[") || t.StartsWith(":") then
+                            true
+                        // Check for pseudo-elements/classes that might start with ::
+                        elif t.StartsWith("::") then true
+                        // Check for at-rules (shouldn't reach here, but just in case)
+                        elif t.StartsWith("@") then false
+                        // Check for compound selectors: tag.class, tag#id, tag[pseudo], tag > child, tag + sibling, tag ~ sibling
+                        elif Regex.IsMatch(t, @"^[a-zA-Z][\w-]*(\.[\w-]+|#[\w-]+|\[[^\]]+\]|:[\w-]+|::[\w-]+)") then
+                            true
+                        // Check for descendant selectors: "nav a", "div .class", etc.
+                        elif Regex.IsMatch(t, @"^[a-zA-Z][\w-]*\s+[a-zA-Z.]") then
+                            true
+                        // Check for combinator selectors: "a > b", "a + b", "a ~ b"
+                        elif Regex.IsMatch(t, @"[>+~]") && not (t.Contains("calc(")) then
+                            true
+                        // Check for comma-separated selectors: ".a, .b"
+                        elif t.Contains(",") && (t.Contains(".") || t.Contains("#") || t.Contains("&")) then
+                            true
+                        // Check if it looks like a declaration: word: value or word = value
+                        // But exclude pseudo-selectors like :hover, ::before
+                        else
+                            // Try to parse as declaration
+                            let colonIdx = t.IndexOf(':')
+                            let eqIdx = t.IndexOf('=')
+                            let sepIdx =
+                                if colonIdx > 0 && (eqIdx <= 0 || colonIdx < eqIdx) then colonIdx
+                                elif eqIdx > 0 then eqIdx
+                                else -1
+                            if sepIdx <= 0 then false
+                            else
+                                let prop = t.Substring(0, sepIdx).Trim()
+                                // If property part contains spaces or special chars, it's likely a selector
+                                // If it's a simple word/hyphenated word, it's likely a declaration
+                                not (Regex.IsMatch(prop, @"^[\w-]+$"))
 
                     if isSelector then
                         let selector = t.Trim()
@@ -280,7 +316,9 @@ module ParserIndent =
                         // Declaration
                         match parseDecl t lineNum vars with
                         | Some d -> nodes.Add(RuleSet("", [d], [], { Line = lineNum; Col = indent + 1 }))
-                        | None -> ()
+                        | None ->
+                            // If parseDecl failed, record an error for better debugging
+                            errors.Add({ Message = sprintf "Failed to parse declaration: %s" t; Line = lineNum; Col = indent + 1; Context = String.Join("\n", lines) })
                         i <- i + 1
 
                 // Selector without colon (e.g., `.button`, `nav a`)

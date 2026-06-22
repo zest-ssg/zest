@@ -33,7 +33,8 @@ module ParserBrace =
             elif varPattern.IsMatch(t) then
                 let m = varPattern.Match(t)
                 let isDefault = m.Groups.[3].Success
-                let v = resolveVars (m.Groups.[2].Value.Trim()) vars
+                let rawV = resolveVars (m.Groups.[2].Value.Trim()) vars
+                let v = Evaluator.resolveValue rawV vars
                 if isDefault then
                     if not (vars.ContainsKey(m.Groups.[1].Value)) then vars.[m.Groups.[1].Value] <- v
                 else
@@ -45,7 +46,8 @@ module ParserBrace =
             elif letPattern.IsMatch(t) then
                 let m = letPattern.Match(t)
                 let name = m.Groups.[1].Value
-                let v = resolveVars (m.Groups.[2].Value.Trim()) vars
+                let rawV = resolveVars (m.Groups.[2].Value.Trim()) vars
+                let v = Evaluator.resolveValue rawV vars
                 vars.[name] <- v
                 nodes.Add(Variable(name, v, false, { Line = lineNum; Col = 1 }))
                 i <- i + 1

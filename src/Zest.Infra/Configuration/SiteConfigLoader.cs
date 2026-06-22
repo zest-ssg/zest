@@ -1,5 +1,6 @@
 using Tomlyn;
 using Zest.Engine;
+using Zest.Infra.Services;
 
 #nullable enable
 
@@ -43,6 +44,7 @@ public static class SiteConfigLoader
             var includesDir = GetString(model, "includes_dir", config.IncludesDir);
             var dataDir = GetString(model, "data_dir", config.DataDir);
             var assetsDir = GetString(model, "assets_dir", config.AssetsDir);
+            var rootDir = GetString(model, "root_dir", config.RootDir);
             var devServerPort = GetInt(model, "dev_server_port", config.DevServerPort);
             var liveReloadPort = GetInt(model, "live_reload_port", config.LiveReloadPort);
             var enableMinification    = GetBool(model, "enable_minification",     config.EnableMinification);
@@ -51,6 +53,9 @@ public static class SiteConfigLoader
             var enableIncremental    = GetBool(model, "enable_incremental_build",config.EnableIncrementalBuild);
             var author               = GetString(model, "author",   config.Author);
             var language             = GetString(model, "language", config.Language);
+            var logLevel             = GetString(model, "log_level", config.LogLevel);
+            var logToFile            = GetBool  (model, "log_to_file", config.LogToFile);
+            var logTimestamps        = GetBool  (model, "log_timestamps", config.LogTimestamps);
 
             // Parse [[taxonomies]] array
             var taxonomies = config.Taxonomies;
@@ -89,6 +94,7 @@ public static class SiteConfigLoader
                 title: title,
                 baseUrl: baseUrl,
                 description: description,
+                rootDir: rootDir,
                 contentDir: contentDir,
                 outputDir: outputDir,
                 layoutsDir: layoutsDir,
@@ -107,12 +113,15 @@ public static class SiteConfigLoader
                 taxonomies: taxonomies,
                 menus: menusDict,
                 author: author,
-                language: language
+                language: language,
+                logLevel: logLevel,
+                logToFile: logToFile,
+                logTimestamps: logTimestamps
             );
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[Zest] Warning: Failed to parse '{configPath}': {ex.Message}");
+            Logger.Error("Config", $"Failed to parse '{configPath}': {ex.Message}", ex);
             return SiteConfigDefaults.create();
         }
     }

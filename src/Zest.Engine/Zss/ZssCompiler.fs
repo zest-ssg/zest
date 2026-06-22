@@ -113,6 +113,7 @@ module Compiler =
         (args: string list)
         (content: ZssNode list)
         (mixins: IDictionary<string, (string * string option) list * ZssNode list>)
+        (vars: IDictionary<string, string>)
         : ZssNode list =
 
         match mixins.TryGetValue name with
@@ -124,7 +125,8 @@ module Compiler =
                 let argVal =
                     if i < args.Length then args.[i]
                     else match pDefault with Some d -> d | None -> ""
-                subst.[pName] <- argVal
+                // Resolve bare variable references in argument values
+                subst.[pName] <- Evaluator.resolveValue argVal vars
 
             let resolveVar (s: string) =
                 subst |> Seq.fold (fun (acc: string) kv ->
@@ -153,7 +155,7 @@ module Compiler =
         let t = resolved.Trim().Trim('"', '\'').ToLowerInvariant()
         t <> "" && t <> "false" && t <> "0" && t <> "null" && t <> "none"
 
-    let compile (nodes: ZssNode list) : string =
+    let compile (nodes: ZssNode list) (vars: IDictionary<string, string>) : string =
         let sb = StringBuilder()
         let minify = ref false
 
@@ -170,6 +172,10 @@ module Compiler =
 
         // Collect all nodes for @extend resolution
         let allNodes = nodes
+
+        // Resolve bare variable references in a value string
+        let resolveBareVarsInCompile (value: string) : string =
+            Evaluator.resolveValue value vars
 
         let rec emitNodes (nodes: ZssNode list) (parent: string) =
             for node in nodes do
@@ -251,7 +257,7 @@ module Compiler =
                         sb.AppendLine(sprintf "/* %s */" text) |> ignore
 
                 | Include(name, args, content, _) ->
-                    let expanded = expandMixin name args content mixins
+                    let expanded = expandMixin name args content mixins vars
                     emitNodes expanded parent
 
                 | Extend(extSel, _) ->
@@ -295,7 +301,7 @@ module Compiler =
                         children |> List.collect (fun c ->
                             match c with
                             | Include(name, args, content, _) ->
-                                expandMixin name args content mixins
+                                expandMixin name args content mixins vars
                             | _ -> [c])
 
                     // Separate declarations from nested rules
@@ -314,13 +320,25 @@ module Compiler =
                             | RuleSet _ -> false
                             | _ -> true)
 
+                    // Emit declarations with their selector
+                    let emitDecls (sel: string) (ds: Declaration list) =
+                        if ds.Length > 0 && not (String.IsNullOrEmpty sel) then
+                            sb.AppendLine(sprintf "%s {" sel) |> ignore
+                            for d in ds do
+                                let imp = if d.Important then " !important" else ""
+                                for (p, v) in AutoPrefixer.prefix d.Property d.Value do
+                                    sb.AppendLine(sprintf "  %s: %s%s;" p v imp) |> ignore
+                            sb.AppendLine("}") |> ignore
+
                     if String.IsNullOrEmpty fullSel then
-                        // Bare declarations
-                        for d in allDecls do
-                            let imp = if d.Important then " !important" else ""
-                            // Auto-prefix
-                            for (p, v) in AutoPrefixer.prefix d.Property d.Value do
-                                sb.AppendLine(sprintf "  %s: %s%s;" p v imp) |> ignore
+                        // Bare declarations — emit under parent selector if available
+                        if not (String.IsNullOrEmpty parent) && allDecls.Length > 0 then
+                            emitDecls parent allDecls
+                        else
+                            for d in allDecls do
+                                let imp = if d.Important then " !important" else ""
+                                for (p, v) in AutoPrefixer.prefix d.Property d.Value do
+                                    sb.AppendLine(sprintf "  %s: %s%s;" p v imp) |> ignore
                     elif fullSel.StartsWith("@") then
                         sb.AppendLine(sprintf "%s {" fullSel) |> ignore
                         for d in allDecls do
@@ -331,13 +349,7 @@ module Compiler =
                         emitNodes otherNodes ""
                         sb.AppendLine("}") |> ignore
                     else
-                        if allDecls.Length > 0 then
-                            sb.AppendLine(sprintf "%s {" fullSel) |> ignore
-                            for d in allDecls do
-                                let imp = if d.Important then " !important" else ""
-                                for (p, v) in AutoPrefixer.prefix d.Property d.Value do
-                                    sb.AppendLine(sprintf "  %s: %s%s;" p v imp) |> ignore
-                            sb.AppendLine("}") |> ignore
+                        emitDecls fullSel allDecls
                         emitNodes nestedRules fullSel
                         emitNodes otherNodes fullSel
 

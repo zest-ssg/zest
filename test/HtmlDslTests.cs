@@ -246,8 +246,8 @@ static class HtmlDslTests
                     h1 [ text "Hello World" ]
                 ]
             ];
-            var html = Renderer.render node;
-            return html.Contains("<html>") && html.Contains("<head>") && html.Contains("<title>Test Page</title>") && html.Contains("<body>") && html.Contains("<h1>Hello World</h1>");
+            var rendered = Renderer.render node;
+            return rendered.Contains("<html>") && rendered.Contains("<head>") && rendered.Contains("<title>Test Page</title>") && rendered.Contains("<body>") && rendered.Contains("<h1>Hello World</h1>");
         });
 
         Console.WriteLine($"\n=== HTML DSL Results: {Passed} passed, {Failed} failed ===");
