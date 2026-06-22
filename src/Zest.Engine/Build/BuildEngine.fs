@@ -20,6 +20,8 @@ module BuildEngine =
         Path.GetFullPath(Path.Combine(root, dir.ToString().TrimStart('.', '\\', '/')))
 
     let private isExcluded (contentDir: string) (filePath: string) =
+        // Exclude directories starting with _ or . (e.g. _layouts, _includes, _data, .git)
+        // Also exclude the output directory itself to prevent infinite loops
         Path.GetRelativePath(contentDir, filePath)
             .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
         |> Array.exists (fun p -> p.StartsWith("_") || p.StartsWith("."))
@@ -173,6 +175,17 @@ module BuildEngine =
                 n <- n + 1
             n
 
+    /// Resolve the effective content directory based on RootDir configuration.
+    /// - RootDir = "." or "" → project root is the content directory
+    /// - RootDir = "content" (default) → use ./content subdirectory
+    /// - RootDir = custom path → use that path
+    let private resolveEffectiveContentDir (root: string) (config: SiteConfig) =
+        let rootDir = config.RootDir.Trim()
+        if String.IsNullOrEmpty rootDir || rootDir = "." then
+            root  // Project root itself is the content directory
+        else
+            resolvePath root rootDir
+
     let execute (config: SiteConfig) : BuildResult =
         let sw     = Stopwatch.StartNew()
         let errors = ConcurrentBag<string>()
@@ -182,7 +195,7 @@ module BuildEngine =
         try
             ScriptRunner.resetSession()
             let root       = Directory.GetCurrentDirectory()
-            let contentDir = resolvePath root config.ContentDir
+            let contentDir = resolveEffectiveContentDir root config
             let outputDir  = resolvePath root config.OutputDir
             let layoutsDir = resolvePath root config.LayoutsDir
             let dataDir    = resolvePath root config.DataDir
@@ -291,7 +304,7 @@ module BuildEngine =
                         try
                             let text = File.ReadAllText(f)
                             let ext = Path.GetExtension(f).ToLowerInvariant()
-                            let contentDir = resolvePath root config.ContentDir
+                            let contentDir = resolveEffectiveContentDir root config
                             let relPath, rawSlug =
                                 let rel = Path.GetRelativePath(contentDir, f)
                                 let fn = Path.GetFileNameWithoutExtension(f)

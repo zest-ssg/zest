@@ -1,4 +1,5 @@
 using Zest.App.Controllers;
+using Zest.Infra.Services;
 
 /*
  * ZEST = Zenith Efficient Static Toolkit (recursive acronym)
@@ -40,9 +41,7 @@ public static class Program
         }
         catch (Exception ex)
         {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.Error.WriteLine($"[Zest] Fatal error: {ex.Message}");
-            Console.ResetColor();
+            Logger.Error("Program", $"Fatal error: {ex.Message}", ex);
             return 1;
         }
     }

@@ -31,10 +31,13 @@ module ScriptEvaluator =
             Markdown.toHtml (String.concat "\n" lines)
 
     /// 构建内容目录的绝对路径。
+    /// 使用 EffectiveContentDir 支持根目录管理机制：
+    /// - RootDir = "." → 项目根目录即内容目录
+    /// - RootDir = "content" → 使用 content 子目录
     let private resolveContentDir (config: SiteConfig) =
         Path.GetFullPath(
             Path.Combine(Directory.GetCurrentDirectory(),
-                         config.ContentDir.TrimStart('.', '\\', '/')))
+                         config.EffectiveContentDir.TrimStart('.', '\\', '/')))
 
     /// 从文件路径计算 slug。
     let private computeSlug (filePath: string) (contentDir: string) =

@@ -47,7 +47,7 @@ public class BuildService
     public static void StartWatcher(SiteConfig config)
     {
         var contentDir = Path.GetFullPath(Path.Combine(
-            Directory.GetCurrentDirectory(), config.ContentDir.TrimStart('.', '\\', '/')));
+            Directory.GetCurrentDirectory(), config.EffectiveContentDir.TrimStart('.', '\\', '/')));
 
         Console.WriteLine($"[Zest] Watching for changes in '{contentDir}'...");
         Console.WriteLine("       Press Ctrl+C to stop.");

@@ -53,6 +53,11 @@ module Evaluator =
                 // Effects
                 "bxsh","box-shadow";   "bxz","box-sizing";     "tr", "transition"
                 "trf", "transform";    "trfo","transform-origin";"anim","animation"
+                "anim-name","animation-name";"anim-duration","animation-duration"
+                "anim-delay","animation-delay";"anim-timing-function","animation-timing-function"
+                "anim-iteration-count","animation-iteration-count"
+                "anim-direction","animation-direction";"anim-fill-mode","animation-fill-mode"
+                "anim-play-state","animation-play-state"
                 "bdra","border-radius"
                 // Misc
                 "us",  "user-select";  "pe", "pointer-events"; "cl", "clear"
@@ -435,29 +440,39 @@ module Evaluator =
     /// Resolve bare let-bound variable names (F#-style) in values.
     /// Only resolves names that exist in the vars dictionary (non-$-prefixed).
     let resolveBareVars (value: string) (vars: IDictionary<string, string>) : string =
-        // Only replace if the entire value is a known bare variable, or if it's
-        // a token in a space-separated list (e.g. "system-ui, fontSans, sans-serif" → 
-        // "system-ui, 'Segoe UI', Roboto, sans-serif")
-        // This avoids replacing CSS keywords like "red", "auto", "none", etc.
-        let words = value.Split([|' '; ','|], StringSplitOptions.RemoveEmptyEntries)
-        let mutable changed = false
-        let resolved =
-            words |> Array.map (fun w ->
+        // Resolve bare variable references in a value string.
+        // Strategy: use regex to find word-boundary tokens and replace only known variables.
+        // This avoids replacing CSS keywords and preserves the original formatting.
+        let cssKeywords = set ["none"; "auto"; "inherit"; "initial"; "unset"; "normal";
+                               "bold"; "italic"; "left"; "right"; "center"; "top"; "bottom";
+                               "solid"; "dashed"; "dotted"; "double"; "transparent";
+                               "block"; "inline"; "flex"; "grid"; "hidden"; "visible";
+                               "static"; "relative"; "absolute"; "fixed"; "sticky";
+                               "nowrap"; "wrap"; "baseline"; "stretch"; "cover"; "contain";
+                               "row"; "column"; "pointer"; "default"; "separate"; "collapse";
+                               "scroll"; "clip"; "ellipsis"; "break-word"; "keep-all";
+                               "pre"; "pre-wrap"; "pre-line"; "uppercase"; "lowercase"; "capitalize";
+                               "disc"; "circle"; "square"; "decimal"; "inside"; "outside";
+                               "underline"; "overline"; "line-through"; "blink";
+                               "justify"; "space-between"; "space-around"; "space-evenly";
+                               "flex-start"; "flex-end"; "start"; "end";
+                               "border-box"; "content-box"; "padding-box"; "margin-box";
+                               "repeat"; "repeat-x"; "repeat-y"; "no-repeat"; "round"; "space";
+                               "local"; "fixed"; "ease"; "ease-in"; "ease-out"; "ease-in-out"; "linear";
+                               "infinite"; "alternate"; "reverse"; "forwards"; "backwards"; "both";
+                               "multiply"; "screen"; "overlay"; "darken"; "lighten";
+                               "isolate"; "mixed"; "plaintext"; "ltr"; "rtl";
+                               "flat"; "preserve-3d"; "open"; "closed"]
+        // Match word-boundary tokens that could be variable names
+        // Only match if not preceded by $ (already a $-style reference)
+        // and not preceded by - (part of a CSS property like margin-top)
+        Regex.Replace(value, @"(?<![.\$a-zA-Z0-9_-])([a-zA-Z_][\w]*)(?![a-zA-Z0-9_])", fun m ->
+            let w = m.Groups.[1].Value
+            if cssKeywords.Contains(w.ToLower()) then m.Value
+            else
                 match vars.TryGetValue(w) with
-                | true, vv when not (w.StartsWith("$")) ->
-                    // Don't replace CSS keywords
-                    let cssKeywords = set ["none"; "auto"; "inherit"; "initial"; "unset"; "normal";
-                                           "bold"; "italic"; "left"; "right"; "center"; "top"; "bottom";
-                                           "solid"; "dashed"; "dotted"; "double"; "transparent";
-                                           "block"; "inline"; "flex"; "grid"; "hidden"; "visible";
-                                           "static"; "relative"; "absolute"; "fixed"; "sticky";
-                                           "nowrap"; "wrap"; "baseline"; "stretch"; "cover"; "contain"]
-                    if not (cssKeywords.Contains(w.ToLower())) then
-                        changed <- true
-                        vv
-                    else w
-                | _ -> w)
-        if changed then String.Join(", ", resolved) else value
+                | true, vv -> vv
+                | _ -> m.Value)
 
     // ── Built-in utility functions ──────────────────────────
 
@@ -544,16 +559,71 @@ module Evaluator =
             result
 
     // ── Full value resolution pipeline ───────────────────────
+    //
+    // Design: A single, well-ordered pipeline that handles all value transformations.
+    // Order matters:
+    //   1. Resolve pipes (|>) - restructure the expression first
+    //   2. Resolve $name references (SCSS-style) - replace $primary with its value
+    //   3. Resolve bare name references (F#-style let bindings) - replace primary with its value
+    //   4. Evaluate math expressions - evaluate arithmetic
+    //   5. Resolve color functions (alpha, lighten, etc.) - transform colors
+    //   6. Resolve built-in functions (unit, etc.) - transform values
+    //   7. Expand unit shorthands (2r → 2rem)
+    //   8. Repeat 2-7 a few times to handle chained references
+    //
+    // This ensures that no matter where resolveValue is called from, the result is consistent.
+
+    /// Resolve F#-style pipe operator: fn1(x) |> fn2(y) → fn2(fn1(x), y)
+    let private resolvePipes (v: string) : string =
+        if not (v.Contains("|>")) then v
+        else
+            let parts = v.Split([|"|>"|], StringSplitOptions.None) |> Array.map (fun s -> s.Trim())
+            if parts.Length < 2 then v
+            else
+                let mutable acc = parts.[0]
+                for i in 1..parts.Length-1 do
+                    let next = parts.[i]
+                    let fnMatch = Regex.Match(next, @"^(\w+)\((.*)\)$")
+                    if fnMatch.Success then
+                        let fnName = fnMatch.Groups.[1].Value
+                        let fnArgs = fnMatch.Groups.[2].Value
+                        if String.IsNullOrEmpty fnArgs then
+                            acc <- sprintf "%s(%s)" fnName acc
+                        else
+                            acc <- sprintf "%s(%s, %s)" fnName acc fnArgs
+                    else
+                        acc <- next + " " + acc
+                acc
+
+    /// Resolve $name references (SCSS-style) - e.g. $primary → #3b82f6
+    let private resolveDollarRefs (v: string) (vars: IDictionary<string, string>) : string =
+        if not (v.Contains('$')) then v
+        else
+            Regex.Replace(v, @"\$([\w-]+)", fun m ->
+                match vars.TryGetValue(m.Groups.[1].Value) with
+                | true, vv -> vv
+                | _ -> m.Value)
+
+    /// Single pass of value transformations (variables → math → color → builtin → shorthand)
+    let private resolvePass (v: string) (vars: IDictionary<string, string>) : string =
+        v
+        |> fun x -> resolveDollarRefs x vars
+        |> fun x -> resolveBareVars x vars
+        |> fun x -> MathExpr.eval x vars
+        |> resolvePipes
+        |> ColorFunctions.resolve
+        |> fun x -> BuiltinFunctions.resolve x vars
+        |> ValueShorthand.resolve
 
     /// Resolve a complete value: variables → math → color functions → builtins → unit shorthands
     let resolveValue (value: string) (vars: IDictionary<string, string>) : string =
-        value
-        |> fun v -> MathExpr.eval v vars
-        |> ColorFunctions.resolve
-        |> fun v -> BuiltinFunctions.resolve v vars
-        |> ValueShorthand.resolve
-        // Resolve bare let-bound variable references (F#-style: e.g. fontSans, space4)
-        |> fun v -> resolveBareVars v vars
-        // Re-evaluate math after bare var substitution (e.g. space8 → 0.25r * 8 → 2rem)
-        |> fun v -> MathExpr.eval v vars
-        |> fun v -> ValueShorthand.resolve v
+        // First pass: handle pipes first, then full resolution
+        let initial = resolvePipes value
+        // Multiple passes to handle chained variable references
+        // (e.g. $a → $b → #fff, or bare var that contains another bare var)
+        let mutable result = initial
+        for _ in 0..3 do
+            let next = resolvePass result vars
+            if next = result then result <- next
+            else result <- next
+        result

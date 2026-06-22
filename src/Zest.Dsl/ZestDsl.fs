@@ -209,3 +209,115 @@ module Dsl =
         | _ -> dateStr
     let now () = DateTime.Now.ToString("yyyy-MM-dd")
     let current_year () = DateTime.Now.Year.ToString()
+
+    // ============================================================
+    // Enhanced DSL — New control flow, data types, and expressions
+    // ============================================================
+
+    // ---- Control flow helpers ----
+    /// Switch expression: match a value against cases, return first match.
+    let switch_str (value: string) (cases: (string * string) list) (defaultCase: string) =
+        cases |> List.tryFind (fun (v, _) -> v = value)
+        |> Option.map snd |> Option.defaultValue defaultCase
+
+    /// Cond expression: evaluate conditions in order, return first match.
+    let cond_str (cases: (bool * string) list) (fallback: string) =
+        cases |> List.tryFind fst |> Option.map snd |> Option.defaultValue fallback
+
+    /// Chain of conditions with fallback.
+    let chain_cond (conditions: (bool * string) list) (fallback: string) =
+        conditions |> List.tryFind fst |> Option.map snd |> Option.defaultValue fallback
+
+    // ---- String interpolation ----
+    /// String interpolation: interp "Hello {name}" ["name", "World"]
+    let interp (template: string) (vars: (string * string) list) =
+        let dict = dict vars
+        Text.RegularExpressions.Regex.Replace(template, @"\{(\w+)\}", fun m ->
+            match dict.TryGetValue(m.Groups.[1].Value) with
+            | true, v -> v | _ -> m.Value)
+
+    /// Safe string interpolation with HTML encoding.
+    let interp_safe (template: string) (vars: (string * string) list) =
+        let dict = dict vars
+        Text.RegularExpressions.Regex.Replace(template, @"\{(\w+)\}", fun m ->
+            match dict.TryGetValue(m.Groups.[1].Value) with
+            | true, v -> htmlEncode v | _ -> m.Value)
+
+    // ---- Conditional expression ----
+    let choose (cond: bool) (ifTrue: string) (ifFalse: string) =
+        if cond then ifTrue else ifFalse
+
+    // ---- Collection helpers ----
+    /// Take first N items from a list.
+    let take_n (n: int) (items: string list) = items |> List.truncate n
+
+    /// Skip first N items from a list.
+    let skip_n (n: int) (items: string list) = items |> List.skip (min n items.Length)
+
+    /// Filter items by a predicate.
+    let filter_by (pred: string -> bool) (items: string list) = items |> List.filter pred
+
+    /// Map items with a function.
+    let map_by (f: string -> string) (items: string list) = items |> List.map f
+
+    /// Group items by a key function.
+    let group_by (keyFn: string -> string) (items: string list) =
+        items |> List.groupBy keyFn |> List.map (fun (k, g) -> k, List.ofSeq g)
+
+    /// Chunk items into groups of N.
+    let chunk (size: int) (items: string list) =
+        items |> List.chunkBySize size
+
+    /// Intersperse a separator between items.
+    let intersperse_str (sep: string) (items: string list) =
+        items |> List.collect (fun x -> [sep; x]) |> List.tail
+
+    /// Zip two lists together.
+    let zip_lists (a: string list) (b: string list) = List.zip a b
+
+    // ---- Data type helpers ----
+    /// Create a key-value pair.
+    let kv (k: string) (v: obj) = (k, v)
+
+    /// Create a list of key-value pairs from a list of tuples.
+    let kv_list (pairs: (string * obj) list) = pairs
+
+    /// Get a value from a list of key-value pairs.
+    let kv_get (key: string) (pairs: (string * obj) list) =
+        pairs |> List.tryFind (fun (k, _) -> k = key) |> Option.map snd
+
+    // ---- Math helpers ----
+    let inline sum (items: ^a list) = items |> List.sum
+    let inline avg (items: ^a list) = if items.IsEmpty then LanguagePrimitives.GenericZero else (List.sum items) / (LanguagePrimitives.GenericOne * items.Length)
+    let inline min_val (items: ^a list) = items |> List.min
+    let inline max_val (items: ^a list) = items |> List.max
+
+    // ---- Date helpers (extended) ----
+    let format_date_iso (dateStr: string) =
+        match DateTime.TryParse(dateStr) with
+        | true, d -> d.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        | _ -> dateStr
+    let format_date_rfc (dateStr: string) =
+        match DateTime.TryParse(dateStr) with
+        | true, d -> d.ToString("ddd, dd MMM yyyy HH:mm:ss GMT")
+        | _ -> dateStr
+    let date_add_days (dateStr: string) (days: int) =
+        match DateTime.TryParse(dateStr) with
+        | true, d -> d.AddDays(float days).ToString("yyyy-MM-dd")
+        | _ -> dateStr
+    let date_diff (date1: string) (date2: string) =
+        match DateTime.TryParse(date1), DateTime.TryParse(date2) with
+        | (true, d1), (true, d2) -> int (d2 - d1).TotalDays
+        | _ -> 0
+
+    // ---- JSON helpers ----
+    let json_encode (obj: obj) = JsonSerializer.Serialize(obj)
+    let json_decode (json: string) = JsonDocument.Parse(json).RootElement
+
+    // ---- URL helpers ----
+    let url_encode (s: string) = Uri.EscapeDataString(s)
+    let url_decode (s: string) = Uri.UnescapeDataString(s)
+    let url_join (base_url: string) (path: string) =
+        let b = base_url.TrimEnd('/')
+        let p = path.TrimStart('/')
+        b + "/" + p

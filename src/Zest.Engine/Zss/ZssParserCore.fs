@@ -94,19 +94,61 @@ module ParserCore =
 
     /// Resolve variable references in a value string.
     /// Supports both $name (SCSS-style) and bare name (F#-style) references.
-    /// For bare names, resolves if the name is a known variable in any context
-    /// (math expressions, function args, etc.).
+    /// For bare names, only resolves if the name is a known variable AND is not
+    /// a CSS keyword/property name (to avoid corrupting CSS values).
     let resolveVarRefs (rawVal: string) (d: IDictionary<string, string>) : string =
-        // First resolve $name references (SCSS-style)
+        // First resolve $name references (SCSS-style) — always safe
         let v1 = Regex.Replace(rawVal, @"\$([\w-]+)", fun mm ->
             match d.TryGetValue(mm.Groups.[1].Value) with true, vv -> vv | _ -> mm.Value)
-        // Then resolve bare variable names (F#-style)
-        // Only replace if the name is a known variable
-        Regex.Replace(v1, @"(?<![a-zA-Z0-9#])([\w-]+)(?![a-zA-Z0-9])", fun mm ->
+        // Then resolve bare variable names (F#-style) — but only if:
+        // 1. The name is a known variable in the dictionary
+        // 2. The name is NOT a CSS property name or keyword
+        // 3. The name is not preceded by a hyphen (part of a property name like margin-top)
+        let cssKeywords = set [
+            "none"; "auto"; "inherit"; "initial"; "unset"; "transparent"; "currentColor"
+            "block"; "inline"; "flex"; "grid"; "table"; "contents"; "list-item"
+            "row"; "column"; "row-reverse"; "column-reverse"; "wrap"; "nowrap"
+            "center"; "left"; "right"; "top"; "bottom"; "stretch"; "baseline"
+            "space-between"; "space-around"; "space-evenly"; "flex-start"; "flex-end"
+            "absolute"; "relative"; "fixed"; "sticky"; "static"
+            "hidden"; "visible"; "scroll"; "clip"
+            "bold"; "normal"; "italic"; "underline"; "overline"; "line-through"
+            "uppercase"; "lowercase"; "capitalize"; "full-width"
+            "solid"; "dashed"; "dotted"; "double"; "groove"; "ridge"; "inset"; "outset"
+            "cover"; "contain"; "fill"; "scale-down"
+            "ease"; "ease-in"; "ease-out"; "ease-in-out"; "linear"; "step-start"; "step-end"
+            "forwards"; "backwards"; "both"; "infinite"; "alternate"; "reverse"
+            "border-box"; "content-box"; "padding-box"; "margin-box"
+            "multiply"; "screen"; "overlay"; "darken"; "lighten"; "color-dodge"; "color-burn"
+            "hard-light"; "soft-light"; "difference"; "exclusion"; "hue"; "saturation"
+            "color"; "luminosity"; "normal"
+            "repeat"; "repeat-x"; "repeat-y"; "no-repeat"; "space"; "round"
+            "local"; "fixed"; "content-box"; "border-box"; "padding-box"
+            "ellipsis"; "clip"; "break-word"; "keep-all"
+            "pre"; "pre-wrap"; "pre-line"; "nowrap"
+            "disc"; "circle"; "square"; "decimal"; "decimal-leading-zero"
+            "lower-roman"; "upper-roman"; "lower-alpha"; "upper-alpha"
+            "ltr"; "rtl"; "horizontal-tb"; "vertical-rl"; "vertical-lr"
+            "flat"; "preserve-3d"
+            "open-quote"; "close-quote"; "no-open-quote"; "no-close-quote"
+            "show"; "hide"
+            "collapse"; "separate"
+            "avoid"; "always"; "auto"; "all"
+            "text"; "all"; "none"; "punctuation"
+            "strict"; "loose"; "anywhere"
+            "balance"; "auto"; "pretty";
+            "isolate"; "isolate-override"; "plaintext"; "mixed"; "bidi-override";
+            "sideways"; "sideways-lr"; "sideways-rl"; "upright"; "use-glyph-orientation"
+            "optimizeSpeed"; "optimizeQuality"; "crisp-edges"; "geometricPrecision"
+            "pixelated"; "smooth"; "high-quality"; "crispEdges"
+        ]
+        Regex.Replace(v1, @"(?<![a-zA-Z0-9#-])([\w-]+)(?![a-zA-Z0-9])", fun mm ->
             let name = mm.Groups.[1].Value
-            match d.TryGetValue(name) with
-            | true, vv -> vv
-            | _ -> mm.Value)
+            if cssKeywords.Contains name then mm.Value
+            else
+                match d.TryGetValue(name) with
+                | true, vv -> vv
+                | _ -> mm.Value)
 
     let extractVars (lines: string seq) =
         let d = Dictionary<string, string>()
@@ -118,9 +160,7 @@ module ParserCore =
             if m.Success then
                 let isDefault = m.Groups.[3].Success
                 let rawVal = m.Groups.[2].Value.Trim()
-                // Resolve pipes first, then variables
-                let pipedVal = resolvePipes rawVal
-                let v = resolveVarRefs pipedVal d
+                let v = Evaluator.resolveValue rawVal d
                 if isDefault then
                     if not (d.ContainsKey(m.Groups.[1].Value)) then
                         d.[m.Groups.[1].Value] <- v
@@ -129,9 +169,7 @@ module ParserCore =
             elif lm.Success then
                 let name = lm.Groups.[1].Value
                 let rawVal = lm.Groups.[2].Value.Trim()
-                // Resolve pipes first, then variables
-                let pipedVal = resolvePipes rawVal
-                let v = resolveVarRefs pipedVal d
+                let v = Evaluator.resolveValue rawVal d
                 d.[name] <- v
         d
 
@@ -145,12 +183,37 @@ module ParserCore =
         if String.IsNullOrEmpty t || t.StartsWith("//") then None
         else
             // Try colon first, then equals (F#/C# style)
+            // But be careful with colons inside values: url(http://...), calc(...), etc.
             let colonIdx = t.IndexOf(':')
             let eqIdx    = t.IndexOf('=')
+
+            // Find the separator index, preferring the first separator that looks like
+            // a property-value separator (not inside a function call)
+            let findSepIdx() =
+                let mutable bestIdx = -1
+                let mutable depth = 0
+                let mutable i = 0
+                while i < t.Length do
+                    let c = t.[i]
+                    if c = '(' then depth <- depth + 1
+                    elif c = ')' then depth <- max 0 (depth - 1)
+                    elif depth = 0 then
+                        if c = ':' && i > 0 then
+                            // Check if this colon is a property separator
+                            // It should be preceded by a word character (property name)
+                            // and not be part of a pseudo-selector like :hover
+                            let before = if i > 0 then t.[i-1] else ' '
+                            if Char.IsLetterOrDigit before || before = '-' || before = '_' then
+                                if bestIdx < 0 then bestIdx <- i
+                        elif c = '=' && i > 0 && t.[i-1] <> '!' && t.[i-1] <> '<' && t.[i-1] <> '>' then
+                            if bestIdx < 0 then bestIdx <- i
+                    i <- i + 1
+                bestIdx
+
             let sepIdx =
                 if colonIdx > 0 && (eqIdx <= 0 || colonIdx < eqIdx) then colonIdx
                 elif eqIdx > 0 then eqIdx
-                else -1
+                else findSepIdx()
 
             if sepIdx <= 0 then None
             else
@@ -158,9 +221,11 @@ module ParserCore =
                 let rest = t.Substring(sepIdx + 1).Trim()
                 let important = rest.EndsWith("!important")
                 let rawVal = (if important then rest.Substring(0, rest.Length - 10) else rest).Trim()
-                // Handle F# pipe operator: fn1(x) |> fn2(y) → fn2(fn1(x), y)
-                let pipedVal = resolvePipes rawVal
-                let value = Evaluator.resolveValue pipedVal vars
+                // Pre-resolve $name references first to ensure they're replaced
+                // (in case the caller passed a vars dict that doesn't contain them)
+                let preResolved = resolveVars rawVal vars
+                // Let resolveValue handle the rest (pipes, math, color functions, builtins, shorthands)
+                let value = Evaluator.resolveValue preResolved vars
                 // Handle nested property shorthand: margin.top → margin-top
                 let resolvedProp =
                     if prop.Contains(".") then

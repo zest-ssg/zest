@@ -107,6 +107,11 @@ type SiteConfig = {
     Title: string
     BaseUrl: string
     Description: string
+    /// Root directory for content discovery.
+    /// When set to "." or empty, uses the project root directly.
+    /// When not specified, defaults to "content" (implicit content directory).
+    /// This allows index.zest.fsx to be placed at the project root.
+    RootDir: string
     ContentDir: string
     OutputDir: string
     LayoutsDir: string
@@ -123,6 +128,10 @@ type SiteConfig = {
     // Performance
     EnableParallelBuild: bool
     EnableIncrementalBuild: bool
+    // Logging
+    LogLevel: string        // "Debug" | "Info" | "Warn" | "Error" | "Off"
+    LogToFile: bool         // Mirror logs to .zest/logs/zest.log
+    LogTimestamps: bool     // Include timestamps in console output
     // Taxonomies & navigation
     Taxonomies: TaxonomyConfig list
     Menus: IDictionary<string, MenuItem list>
@@ -135,11 +144,23 @@ with
     member this.WithDevServerPort(port: int) =
         { this with DevServerPort = port }
 
+    /// Resolve the effective content directory:
+    /// - If RootDir is "." or empty, content is the project root itself
+    /// - If RootDir is a specific path, use that as the content root
+    /// - Falls back to ContentDir for backward compatibility
+    member this.EffectiveContentDir =
+        let root = this.RootDir.Trim()
+        if System.String.IsNullOrEmpty root || root = "." then
+            "."  // Project root
+        else
+            root
+
 module SiteConfigDefaults =
     let create () =
         { Title = "My Zest Site"
           BaseUrl = "http://localhost:8080"
           Description = "A site built with Zest SSG"
+          RootDir = "content"  // Default: implicit content directory
           ContentDir = "./content"
           OutputDir = "./_site"
           LayoutsDir = "./_layouts"
@@ -155,6 +176,9 @@ module SiteConfigDefaults =
           SiteVersion = "1.0"
           EnableParallelBuild = true
           EnableIncrementalBuild = true
+          LogLevel = "Info"
+          LogToFile = false
+          LogTimestamps = true
           Taxonomies = [ { Name = "tag"; Plural = "tags" }; { Name = "category"; Plural = "categories" } ]
           Menus = dict []
           Author = ""

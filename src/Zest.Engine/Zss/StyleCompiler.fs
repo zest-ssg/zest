@@ -69,7 +69,7 @@ module Processor =
         // Step 4: Merge ASTs — builtins first, then user (so user overrides builtins)
         let mergedNodes = builtinNodes @ userNodes
 
-        let css = Compiler.compile mergedNodes
+        let css = Compiler.compile mergedNodes mergedVars
 
         // Report any parse errors
         let errors = Parser.getErrors()
