@@ -232,7 +232,7 @@ module ParserCore =
                         prop.Replace(".", "-")
                     else prop
                 let pos = { Line = lineNum; Col = sepIdx + 1 }
-                Some { Property = Evaluator.ShorthandMap.resolve resolvedProp; Value = value; Important = important; Pos = pos }
+                Some { Property = Evaluator.ShorthandMap.resolveWithValue resolvedProp value; Value = value; Important = important; Pos = pos }
 
     // ── Mode detection and indentation ──────────────────────
 

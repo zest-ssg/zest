@@ -283,8 +283,20 @@ module ParserIndent =
                         elif Regex.IsMatch(t, @"[>+~]") && not (t.Contains("calc(")) then
                             true
                         // Check for comma-separated selectors: ".a, .b"
+                        // Only if the comma appears BEFORE the first property separator
+                        // (`:` or `=`), so that values containing commas (e.g.
+                        // box-shadow with multiple shadows) aren't mistaken for
+                        // selector lists.
                         elif t.Contains(",") && (t.Contains(".") || t.Contains("#") || t.Contains("&")) then
-                            true
+                            let firstColon = t.IndexOf(':')
+                            let firstEq = t.IndexOf('=')
+                            let firstSep =
+                                if firstColon > 0 && (firstEq <= 0 || firstColon < firstEq) then firstColon
+                                elif firstEq > 0 then firstEq
+                                else -1
+                            let firstComma = t.IndexOf(',')
+                            // Comma must be before any separator
+                            firstComma > 0 && (firstSep < 0 || firstComma < firstSep)
                         // Check if it looks like a declaration: word: value or word = value
                         // But exclude pseudo-selectors like :hover, ::before
                         else

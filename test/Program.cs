@@ -136,6 +136,70 @@ nav
         TestFile("Full style.zss", @"d:\Project\Zest\docs\assets\css\style.zss",
             expectContains: new[]{ "body", ".site-nav", ".hero", ".feature-card" });
 
+        // ── 回归测试 (针对 docs/_site/assets/css/style.css 的 bug) ────────
+
+        // 16. mn-width 这种带连字符的 shorthand 必须解析为 min-width
+        Test("Regression: mn-width → min-width", @"
+.x
+  mn-width: 0
+", expectContains: new[] { "min-width: 0" });
+
+        // 17. letter-spacing: none 是非法 CSS,应转换为 normal
+        Test("Regression: ls: none → letter-spacing: normal", @"
+ul
+  ls: none
+", expectContains: new[] { "letter-spacing: normal" });
+
+        // 18. bdr: 3px solid ... 应当解析为 border,不是 border-radius
+        Test("Regression: bdr with style keyword → border", @"
+.x
+  bdr: 3px solid #ccc
+", expectContains: new[] { "border: 3px solid" });
+
+        // 19. bdr: 8px (无 style keyword) 应当解析为 border-radius
+        Test("Regression: bdr single value → border-radius", @"
+.x
+  bdr: 8px
+", expectContains: new[] { "border-radius: 8px" });
+
+        // 20. blc shorthand
+        Test("Regression: blc shorthand", @"
+.x
+  blc: #f00
+", expectContains: new[] { "border-left-color: #f00" });
+
+        // 21. utility class 中的 $var 必须使用 user 定义的变量
+        Test("Regression: utility $var resolves from user scope", @"
+$primary: #6c63ff
+@use ""zest:utilities""
+", expectContains: new[] { "color: #6c63ff", "background-color: #6c63ff" });
+
+        // 22. @apply 内联展开
+        Test("Regression: @apply inline expansion", @"
+@use ""zest:utilities""
+.x
+  @apply d-flex ai-center
+", expectContains: new[] { "display: flex", "align-items: center" });
+
+        // 23. 嵌套在 rule 中的 @media 内部裸声明应继承 parent selector
+        Test("Regression: nested @media inherits parent", @"
+.docs-sidebar
+  pos: sticky
+  @media (max-width: 768px)
+    pos: relative
+", expectContains: new[] { ".docs-sidebar {", "@media (max-width: 768px) {", "position: relative" });
+
+        // 24. box-shadow 多值(逗号)不应被解析为 selector list
+        Test("Regression: comma in box-shadow value", @"
+.card
+  bxsh: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px 0 rgba(0,0,0,0.06)
+", expectContains: new[] { "box-shadow:", "rgba(0,0,0" });
+
+        // 25. 用户文档产物中不应再出现任何旧 bug 痕迹
+        TestFile("Regression: docs CSS has no invalid properties", @"d:\Project\Zest\docs\_site\assets\css\style.css",
+            expectContains: new[] { "min-width", "border-radius", "letter-spacing" },
+            expectMissing: new[] { "mn-width", " blc:", "border-radius:3px solid", "border-radius: 3px solid", "bgMuted", "$primary" });
+
         Console.WriteLine($"\n=== Results: {passed} passed, {failed} failed ===");
         if (failed > 0) Console.WriteLine("❌ Some tests failed!");
         else Console.WriteLine("✅ All tests passed!");
@@ -146,7 +210,7 @@ nav
         }
     }
 
-    static void Test(string name, string zssSource, string[] expectContains)
+    static void Test(string name, string zssSource, string[] expectContains, string[]? expectMissing = null)
     {
         try
         {
@@ -162,6 +226,20 @@ nav
                     return;
                 }
             }
+            if (expectMissing != null)
+            {
+                foreach (var banned in expectMissing)
+                {
+                    if (css.Contains(banned))
+                    {
+                        Console.WriteLine($"❌ FAIL: {name}");
+                        Console.WriteLine($"   Should NOT contain: '{banned}'");
+                        Console.WriteLine($"   Output:\n{css}\n");
+                        failed++;
+                        return;
+                    }
+                }
+            }
             Console.WriteLine($"✅ PASS: {name}");
             passed++;
         }
@@ -172,14 +250,48 @@ nav
         }
     }
 
-    static void TestFile(string name, string path, string[] expectContains)
+    static void TestFile(string name, string path, string[] expectContains, string[]? expectMissing = null)
     {
         if (!File.Exists(path))
         {
             Console.WriteLine($"⚠️  SKIP: {name} — file not found: {path}");
             return;
         }
-        var source = File.ReadAllText(path);
-        Test(name, source, expectContains);
+        // TestFile treats the file as a CSS artifact (not as ZSS source).
+        var css = File.ReadAllText(path);
+        try
+        {
+            foreach (var expected in expectContains)
+            {
+                if (!css.Contains(expected))
+                {
+                    Console.WriteLine($"❌ FAIL: {name}");
+                    Console.WriteLine($"   Expected to contain: '{expected}'");
+                    Console.WriteLine($"   Output (first 500 chars):\n{css.Substring(0, Math.Min(500, css.Length))}\n");
+                    failed++;
+                    return;
+                }
+            }
+            if (expectMissing != null)
+            {
+                foreach (var banned in expectMissing)
+                {
+                    if (css.Contains(banned))
+                    {
+                        Console.WriteLine($"❌ FAIL: {name}");
+                        Console.WriteLine($"   Should NOT contain: '{banned}'");
+                        failed++;
+                        return;
+                    }
+                }
+            }
+            Console.WriteLine($"✅ PASS: {name}");
+            passed++;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ FAIL: {name} — {ex.Message}");
+            failed++;
+        }
     }
 }

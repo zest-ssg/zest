@@ -245,6 +245,26 @@ module Compiler =
                     emitNodes body parent
                     sb.AppendLine("}") |> ignore
 
+                | AtRule(name, prms, body, _) when name = "@media" || name.StartsWith("@media") ->
+                    // Bare @media inside a rule → inherit parent selector
+                    let fullRule = if String.IsNullOrEmpty prms then "@media" else sprintf "@media %s" prms
+                    let (inlineDecls, nestedRules) =
+                        body |> List.fold (fun (accD, accR) n ->
+                            match n with
+                            | RuleSet("", ds, [], _) -> (accD @ ds, accR)
+                            | RuleSet _ -> (accD, accR @ [n])
+                            | _ -> (accD, accR @ [n])) ([], [])
+                    sb.AppendLine(sprintf "%s {" fullRule) |> ignore
+                    if not (String.IsNullOrEmpty parent) && inlineDecls.Length > 0 then
+                        sb.AppendLine(sprintf "  %s {" parent) |> ignore
+                        for d in inlineDecls do
+                            let imp = if d.Important then " !important" else ""
+                            for (p, v) in AutoPrefixer.prefix d.Property d.Value do
+                                sb.AppendLine(sprintf "    %s: %s%s;" p v imp) |> ignore
+                        sb.AppendLine("  }") |> ignore
+                    emitNodes nestedRules parent
+                    sb.AppendLine("}") |> ignore
+
                 | Import(path, _) ->
                     sb.AppendLine(sprintf "@import '%s';" path) |> ignore
 
@@ -270,14 +290,19 @@ module Compiler =
                         sb.AppendLine("}") |> ignore
 
                 | Apply(classes, _) ->
-                    // @apply: resolve utility classes and emit their declarations inline
+                    // @apply is processed within its enclosing RuleSet (the
+                    // RuleSet branch folds Apply decls into its `allDecls` so
+                    // that the applied declarations live INSIDE the rule's
+                    // selector block). When @apply appears at the top level
+                    // (no parent), emit its declarations bare.
                     for cls in classes do
                         let className = cls.Trim().TrimStart('.')
                         let utilDecls = UtilityRegistry.getDecls className
                         for d in utilDecls do
                             let imp = if d.Important then " !important" else ""
-                            for (p, v) in AutoPrefixer.prefix d.Property d.Value do
-                                sb.AppendLine(sprintf "  %s: %s%s;" p v imp) |> ignore
+                            let v = Evaluator.normalizePropertyValue d.Property d.Value
+                            for (p, v2) in AutoPrefixer.prefix d.Property v do
+                                sb.AppendLine(sprintf "  %s: %s%s;" p v2 imp) |> ignore
 
                 | Content _ -> ()  // handled in expandMixin
 
@@ -304,9 +329,25 @@ module Compiler =
                                 expandMixin name args content mixins vars
                             | _ -> [c])
 
+                    // First, fold any @apply nodes that appeared earlier in the
+                    // same parent scope into the resolved utility decls so that
+                    // they live INSIDE the rule's block. Collect them via a
+                    // continuation pass.
+                    let applyDecls =
+                        expandedChildren
+                        |> List.collect (function
+                            | Apply(classes, _) ->
+                                classes
+                                |> List.collect (fun cls ->
+                                    let className = cls.Trim().TrimStart('.')
+                                    UtilityRegistry.getDecls className)
+                            | _ -> [])
+
                     // Separate declarations from nested rules
                     let allDecls =
-                        decls @ (expandedChildren |> List.collect (function
+                        decls
+                        @ applyDecls
+                        @ (expandedChildren |> List.collect (function
                             | RuleSet("", ds, [], _) -> ds
                             | _ -> []))
 
@@ -318,6 +359,7 @@ module Compiler =
                     let otherNodes =
                         expandedChildren |> List.filter (function
                             | RuleSet _ -> false
+                            | Apply _ -> false
                             | _ -> true)
 
                     // Emit declarations with their selector
@@ -326,8 +368,9 @@ module Compiler =
                             sb.AppendLine(sprintf "%s {" sel) |> ignore
                             for d in ds do
                                 let imp = if d.Important then " !important" else ""
-                                for (p, v) in AutoPrefixer.prefix d.Property d.Value do
-                                    sb.AppendLine(sprintf "  %s: %s%s;" p v imp) |> ignore
+                                let v = Evaluator.normalizePropertyValue d.Property d.Value
+                                for (p, v2) in AutoPrefixer.prefix d.Property v do
+                                    sb.AppendLine(sprintf "  %s: %s%s;" p v2 imp) |> ignore
                             sb.AppendLine("}") |> ignore
 
                     if String.IsNullOrEmpty fullSel then
@@ -337,14 +380,16 @@ module Compiler =
                         else
                             for d in allDecls do
                                 let imp = if d.Important then " !important" else ""
-                                for (p, v) in AutoPrefixer.prefix d.Property d.Value do
-                                    sb.AppendLine(sprintf "  %s: %s%s;" p v imp) |> ignore
+                                let v = Evaluator.normalizePropertyValue d.Property d.Value
+                                for (p, v2) in AutoPrefixer.prefix d.Property v do
+                                    sb.AppendLine(sprintf "  %s: %s%s;" p v2 imp) |> ignore
                     elif fullSel.StartsWith("@") then
                         sb.AppendLine(sprintf "%s {" fullSel) |> ignore
                         for d in allDecls do
                             let imp = if d.Important then " !important" else ""
-                            for (p, v) in AutoPrefixer.prefix d.Property d.Value do
-                                sb.AppendLine(sprintf "  %s: %s%s;" p v imp) |> ignore
+                            let v = Evaluator.normalizePropertyValue d.Property d.Value
+                            for (p, v2) in AutoPrefixer.prefix d.Property v do
+                                sb.AppendLine(sprintf "    %s: %s%s;" p v2 imp) |> ignore
                         emitNodes nestedRules ""
                         emitNodes otherNodes ""
                         sb.AppendLine("}") |> ignore
