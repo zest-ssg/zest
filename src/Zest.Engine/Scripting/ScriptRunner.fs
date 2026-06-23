@@ -221,6 +221,10 @@ module ScriptRunner =
         psi.StandardOutputEncoding <- Encoding.UTF8
         psi.StandardErrorEncoding  <- Encoding.UTF8
         psi.CreateNoWindow         <- true
+        // Set env vars to speed up .NET runtime startup
+        psi.EnvironmentVariables.["DOTNET_System_GlobalizationInvariant"] <- "1"
+        psi.EnvironmentVariables.["DOTNET_TieredPGO"] <- "0"
+        psi.EnvironmentVariables.["DOTNET_ReadyToRun"] <- "1"
         use proc = Process.Start(psi)
         // IMPORTANT: read stdout/stderr asynchronously to avoid deadlock.
         // Synchronous ReadToEnd on one stream blocks the other, causing

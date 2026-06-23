@@ -41,7 +41,8 @@ module Evaluator =
                 "mh",  "max-height";   "mnw","min-width";      "mnh","min-height"
                 // Border
                 "bd",  "border";       "bdc","border-color";   "bds","border-style"
-                "bdw", "border-width"; "bdr","border-radius";  "bdrs","border-radius"
+                "bdw", "border-width"; "bdr","border-radius"; "bdrs","border-radius"
+                "bdra","border-radius"
                 "bdt", "border-top";  "bdrr","border-right";   "bdb","border-bottom"; "bdl","border-left"
                 "bl",  "border-left"; "br",  "border-right";   "bt",  "border-top";    "bb",  "border-bottom"
                 "bdtw","border-top-width";"bdrw","border-right-width"
@@ -50,6 +51,7 @@ module Evaluator =
                 "bdbs","border-bottom-style";"bdls","border-left-style"
                 "bdtt","border-top-color";"bdrc","border-right-color"
                 "bdbc","border-bottom-color";"bdlc","border-left-color"
+                "blc", "border-left-color";"brc","border-right-color";"btc","border-top-color";"bbc","border-bottom-color"
                 // Effects
                 "bxsh","box-shadow";   "bxz","box-sizing";     "tr", "transition"
                 "trf", "transform";    "trfo","transform-origin";"anim","animation"
@@ -76,10 +78,66 @@ module Evaluator =
                 "cps", "caption-side";  "ets","empty-cells"
             ]
 
+        /// Heuristic: does this value look like a CSS `border` shorthand value
+        /// (width + style + color, e.g. "1px solid #ccc") rather than a
+        /// single-length `border-radius` value?
+        let private isBorderStyleValue (value: string) : bool =
+            if String.IsNullOrEmpty value then false
+            else
+                let v = value.Trim().ToLowerInvariant()
+                let styleKeywords = [ "solid"; "dashed"; "dotted"; "double"; "groove"
+                                      "ridge"; "inset"; "outset"; "hidden"; "none" ]
+                styleKeywords |> List.exists v.Contains
+
+        /// Resolve a shorthand property to its full CSS property name.
+        /// When the value contains border-style keywords (e.g. "solid", "dashed")
+        /// or multiple space-separated values, the ambiguous `bdr` shortcut is
+        /// resolved to `border` (instead of the default `border-radius`).
+        /// Hyphens in the property name are stripped before lookup so that
+        /// `mn-width` is treated the same as `mnw`.
+        let private tryLookup (key: string) : string option =
+            // First try the key as-is, then progressively try every contiguous
+            // subsequence of the original key (in order), so that `mn-width`
+            // matches `mnw` (and any other registered abbreviation that is a
+            // contiguous sub-string of the stripped property name).
+            let n = key.Length
+            let rec trySubseqs (start: int) (endExclusive: int) =
+                if endExclusive <= start then None
+                elif map.ContainsKey (key.Substring(start, endExclusive - start)) then
+                    Some (map.[key.Substring(start, endExclusive - start)])
+                else
+                    // Try shrinking end first, then advancing start
+                    let shrunk = trySubseqs start (endExclusive - 1)
+                    if shrunk.IsSome then shrunk
+                    else trySubseqs (start + 1) endExclusive
+            trySubseqs 0 n
+
+        let resolveWithValue (prop: string) (value: string) : string =
+            let lookupKey = prop.Replace("-", "")
+            // Fast path: exact match
+            match map.TryGetValue(lookupKey) with
+            | true, v ->
+                if lookupKey = "bdr" && isBorderStyleValue value then "border" else v
+            | false, _ ->
+                // Sliding window: try longest substrings first (by decreasing length)
+                // This finds the longest match without O(n²) full scan
+                let n = lookupKey.Length
+                let mutable result = prop  // fallback: return original property
+                let mutable found = false
+                let mutable len = n
+                while len > 0 && not found do
+                    for start in 0 .. n - len do
+                        let sub = lookupKey.Substring(start, len)
+                        match map.TryGetValue sub with
+                        | true, v ->
+                            result <- (if sub = "bdr" && isBorderStyleValue value then "border" else v)
+                            found <- true
+                        | false, _ -> ()
+                    len <- len - 1
+                result
+
         let resolve (prop: string) : string =
-            match map.TryGetValue prop with
-            | true, v -> v
-            | _       -> prop
+            resolveWithValue prop ""
 
     // ── Value unit shorthands ───────────────────────────────
 
@@ -318,6 +376,10 @@ module Evaluator =
             | LParen | RParen
             | Var of string
 
+        // Cached regex — created once, reused across all calls
+        let private mathPattern = Regex(@"[\d.]+\w*\s*[+\-*/]\s*[\d.]+\w*", RegexOptions.Compiled)
+        let private dollarVarPattern = Regex(@"\$([\w-]+)", RegexOptions.Compiled)
+
         let private tokenize (s: string) : Token list =
             let tokens = ResizeArray<Token>()
             let i = ref 0
@@ -368,7 +430,7 @@ module Evaluator =
         /// For * and /, only the first operand's unit is kept (CSS-like behavior).
         let eval (expr: string) (vars: IDictionary<string, string>) : string =
             // First resolve variables
-            let resolved = Regex.Replace(expr, @"\$([\w-]+)", fun m ->
+            let resolved = dollarVarPattern.Replace(expr, fun m ->
                 match vars.TryGetValue(m.Groups.[1].Value) with
                 | true, v -> v | _ -> m.Value)
 
@@ -380,7 +442,6 @@ module Evaluator =
 
             // Simple heuristic: only evaluate if there are math operators and numbers
             // Match numbers with optional units (e.g., 16px, 0.5r, 100%)
-            let mathPattern = Regex(@"[\d.]+\w*\s*[+\-*/]\s*[\d.]+\w*", RegexOptions.Compiled)
             if not (mathPattern.IsMatch resolved) then resolved
             else
                 let tokens = tokenize resolved
@@ -439,34 +500,34 @@ module Evaluator =
 
     /// Resolve bare let-bound variable names (F#-style) in values.
     /// Only resolves names that exist in the vars dictionary (non-$-prefixed).
+    // ── Cached regex and data for resolveBareVars ──
+    let private bareVarRe = Regex(@"(?<![.\$a-zA-Z0-9_-])([a-zA-Z_][\w]*)(?![a-zA-Z0-9_-])", RegexOptions.Compiled)
+    let private cssKeywords = set ["none"; "auto"; "inherit"; "initial"; "unset"; "normal";
+                           "bold"; "italic"; "left"; "right"; "center"; "top"; "bottom";
+                           "solid"; "dashed"; "dotted"; "double"; "transparent";
+                           "block"; "inline"; "flex"; "grid"; "hidden"; "visible";
+                           "static"; "relative"; "absolute"; "fixed"; "sticky";
+                           "nowrap"; "wrap"; "baseline"; "stretch"; "cover"; "contain";
+                           "row"; "column"; "pointer"; "default"; "separate"; "collapse";
+                           "scroll"; "clip"; "ellipsis"; "break-word"; "keep-all";
+                           "pre"; "pre-wrap"; "pre-line"; "uppercase"; "lowercase"; "capitalize";
+                           "disc"; "circle"; "square"; "decimal"; "inside"; "outside";
+                           "underline"; "overline"; "line-through"; "blink";
+                           "justify"; "space-between"; "space-around"; "space-evenly";
+                           "flex-start"; "flex-end"; "start"; "end";
+                           "border-box"; "content-box"; "padding-box"; "margin-box";
+                           "repeat"; "repeat-x"; "repeat-y"; "no-repeat"; "round"; "space";
+                           "local"; "fixed"; "ease"; "ease-in"; "ease-out"; "ease-in-out"; "linear";
+                           "infinite"; "alternate"; "reverse"; "forwards"; "backwards"; "both";
+                           "multiply"; "screen"; "overlay"; "darken"; "lighten";
+                           "isolate"; "mixed"; "plaintext"; "ltr"; "rtl";
+                           "flat"; "preserve-3d"; "open"; "closed"]
+
     let resolveBareVars (value: string) (vars: IDictionary<string, string>) : string =
         // Resolve bare variable references in a value string.
         // Strategy: use regex to find word-boundary tokens and replace only known variables.
         // This avoids replacing CSS keywords and preserves the original formatting.
-        let cssKeywords = set ["none"; "auto"; "inherit"; "initial"; "unset"; "normal";
-                               "bold"; "italic"; "left"; "right"; "center"; "top"; "bottom";
-                               "solid"; "dashed"; "dotted"; "double"; "transparent";
-                               "block"; "inline"; "flex"; "grid"; "hidden"; "visible";
-                               "static"; "relative"; "absolute"; "fixed"; "sticky";
-                               "nowrap"; "wrap"; "baseline"; "stretch"; "cover"; "contain";
-                               "row"; "column"; "pointer"; "default"; "separate"; "collapse";
-                               "scroll"; "clip"; "ellipsis"; "break-word"; "keep-all";
-                               "pre"; "pre-wrap"; "pre-line"; "uppercase"; "lowercase"; "capitalize";
-                               "disc"; "circle"; "square"; "decimal"; "inside"; "outside";
-                               "underline"; "overline"; "line-through"; "blink";
-                               "justify"; "space-between"; "space-around"; "space-evenly";
-                               "flex-start"; "flex-end"; "start"; "end";
-                               "border-box"; "content-box"; "padding-box"; "margin-box";
-                               "repeat"; "repeat-x"; "repeat-y"; "no-repeat"; "round"; "space";
-                               "local"; "fixed"; "ease"; "ease-in"; "ease-out"; "ease-in-out"; "linear";
-                               "infinite"; "alternate"; "reverse"; "forwards"; "backwards"; "both";
-                               "multiply"; "screen"; "overlay"; "darken"; "lighten";
-                               "isolate"; "mixed"; "plaintext"; "ltr"; "rtl";
-                               "flat"; "preserve-3d"; "open"; "closed"]
-        // Match word-boundary tokens that could be variable names
-        // Only match if not preceded by $ (already a $-style reference)
-        // and not preceded by - (part of a CSS property like margin-top)
-        Regex.Replace(value, @"(?<![.\$a-zA-Z0-9_-])([a-zA-Z_][\w]*)(?![a-zA-Z0-9_])", fun m ->
+        bareVarRe.Replace(value, fun m ->
             let w = m.Groups.[1].Value
             if cssKeywords.Contains(w.ToLower()) then m.Value
             else
@@ -573,6 +634,10 @@ module Evaluator =
     //
     // This ensures that no matter where resolveValue is called from, the result is consistent.
 
+    // ── Cached regex patterns (module-level, created once) ──
+    let private dollarRefRe  = Regex(@"\$([\w-]+)", RegexOptions.Compiled)
+    let private pipeFnRe     = Regex(@"^(\w+)\((.*)\)$", RegexOptions.Compiled)
+
     /// Resolve F#-style pipe operator: fn1(x) |> fn2(y) → fn2(fn1(x), y)
     let private resolvePipes (v: string) : string =
         if not (v.Contains("|>")) then v
@@ -583,7 +648,7 @@ module Evaluator =
                 let mutable acc = parts.[0]
                 for i in 1..parts.Length-1 do
                     let next = parts.[i]
-                    let fnMatch = Regex.Match(next, @"^(\w+)\((.*)\)$")
+                    let fnMatch = pipeFnRe.Match(next)
                     if fnMatch.Success then
                         let fnName = fnMatch.Groups.[1].Value
                         let fnArgs = fnMatch.Groups.[2].Value
@@ -599,7 +664,7 @@ module Evaluator =
     let private resolveDollarRefs (v: string) (vars: IDictionary<string, string>) : string =
         if not (v.Contains('$')) then v
         else
-            Regex.Replace(v, @"\$([\w-]+)", fun m ->
+            dollarRefRe.Replace(v, fun m ->
                 match vars.TryGetValue(m.Groups.[1].Value) with
                 | true, vv -> vv
                 | _ -> m.Value)
@@ -627,3 +692,17 @@ module Evaluator =
             if next = result then result <- next
             else result <- next
         result
+
+    /// Post-process a (property, value) pair to fix up values that the parser
+    /// accepts as valid CSS keyword tokens but that some CSS properties
+    /// reject. For example `letter-spacing: none` is invalid CSS — the
+    /// correct keyword is `normal`.
+    let normalizePropertyValue (prop: string) (value: string) : string =
+        match prop.Trim().ToLowerInvariant() with
+        | "letter-spacing" | "ls" ->
+            let v = value.Trim().ToLowerInvariant()
+            if v = "none" then "normal" else value
+        | "text-decoration" ->
+            // Many shorthand forms accept "none" as the only value; pass through.
+            value
+        | _ -> value

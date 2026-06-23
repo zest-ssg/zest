@@ -183,6 +183,35 @@ hsla(250, 100%, 60%, 0.5)
 | `mw` | max-width | `mh` | max-height |
 | `anim` | animation | `asp` | aspect-ratio |
 
+### `bdr` 简写的歧义解析
+
+`bdr` 同时可能是 `border` 或 `border-radius`，编译器会**按值内容动态判断**：
+
+- 值**包含** border-style 关键字（`solid` / `dashed` / `dotted` / `double` / `groove` 等）→ 解析为 `border`
+- 否则 → 解析为 `border-radius`
+
+```zss
+.btn      { bdr: 1px solid #ccc }   // → border:        1px solid #ccc
+.card     { bdr: 8px            }    // → border-radius: 8px
+```
+
+### 多段属性简写
+
+带连字符的属性名（如 `min-width`）通过**连字符不敏感的最长公共子串匹配**解析。
+下列写法全部等价：
+
+```zss
+.x { mn-width: 0 }   // → min-width: 0
+.x { mnw:      0 }   // → min-width: 0
+.x { blc: #f00 }     // → border-left-color: #f00
+.x { mnh: 100vh }    // → min-height: 100vh
+```
+
+> **避坑提示**：避免把 `let border = #e2e8f0` 之类的变量名与 CSS 关键字重名。
+> 编译器会按词边界替换变量，但如果你的变量名恰好是 `border`、`box` 等
+> CSS 关键字，utility 中的 `border-box`、`box-shadow` 等值会被误替换。
+> 推荐用 `let bdColor = #e2e8f0`、`let shadowColor = #000` 这类带语义前缀的名字。
+
 ## 值简写
 
 ```

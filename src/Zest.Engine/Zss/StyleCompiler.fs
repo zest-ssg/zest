@@ -15,11 +15,13 @@ open System.Text.RegularExpressions
 
 module Processor =
 
+    // Cached regex — created once, reused across all calls
+    let private usePat = Regex(@"^\s*@use\s+[""']([^""']+)[""'](?:\s+as\s+(\w+))?\s*;?\s*$", RegexOptions.Compiled ||| RegexOptions.Multiline)
+
     /// Process ZSS source text → CSS string
     /// Uses AST-level merge: built-in modules parsed with brace parser,
     /// user content parsed with mode-detected parser, then ASTs merged.
     let processText (source: string) : string =
-        let usePat = Regex(@"^\s*@use\s+[""']([^""']+)[""'](?:\s+as\s+(\w+))?\s*;?\s*$", RegexOptions.Multiline)
 
         // Step 1: Extract and remove @use lines, collect built-in module contents
         let userSource, builtinContents =
@@ -57,6 +59,36 @@ module Processor =
             for kv in userVars do d.[kv.Key] <- kv.Value
             d :> IDictionary<string, string>
 
+        // Re-resolve every declaration's value in the built-in AST with the
+        // merged variable dictionary. This makes user-defined variables
+        // (e.g. `$primary: #6c63ff`) visible inside utility classes
+        // (e.g. `.text-primary { color: $primary }`).
+        let rec resolveNodeValues (n: ZssNode) : ZssNode =
+            let resolveDeclValue (d: Declaration) : Declaration =
+                { d with Value = Evaluator.resolveValue d.Value mergedVars }
+            match n with
+            | RuleSet(sel, decls, children, pos) ->
+                RuleSet(sel, decls |> List.map resolveDeclValue,
+                        children |> List.map resolveNodeValues, pos)
+            | AtRule(name, prms, body, pos) ->
+                AtRule(name, prms, body |> List.map resolveNodeValues, pos)
+            | Responsive(bp, body, pos) ->
+                Responsive(bp, body |> List.map resolveNodeValues, pos)
+            | Mixin(name, parms, body, pos) ->
+                Mixin(name, parms, body |> List.map resolveNodeValues, pos)
+            | Each(varName, items, body, pos) ->
+                Each(varName, items, body |> List.map resolveNodeValues, pos)
+            | For(varName, from, through, body, pos) ->
+                For(varName, from, through, body |> List.map resolveNodeValues, pos)
+            | If(cond, body, eb, pos) ->
+                let eb' = eb |> Option.map (fun b -> b |> List.map resolveNodeValues)
+                If(cond, body |> List.map resolveNodeValues, eb', pos)
+            | Include(name, args, content, pos) ->
+                Include(name, args, content |> List.map resolveNodeValues, pos)
+            | other -> other
+
+        let builtinNodesResolved = builtinNodes |> List.map resolveNodeValues
+
         let userNodes =
             match mode with
             | ParserCore.BraceMode ->
@@ -67,7 +99,7 @@ module Processor =
                 result
 
         // Step 4: Merge ASTs — builtins first, then user (so user overrides builtins)
-        let mergedNodes = builtinNodes @ userNodes
+        let mergedNodes = builtinNodesResolved @ userNodes
 
         let css = Compiler.compile mergedNodes mergedVars
 

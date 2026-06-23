@@ -87,6 +87,12 @@ Compiles to:
 }
 ```
 
+See the full ZSS 2.0 style guide at
+[`docs/content/zss/index.zest.fsx`](docs/content/zss/index.zest.fsx) for
+the complete shorthand table, the `bdr` value-sensitive disambiguation
+rule, multi-segment property resolution, and the variable-naming
+recommendations that avoid keyword collisions with built-in utilities.
+
 ## Project Structure
 
 ```
