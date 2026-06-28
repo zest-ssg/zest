@@ -17,9 +17,9 @@ ZCSS（Zest Style Sheets）是 **CSS 超集** — 任何合法 CSS 都是合法 
 
 ```zcss
 .card {
-  bgc: #fff;
-  bdr: 0.5rem;
-  p: 1.5rem;
+  background-color: #fff;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
 }
 ```
 
@@ -27,9 +27,9 @@ ZCSS（Zest Style Sheets）是 **CSS 超集** — 任何合法 CSS 都是合法 
 
 ```zcss
 .card
-  bgc: #fff
-  bdr: 0.5rem
-  p: 1.5rem
+  background-color: #fff
+  border-radius: 0.5rem
+  padding: 1.5rem
 ```
 
 ### 3. F#/C# 风格（等号赋值 + let 绑定）
@@ -39,9 +39,9 @@ let primary = #6c63ff
 let radius  = 0.5rem
 
 .card
-  bgc = primary
-  bdr = radius
-  p   = 1.5rem
+  background-color = primary
+  border-radius = radius
+  padding   = 1.5rem
 ```
 
 三种风格可在同一文件中混用，解析器自动检测模式。
@@ -75,8 +75,8 @@ let radius  = 0.5rem
 let base = #6c63ff
 
 .btn-primary
-  bgc = base |> lighten(10%)
-  bxsh = #000 |> mix(base, 25%) |> alpha(0.1)
+  background-color = base |> lighten(10%)
+  box-shadow = #000 |> mix(base, 25%) |> alpha(0.1)
 ```
 
 ## 颜色函数
@@ -97,10 +97,10 @@ adjust-hue(brand, 30deg)  // 色相旋转
 
 ```zcss
 @mixin card($pad: 1.5rem)
-  bgc: #fff
-  bdr: 0.5rem
-  p: $pad
-  bxsh: 0 2px 8px rgba(0,0,0,0.1)
+  background-color: #fff
+  border-radius: 0.5rem
+  padding: $pad
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1)
 
 .post-card { @include card() }
 .sidebar  { @include card(1rem) }
@@ -110,27 +110,15 @@ adjust-hue(brand, 30deg)  // 色相旋转
 
 ```zcss
 .grid
-  d: grid
-  gtc: 1fr
+  display: grid
+  grid-template-columns: 1fr
 
   @md
-    gtc: repeat(2, 1fr)   // min-width: 768px
+    grid-template-columns: repeat(2, 1fr)   // min-width: 768px
 
   @lg
-    gtc: repeat(3, 1fr)   // min-width: 1024px
+    grid-template-columns: repeat(3, 1fr)   // min-width: 1024px
 ```
-
-## 属性简写
-
-ZCSS 提供 60+ 个属性简写，大幅减少样板代码：
-
-| 简写 | 完整属性 | 简写 | 完整属性 |
-|------|----------|------|----------|
-| `bgc` | background-color | `bdr` | border-radius |
-| `c` | color | `fs` | font-size |
-| `fw` | font-weight | `d` | display |
-| `p` | padding | `m` | margin |
-| `bxsh` | box-shadow | `bdc` | border-color |
 
 ## 完整示例
 
@@ -143,19 +131,19 @@ let shadow = 0 4px 12px rgba(0,0,0,0.1)
 
 @mixin card
   @apply d-block bg-white p-4
-  bdr = radius
-  bxsh = shadow
+  border-radius = radius
+  box-shadow = shadow
 
 .feature-card
   @include card
-  tr = all 0.2s
+  transition = all 0.2s
 
   &:hover
-    trf = translateY(-2px)
+    transform = translateY(-2px)
 
   h3
-    fs = 1.1rem
-    c = $primary |> darken(10%)
+    font-size = 1.1rem
+    color = $primary |> darken(10%)
 ```
 
 所有 ZCSS 编译为**标准 CSS**，零运行时开销。

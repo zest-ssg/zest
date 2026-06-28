@@ -100,7 +100,6 @@ module InitEngine =
         sb.AppendLine("let private __writeResult () =") |> ignore
         sb.AppendLine("    let data = JsonSerializer.Serialize(dict (__initGlobals |> Seq.map (fun kv -> kv.Key, kv.Value.ToString())))") |> ignore
         sb.AppendLine("    File.WriteAllText(@\"" + resultFile.Replace("\\", "\\\\") + "\", data)") |> ignore
-        sb.AppendLine("__writeResult ()") |> ignore
         sb.ToString()
 
     /// Run the _init.zest.fsx script (if present) and return the result.
@@ -115,10 +114,10 @@ module InitEngine =
                 let tmpFsx = Path.Combine(Path.GetTempPath(), sprintf "zest-init-%s.fsx" (Guid.NewGuid().ToString("N")))
 
                 try
-                    // Build the full _init.zest.fsx with preamble + user script
+                    // Build the full _init.zest.fsx with preamble + user script + result writer
                     let preamble = buildPreamble tmpResult
                     let userScript = File.ReadAllText(initPath)
-                    File.WriteAllText(tmpFsx, preamble + "\n" + userScript, Encoding.UTF8)
+                    File.WriteAllText(tmpFsx, preamble + "\n" + userScript + "\n__writeResult ()", Encoding.UTF8)
 
                     // Execute via dotnet fsi
                     let psi = ProcessStartInfo("dotnet", sprintf "fsi --quiet --nologo --exec \"%s\"" tmpFsx)
