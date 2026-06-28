@@ -97,6 +97,38 @@ type PageBuilder () =
     member _.Source(s: Page, path: string) =
         { s with SourcePath = path }
 
+    // ---- New: Author metadata ----
+    [<CustomOperation "author">]
+    member _.Author(s: Page, v: string) =
+        let d = Dictionary<string, obj>()
+        for kv in s.Data do d.[kv.Key] <- kv.Value
+        d.["author"] <- box v
+        { s with Data = d }
+
+    // ---- New: Category metadata ----
+    [<CustomOperation "category">]
+    member _.Category(s: Page, v: string) =
+        let d = Dictionary<string, obj>()
+        for kv in s.Data do d.[kv.Key] <- kv.Value
+        d.["category"] <- box v
+        { s with Data = d }
+
+    // ---- New: Thumbnail image URL ----
+    [<CustomOperation "thumbnail">]
+    member _.Thumbnail(s: Page, v: string) =
+        let d = Dictionary<string, obj>()
+        for kv in s.Data do d.[kv.Key] <- kv.Value
+        d.["thumbnail"] <- box v
+        { s with Data = d }
+
+    // ---- New: Redirect from URL (for alias/redirect pages) ----
+    [<CustomOperation "redirect_from">]
+    member _.RedirectFrom(s: Page, v: string) =
+        let d = Dictionary<string, obj>()
+        for kv in s.Data do d.[kv.Key] <- kv.Value
+        d.["redirect_from"] <- box v
+        { s with Data = d }
+
 module PageDsl =
     /// Computation expression entry point: `page { title "..."; content [...] }`.
     let page = PageBuilder()

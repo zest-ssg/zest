@@ -155,8 +155,8 @@ public class DevServerService : IDisposable
             var ext = Path.GetExtension(e.Name!)?.ToLowerInvariant() ?? "";
             var relevant = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                ".fsx", ".zest.fsx", ".md", ".markdown",
-                ".html", ".css", ".zss", ".js", ".toml",
+                ".fsx", ".zpage.fsx", ".md", ".markdown",
+                ".html", ".css", ".zcss", ".js", ".toml",
                 ".json", ".yaml", ".yml",
                 ".png", ".jpg", ".jpeg", ".svg", ".gif", ".webp"
             };
@@ -222,7 +222,7 @@ public class DevServerService : IDisposable
             if (method == "OPTIONS")
             {
                 ctx.Response.StatusCode = 204;
-                HttpHelper.AddCorsHeaders(ctx.Response);
+                HttpResponseUtility.AddCorsHeaders(ctx.Response);
                 ctx.Response.OutputStream.Close();
                 sw.Stop();
                 Logger.Request(method, urlPath, 204, sw.ElapsedMilliseconds);
@@ -234,12 +234,12 @@ public class DevServerService : IDisposable
             string filePath;
             try
             {
-                filePath = HttpHelper.ResolveFilePath(outputDir, urlPath);
+                filePath = HttpResponseUtility.ResolveFilePath(outputDir, urlPath);
             }
             catch (UnauthorizedAccessException)
             {
                 ctx.Response.StatusCode = 403;
-                await HttpHelper.WriteStringResponse(ctx, 403, "<h1>403 — Forbidden</h1>");
+                await HttpResponseUtility.WriteStringResponse(ctx, 403, "<h1>403 — Forbidden</h1>");
                 sw.Stop();
                 Logger.Request(method, urlPath, 403, sw.ElapsedMilliseconds);
                 Logger.Warn("Security", $"Path traversal blocked: {urlPath}");
@@ -248,7 +248,7 @@ public class DevServerService : IDisposable
 
             if (!File.Exists(filePath))
             {
-                await HttpHelper.WriteNotFoundResponse(ctx, outputDir, urlPath);
+                await HttpResponseUtility.WriteNotFoundResponse(ctx, outputDir, urlPath);
                 sw.Stop();
                 Logger.Request(method, urlPath, 404, sw.ElapsedMilliseconds);
                 return;
@@ -256,8 +256,8 @@ public class DevServerService : IDisposable
 
             var ext = Path.GetExtension(filePath).ToLowerInvariant();
 
-            // Handle .zss files: compile to CSS on-the-fly
-            if (ext == ".zss")
+            // Handle .zcss files: compile to CSS on-the-fly
+            if (ext == ".zcss")
             {
                 await ServeZssFile(ctx, filePath);
                 sw.Stop();
@@ -279,15 +279,15 @@ public class DevServerService : IDisposable
                     html += GetLiveReloadScript();
 
                 ctx.Response.ContentType = "text/html; charset=utf-8";
-                HttpHelper.AddCorsHeaders(ctx.Response);
+                HttpResponseUtility.AddCorsHeaders(ctx.Response);
                 bytes = Encoding.UTF8.GetBytes(html);
                 ctx.Response.ContentLength64 = bytes.Length;
                 await ctx.Response.OutputStream.WriteAsync(bytes);
             }
             else
             {
-                ctx.Response.ContentType = HttpHelper.GetMimeType(filePath);
-                HttpHelper.AddCorsHeaders(ctx.Response);
+                ctx.Response.ContentType = HttpResponseUtility.GetMimeType(filePath);
+                HttpResponseUtility.AddCorsHeaders(ctx.Response);
                 ctx.Response.ContentLength64 = bytes.Length;
                 await ctx.Response.OutputStream.WriteAsync(bytes);
             }
@@ -303,7 +303,7 @@ public class DevServerService : IDisposable
             try
             {
                 ctx.Response.StatusCode = 500;
-                await HttpHelper.WriteStringResponse(ctx, 500,
+                await HttpResponseUtility.WriteStringResponse(ctx, 500,
                     $"<h1>500 — Internal Server Error</h1><p>{System.Net.WebUtility.HtmlEncode(ex.Message)}</p>");
             }
             catch { }
@@ -321,10 +321,10 @@ public class DevServerService : IDisposable
     {
         try
         {
-            var css = Zest.Engine.Zss.Processor.processFile(filePath);
+            var css = Zest.Engine.Zcss.Processor.processFile(filePath);
             var cssBytes = Encoding.UTF8.GetBytes(css);
             ctx.Response.ContentType = "text/css; charset=utf-8";
-            HttpHelper.AddCorsHeaders(ctx.Response);
+            HttpResponseUtility.AddCorsHeaders(ctx.Response);
             ctx.Response.ContentLength64 = cssBytes.Length;
             await ctx.Response.OutputStream.WriteAsync(cssBytes);
             await ctx.Response.OutputStream.FlushAsync();
@@ -333,7 +333,7 @@ public class DevServerService : IDisposable
         {
             Logger.Error("ZSS", $"Failed to compile {filePath}: {ex.Message}");
             // Fallback: serve .zss as-is if ZSS compilation fails
-            await HttpHelper.WriteFileResponse(ctx, filePath);
+            await HttpResponseUtility.WriteFileResponse(ctx, filePath);
         }
     }
 

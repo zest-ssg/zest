@@ -16,10 +16,13 @@
 
 ## Features
 
-- **Template as Code** — `.zest.fsx` files are real F# scripts executed at build time via `dotnet fsi`. Full F# language support: list comprehensions, pattern matching, string interpolation, arbitrary computation.
+- **Template as Code** — `.zpage.fsx` are real F# scripts executed at build time via `dotnet fsi`. Full F#: list comprehensions, pattern matching, string interpolation, arbitrary computation.
+- **`.zhtml` Lightweight Pages** — Pure HTML pages with optional Nunjucks template syntax. No FSI overhead.
 - **HTML DSL** — Compose HTML declaratively: `render [ h1 []; p [] ]`.
 - **Markdown** — Standard `.md` files with frontmatter support.
-- **ZSS** — A CSS superset with nesting, F#-style `let` bindings, math expressions, color functions, and mixins — compiled to standard CSS.
+- **ZCSS** — A CSS superset with nesting, F#-style `let` bindings, math expressions, color functions, and mixins — compiled to standard CSS.
+- **Nunjucks Templates** — Rich template engine for layouts: filters, expressions, macros, `{% if %}`, `{% for %}`.
+- **`_init.fsx`** — Optional initialization script (runs before build) to inject dynamic data, load JSON/TOML, read env vars.
 - **TOML Config** — Zero-config defaults; customize via `_config.toml` and `_data/*.toml`. No YAML.
 - **Live Reload** — `zest serve` watches for changes and auto-rebuilds.
 - **Batch Evaluation** — Multiple F# page scripts evaluated in a single FSI process for fast builds.
@@ -29,20 +32,20 @@
 ## Quick Start
 
 ```bash
-# Build your site
-zest build
-
-# Develop with live reload
-zest serve --port 8080
-
-# Preview a built site
-zest preview
-
 # Scaffold a new project
 zest init my-site
+
+# Develop with live reload
+cd my-site && zest serve --port 8080
+
+# Build for production
+zest build
+
+# Preview the built site
+zest preview
 ```
 
-## Example: `.zest.fsx` Page
+## Example: `.zpage.fsx` Page
 
 ```fsharp
 // @title Hello World
@@ -59,9 +62,9 @@ render [
 ]
 ```
 
-## Example: ZSS Stylesheet
+## Example: ZCSS Stylesheet
 
-```zss
+```zcss
 // F#-style let bindings with math expressions
 let primary    = #3b82f6
 let space1     = 0.25r
@@ -87,31 +90,41 @@ Compiles to:
 }
 ```
 
-See the full ZSS 2.0 style guide at
-[`docs/content/zss/index.zest.fsx`](docs/content/zss/index.zest.fsx) for
-the complete shorthand table, the `bdr` value-sensitive disambiguation
-rule, multi-segment property resolution, and the variable-naming
-recommendations that avoid keyword collisions with built-in utilities.
+## Example: `_init.fsx`
+
+```fsharp
+// _init.fsx — runs before every build
+addGlobal "api_url" "https://api.example.com"
+
+let team = loadJson "data/team.json"
+addGlobal "team" team
+
+let env = loadEnv "ZEST_ENV"
+if env = "production" then
+    addGlobal "analytics_id" "UA-XXXXX-Y"
+```
 
 ## Project Structure
 
 ```
 my-site/
-├── _config.toml          # Site configuration
+├── _config.toml            # Site configuration (TOML)
+├── _init.zpage.fsx         # Optional init script (runs before build)
 ├── _data/
-│   └── site.toml         # Global data (accessible from scripts)
+│   └── site.toml           # Global data (accessible from scripts/templates)
 ├── content/
-│   ├── index.zest.fsx    # Home page (F# script template)
-│   ├── about.md          # About page (Markdown)
+│   ├── index.zpage.fsx     # Home page (F# script template)
+│   ├── about.md            # About page (Markdown)
 │   └── posts/
-│       └── hello-world.zest.fsx
+│       ├── hello-world.zpage.fsx
+│       └── contact.zhtml   # Pure HTML (no FSI overhead)
 ├── _layouts/
-│   ├── default.html      # Layout templates (HTML with {{ }} placeholders)
+│   ├── default.html        # Layouts (Nunjucks or native replace)
 │   └── post.html
 ├── assets/
 │   └── css/
-│       └── style.zss     # Zest Stylesheet
-└── _site/                # Build output
+│       └── style.zcss      # ZCSS → auto-compiled to style.css
+└── _site/                  # Build output (auto-generated)
 ```
 
 ## Architecture
@@ -119,7 +132,7 @@ my-site/
 | Project | Language | Responsibility |
 |---------|----------|----------------|
 | **Zest.App** | C# | CLI entry point, command routing |
-| **Zest.Engine** | F# | Core engine: builds, HTML DSL, ScriptRunner, Markdown, ZSS compiler |
+| **Zest.Engine** | F# | Core engine: builds, HTML DSL, ScriptRunner, Markdown, ZCSS compiler, Nunjucks |
 | **Zest.Dsl** | F# | Precompiled DSL helpers for FSI script evaluation |
 | **Zest.Infra** | C# | Configuration loading, file watching, dev server |
 
@@ -138,6 +151,16 @@ dotnet publish src/Zest.App/Zest.App.csproj -c Release -r win-x64 --self-contain
 
 ## Documentation
 
+### File Types
+
+| Extension | Purpose | Processing |
+|-----------|---------|------------|
+| `.zpage.fsx` | F# script templates (F# + Markdown + HTML DSL) | Compiled via `dotnet fsi` |
+| `.zhtml` | Pure HTML pages | Copied as-is (optional Nunjucks) |
+| `.zcss` | ZCSS stylesheets (CSS superset) | Compiled to `.css` |
+| `.md` | Standard Markdown | Rendered to HTML |
+| `.toml` | Configuration and data (no YAML) | Parsed at build time |
+
 ### Commands
 
 | Command | Description |
@@ -146,8 +169,9 @@ dotnet publish src/Zest.App/Zest.App.csproj -c Release -r win-x64 --self-contain
 | `zest serve` | Start dev server with live reload |
 | `zest preview` | Preview the built site |
 | `zest init <name>` | Scaffold a new project |
+| `zest clean` | Clean build output |
 
-### ZSS Reference
+### ZCSS Reference
 
 | Feature | Syntax |
 |---------|--------|
@@ -162,6 +186,14 @@ dotnet publish src/Zest.App/Zest.App.csproj -c Release -r win-x64 --self-contain
 | Mixins | `@mixin`, `@include` |
 | Loops | `@each`, `@for` |
 | Conditionals | `@if`, `@else` |
+| Built-in modules | `@use "zest:utilities"`, `@use "zest:palette"`, etc. |
+
+### Layout Engines
+
+| Engine | Config Value | Features |
+|--------|-------------|----------|
+| **Nunjucks** (default) | `template_engine = "nunjucks"` | Filters, expressions, `{% if %}`, `{% for %}`, macros |
+| **Native Replace** | `template_engine = "replace"` | Simple `{{ variable }}` substitution |
 
 ### HTML DSL Reference
 
@@ -174,6 +206,10 @@ a  [ href "https://example.com"; text "Link" ]
 // Attributes
 div [ class' "container"; id "main" ] [ ... ]
 
+// CSS class shortcuts
+divC "card" [ p [ text "Content" ] ]   // <div class="card">
+spanC "badge" [ text "New" ]           // <span class="badge">
+
 // List comprehensions
 ul [ for item in items -> li [ text item ] ]
 
@@ -184,14 +220,25 @@ else
     p [ text "No" ]
 ```
 
+### `_init.fsx` API
+
+| Function | Purpose |
+|----------|---------|
+| `addGlobal key value` | Inject key-value into global data |
+| `loadJson path` | Parse JSON file |
+| `loadToml path` | Parse TOML file |
+| `loadEnv key` | Read environment variable |
+| `console_log msg` | Debug output to stderr |
+| `exec cmd args` | Run shell command |
+
 ## Design Philosophy
 
 **Zest is not a general-purpose static site generator.** It is a specific answer to specific constraints.
 
-1. **F# as the Template** — The template is the program. No string-based templating languages.
-2. **ZSS as the Layout Engine** — Not a CSS pre-processor, but a layout engine that emits CSS.
+1. **F# as the Template** — The template is the program. `.zpage.fsx` files are real F# code, not strings.
+2. **ZCSS as the Layout Engine** — Not a CSS pre-processor, but a layout engine that emits CSS.
 3. **TOML as the Contract** — No YAML. Ever.
-4. **JavaScript as Order** — No Node.js, no npm, no bundlers. JavaScript exists only for client-side order.
+4. **JavaScript as Order** — No Node.js, no npm, no bundlers. JavaScript exists only for client-side interactivity.
 5. **The Zealous Few** — Built for those who love F#, hate YAML, and prefer simple tools.
 
 ## License

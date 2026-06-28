@@ -9,17 +9,22 @@
 
   <ItemGroup>
     <Compile Include="Domain/DomainModels.fs" />
-    <Compile Include="Zss/ZssAst.fs" />
-    <Compile Include="Zss/ZssEvaluator.fs" />
-    <Compile Include="Zss/ZssParserCore.fs" />
-    <Compile Include="Zss/ZssParserBrace.fs" />
-    <Compile Include="Zss/ZssParserIndent.fs" />
-    <Compile Include="Zss/ZssParser.fs" />
-    <Compile Include="Zss/ZssUtilities.fs" />
-    <Compile Include="Zss/ZssCompiler.fs" />
-    <Compile Include="Zss/StyleCompiler.fs" />
+    <Compile Include="Zcss/ZssAst.fs" />
+    <Compile Include="Zcss/ZssEvaluator.fs" />
+    <Compile Include="Zcss/ZssParserCore.fs" />
+    <Compile Include="Zcss/ZssParserBrace.fs" />
+    <Compile Include="Zcss/ZssParserIndent.fs" />
+    <Compile Include="Zcss/ZssParser.fs" />
+    <Compile Include="Zcss/ZssUtilities.fs" />
+    <Compile Include="Zcss/ZssCompiler.fs" />
+    <Compile Include="Zcss/StyleCompiler.fs" />
+    <Compile Include="Zcss/ZssCompletions.fs" />
+    <Compile Include="Zcss/ZssTypeChecker.fs" />
     <Compile Include="Routing/PermalinkRouter.fs" />
     <Compile Include="Parsing/FrontMatterParser.fs" />
+    <Compile Include="Template/ITemplateEngine.fs" />
+    <Compile Include="Template/NunjucksEngine.fs" />
+    <Compile Include="Template/TemplateManager.fs" />
     <Compile Include="Html/HtmlElements.fs" />
     <Compile Include="Html/HtmlAttributes.fs" />
     <Compile Include="Html/HtmlModifiers.fs" />
@@ -27,11 +32,12 @@
     <Compile Include="Html/HtmlRenderer.fs" />
     <Compile Include="Html/PageDsl.fs" />
     <Compile Include="Html/Markdown.fs" />
-    <Compile Include="Html/HtmlUtils.fs" />
+    <Compile Include="Html/HtmlUtilities.fs" />
     <Compile Include="Html/ShortcodeRegistry.fs" />
-    <Compile Include="Html/Collections.fs" />
+    <Compile Include="Html/PageCollections.fs" />
     <Compile Include="Html/Pagination.fs" />
     <Compile Include="Html/TemplateData.fs" />
+    <Compile Include="Scripting/InitEngine.fs" />
     <Compile Include="Scripting/ScriptRunner.fs" />
     <Compile Include="Scripting/ScriptEvaluator.fs" />
     <Compile Include="Build/BuildEngine.fs" />

@@ -1,0 +1,61 @@
+namespace Zest.Dsl
+
+open System
+open System.Web
+
+// ============================================================
+// DslSeo — SEO meta tags, Open Graph, Twitter Cards, hreflang
+// ============================================================
+
+module DslSeo =
+    open Dsl
+
+    /// HTML-encode a value for safe insertion into attribute values.
+    let private ae (v: string) = htmlEncode v
+
+    /// Generate a complete set of <meta> tags for SEO.
+    /// Includes charset, viewport, title, description, keywords, author, and robots.
+    let meta_tags (title: string) (description: string) (url: string) (image: string) (siteName: string) =
+        [
+            yield sprintf """<meta charset="utf-8" />"""
+            yield sprintf """<meta name="viewport" content="width=device-width, initial-scale=1.0" />"""
+            yield sprintf """<title>%s</title>""" (ae title)
+            yield sprintf """<meta name="description" content="%s" />""" (ae description)
+            yield sprintf """<link rel="canonical" href="%s" />""" (ae url)
+            if not (String.IsNullOrEmpty siteName) then
+                yield sprintf """<meta name="application-name" content="%s" />""" (ae siteName)
+            if not (String.IsNullOrEmpty image) then
+                yield sprintf """<meta name="image" content="%s" />""" (ae image)
+        ]
+
+    /// Generate Open Graph (og:) meta tags for social sharing.
+    let open_graph_tags (title: string) (description: string) (url: string) (image: string) (ogType: string) =
+        [
+            yield sprintf """<meta property="og:title" content="%s" />""" (ae title)
+            yield sprintf """<meta property="og:description" content="%s" />""" (ae description)
+            yield sprintf """<meta property="og:url" content="%s" />""" (ae url)
+            yield sprintf """<meta property="og:type" content="%s" />""" (ae ogType)
+            if not (String.IsNullOrEmpty image) then
+                yield sprintf """<meta property="og:image" content="%s" />""" (ae image)
+                yield sprintf """<meta property="og:image:alt" content="%s" />""" (ae title)
+        ]
+
+    /// Generate Twitter Card meta tags.
+    let twitter_card_tags (cardType: string) (title: string) (description: string) (image: string) (site: string) =
+        [
+            yield sprintf """<meta name="twitter:card" content="%s" />""" (ae cardType)
+            yield sprintf """<meta name="twitter:title" content="%s" />""" (ae title)
+            yield sprintf """<meta name="twitter:description" content="%s" />""" (ae description)
+            if not (String.IsNullOrEmpty image) then
+                yield sprintf """<meta name="twitter:image" content="%s" />""" (ae image)
+            if not (String.IsNullOrEmpty site) then
+                yield sprintf """<meta name="twitter:site" content="%s" />""" (ae site)
+        ]
+
+    /// Generate a canonical URL <link> tag.
+    let canonical_url (url: string) =
+        sprintf """<link rel="canonical" href="%s" />""" (ae url)
+
+    /// Generate a single hreflang <link> tag for multilingual pages.
+    let hreflang_tag (lang: string) (url: string) =
+        sprintf """<link rel="alternate" hreflang="%s" href="%s" />""" (ae lang) (ae url)

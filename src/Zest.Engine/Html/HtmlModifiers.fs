@@ -6,7 +6,7 @@ open System.Net
 open System.Text
 open System.Text.RegularExpressions
 open Zest.Engine
-open Zest.Engine.Zss
+open Zest.Engine.Zcss
 
 // ============================================================
 // HTML DSL — Pipe-friendly modifiers
@@ -176,3 +176,12 @@ module HtmlModifiers =
         divC "empty-state" [
             p [Text message]
         ]
+
+    // ---- Conditional class modifiers ----
+    /// Add a CSS class only when the condition is true.
+    let whenClass (c: string) (cond: bool) (node: HtmlNode) =
+        if cond then withClass c node else node
+
+    /// Add a CSS class only when the condition is false.
+    let unlessClass (c: string) (cond: bool) (node: HtmlNode) =
+        if not cond then withClass c node else node

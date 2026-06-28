@@ -56,6 +56,7 @@ public static class SiteConfigLoader
             var logLevel             = GetString(model, "log_level", config.LogLevel);
             var logToFile            = GetBool  (model, "log_to_file", config.LogToFile);
             var logTimestamps        = GetBool  (model, "log_timestamps", config.LogTimestamps);
+            var templateEngine       = GetString(model, "template_engine", config.TemplateEngine);
 
             // Parse [[taxonomies]] array
             var taxonomies = config.Taxonomies;
@@ -116,7 +117,8 @@ public static class SiteConfigLoader
                 language: language,
                 logLevel: logLevel,
                 logToFile: logToFile,
-                logTimestamps: logTimestamps
+                logTimestamps: logTimestamps,
+                templateEngine: templateEngine
             );
         }
         catch (Exception ex)
@@ -140,6 +142,31 @@ public static class SiteConfigLoader
             dir = dir.Parent;
         }
         return start.FullName;
+    }
+
+    /// <summary>
+    /// Validate the loaded configuration and log warnings for common issues.
+    /// </summary>
+    public static void Validate(SiteConfig config)
+    {
+        var contentDir = Path.GetFullPath(Path.Combine(
+            Directory.GetCurrentDirectory(), config.EffectiveContentDir.TrimStart('.', '\\', '/')));
+        if (!Directory.Exists(contentDir))
+            Logger.Warn("Config", $"Content directory not found: {contentDir}");
+
+        var layoutsDir = Path.GetFullPath(Path.Combine(
+            Directory.GetCurrentDirectory(), config.LayoutsDir.TrimStart('.', '\\', '/')));
+        if (!Directory.Exists(layoutsDir))
+            Logger.Warn("Config", $"Layouts directory not found: {layoutsDir}");
+
+        if (string.IsNullOrEmpty(config.Title))
+            Logger.Warn("Config", "Site title is empty");
+
+        if (string.IsNullOrEmpty(config.BaseUrl))
+            Logger.Warn("Config", "Base URL is empty; absolute URLs will not be generated");
+
+        if (config.DevServerPort == config.LiveReloadPort)
+            Logger.Warn("Config", "Dev server port and live reload port are the same; this may cause conflicts");
     }
 
     private static string GetString(IDictionary<string, object> dict, string key, string fallback)

@@ -5,6 +5,12 @@
     <SatelliteResourceLanguages>none</SatelliteResourceLanguages>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="ZestDsl.fs" />
+    <Compile Include="ZestContext.fs" />
+    <Compile Include="DslHtml.fs" />
+    <Compile Include="DslComponents.fs" />
+    <Compile Include="DslCollections.fs" />
+    <Compile Include="DslUtilities.fs" />
+    <Compile Include="DslSeo.fs" />
+    <Compile Include="DslXml.fs" />
   </ItemGroup>
 </Project>
