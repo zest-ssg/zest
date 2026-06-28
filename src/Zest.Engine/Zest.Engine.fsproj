@@ -9,17 +9,17 @@
 
   <ItemGroup>
     <Compile Include="Domain/DomainModels.fs" />
-    <Compile Include="Zcss/ZssAst.fs" />
-    <Compile Include="Zcss/ZssEvaluator.fs" />
-    <Compile Include="Zcss/ZssParserCore.fs" />
-    <Compile Include="Zcss/ZssParserBrace.fs" />
-    <Compile Include="Zcss/ZssParserIndent.fs" />
-    <Compile Include="Zcss/ZssParser.fs" />
-    <Compile Include="Zcss/ZssUtilities.fs" />
-    <Compile Include="Zcss/ZssCompiler.fs" />
-    <Compile Include="Zcss/StyleCompiler.fs" />
-    <Compile Include="Zcss/ZssCompletions.fs" />
-    <Compile Include="Zcss/ZssTypeChecker.fs" />
+    <Compile Include="Zcss/ZcssAst.fs" />
+    <Compile Include="Zcss/ZcssEvaluator.fs" />
+    <Compile Include="Zcss/ZcssParserCore.fs" />
+    <Compile Include="Zcss/ZcssParserBrace.fs" />
+    <Compile Include="Zcss/ZcssParserIndent.fs" />
+    <Compile Include="Zcss/ZcssParser.fs" />
+    <Compile Include="Zcss/ZcssUtilities.fs" />
+    <Compile Include="Zcss/ZcssCompiler.fs" />
+    <Compile Include="Zcss/ZcssProcessor.fs" />
+    <Compile Include="Zcss/ZcssCompletions.fs" />
+    <Compile Include="Zcss/ZcssTypeChecker.fs" />
     <Compile Include="Routing/PermalinkRouter.fs" />
     <Compile Include="Parsing/FrontMatterParser.fs" />
     <Compile Include="Template/ITemplateEngine.fs" />

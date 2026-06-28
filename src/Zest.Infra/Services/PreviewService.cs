@@ -79,7 +79,9 @@ public class PreviewService : IDisposable
             }
         }
 
-        Logger.Info("Press Ctrl+C to stop.");
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine("  Press Ctrl+C to stop.");
+        Console.ResetColor();
     }
 
     public void Stop()

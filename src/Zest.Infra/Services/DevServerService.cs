@@ -51,15 +51,8 @@ public class DevServerService : IDisposable
             _config.OutputDir.TrimStart('.', '\\', '/')));
 
         // Initial build
-        Logger.Info("Build", "Building site for development...");
         var result = _buildService.Execute(_config);
         BuildService.PrintResult(result, _config);
-
-        if (result.Errors.Length > 0)
-        {
-            foreach (var err in result.Errors)
-                Logger.Error("Build", err);
-        }
 
         // HTTP server
         _listener = new();
@@ -99,7 +92,9 @@ public class DevServerService : IDisposable
             }
         }
 
-        Logger.Info("Press Ctrl+C to stop.");
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine("  Press Ctrl+C to stop.");
+        Console.ResetColor();
 
         StartFileWatcher();
     }
@@ -175,8 +170,6 @@ public class DevServerService : IDisposable
 
     private void Rebuild()
     {
-        Logger.Warn("Watch", "Change detected, rebuilding...");
-
         var sw = Stopwatch.StartNew();
         var result = _buildService.Execute(_config);
         sw.Stop();
@@ -187,10 +180,6 @@ public class DevServerService : IDisposable
         {
             foreach (var err in result.Errors)
                 Logger.Error("Build", err);
-        }
-        else
-        {
-            Logger.Info("Build", $"Rebuilt in {sw.ElapsedMilliseconds}ms ({result.ProcessedPages} pages)");
         }
 
         Interlocked.Increment(ref _rebuildCount);

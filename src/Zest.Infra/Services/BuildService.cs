@@ -32,26 +32,28 @@ public class BuildService
     /// </summary>
     public static void PrintResult(BuildResult result, SiteConfig config)
     {
-        var totalPages = result.TotalPages;
-        var processed = result.ProcessedPages;
-        var cached = result.CachedPages;
-        var assetsCopied = result.AssetsCopied;
-        var assetsMinified = result.AssetsMinified;
         var errorsList = result.Errors.ToArray();
 
         if (errorsList.Length == 0)
-            Logger.Info("Build",
-                $"Done in {result.DurationMs}ms — {totalPages} pages ({processed} processed, {cached} cached, {assetsCopied} assets)");
+        {
+            Logger.BuildSummary("Build", result.TotalPages, result.ProcessedPages, result.CachedPages, result.AssetsCopied, result.DurationMs);
+        }
         else
-            Logger.Error("Build",
-                $"Build completed with {errorsList.Length} error(s) in {result.DurationMs}ms");
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"  ✗ Build  ({result.ProcessedPages} pages, {result.CachedPages} cached) — {errorsList.Length} error(s)");
+            Console.ResetColor();
+        }
 
         foreach (var err in errorsList)
             Logger.Error("Build", err);
 
-        var outputDir = Path.GetFullPath(Path.Combine(
-            Directory.GetCurrentDirectory(), config.OutputDir.TrimStart('.', '\\', '/')));
-        Logger.VerboseLog($"Output: {outputDir}");
+        if (Logger.Verbose)
+        {
+            var outputDir = Path.GetFullPath(Path.Combine(
+                Directory.GetCurrentDirectory(), config.OutputDir.TrimStart('.', '\\', '/')));
+            Logger.VerboseLog($"Output: {outputDir}");
+        }
     }
 
     /// <summary>
@@ -81,8 +83,11 @@ public class BuildService
         var contentDir = Path.GetFullPath(Path.Combine(
             Directory.GetCurrentDirectory(), config.EffectiveContentDir.TrimStart('.', '\\', '/')));
 
-        Console.WriteLine($"[Zest] Watching for changes in '{contentDir}'...");
-        Console.WriteLine("       Press Ctrl+C to stop.");
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine($"  Watching for changes in '{contentDir}'...");
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine("  Press Ctrl+C to stop.");
+        Console.ResetColor();
 
         using var watcher = new FileSystemWatcher(contentDir, "*.*")
         {
@@ -95,9 +100,6 @@ public class BuildService
         {
             try
             {
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine("[Zest] Change detected, rebuilding...");
-                Console.ResetColor();
                 var svc = new BuildService();
                 var r = svc.Execute(config);
                 PrintResult(r, config);

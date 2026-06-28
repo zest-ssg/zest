@@ -130,26 +130,22 @@ public static class Logger
         Console.ResetColor();
     }
 
-    /// <summary>Print a banner with server info.</summary>
+    /// <summary>Print a banner with server info in a clean list format.</summary>
     public static void Banner(string title, string url, params (string label, string value)[] info)
     {
+        const string indent = "  ";
         Console.ForegroundColor = ConsoleColor.Cyan;
         Console.WriteLine();
-        Console.WriteLine("  ┌─────────────────────────────────────────────┐");
-        Console.WriteLine($"  │  {title,-43} │");
-        Console.WriteLine("  ├─────────────────────────────────────────────┤");
+        Console.WriteLine($"{indent}━━━ {title} ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        Console.WriteLine();
         Console.ForegroundColor = ConsoleColor.White;
-        Console.WriteLine($"  │  URL:  {url,-37} │");
+        Console.WriteLine($"{indent}  URL     {url}");
         foreach (var (label, value) in info)
         {
-            var line = $"  {label}: {value}";
-            if (line.Length <= 47)
-                Console.WriteLine($"  │  {label,-5}: {value,-37} │");
-            else
-                Console.WriteLine($"  │  {label,-5}: {value} │");
+            Console.WriteLine($"{indent}  {label,-7} {value}");
         }
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine("  └─────────────────────────────────────────────┘");
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine($"{indent}{new string('━', 48)}");
         Console.ResetColor();
         Console.WriteLine();
     }
@@ -259,5 +255,29 @@ public static class Logger
             Error(module, $"{label} failed after {sw.ElapsedMilliseconds}ms: {ex.Message}", ex);
             throw;
         }
+    }
+
+    /// <summary>Format a build summary with nice colors.</summary>
+    public static void BuildSummary(string module, int totalPages, int processed, int cached, int assets, long durationMs)
+    {
+        if (_quiet || _minLevel > Level.Info) return;
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.Write($"  ✓ {module}");
+        Console.ResetColor();
+        Console.Write($"  {totalPages} pages");
+        if (cached > 0) Console.Write($" ({processed} new, {cached} cached)");
+        else Console.Write($" ({processed} processed)");
+        if (assets > 0) Console.Write($", {assets} assets");
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.Write($"  ·  ");
+        if (durationMs < 100)
+            Console.ForegroundColor = ConsoleColor.Green;
+        else if (durationMs < 500)
+            Console.ForegroundColor = ConsoleColor.Yellow;
+        else
+            Console.ForegroundColor = ConsoleColor.Red;
+        Console.Write($"{durationMs}ms");
+        Console.ResetColor();
+        Console.WriteLine();
     }
 }

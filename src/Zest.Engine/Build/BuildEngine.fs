@@ -27,21 +27,33 @@ module BuildEngine =
             .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
         |> Array.exists (fun p -> p.StartsWith("_") || p.StartsWith("."))
 
+    let private layoutCache2 = ConcurrentDictionary<string, struct(DateTime * Map<string, string * string>)>()
     let private loadLayouts (layoutsDir: string) =
         if not (Directory.Exists layoutsDir) then Map.empty
         else
-            Directory.GetFiles(layoutsDir, "*.*", SearchOption.AllDirectories)
-            |> Array.filter (fun f ->
-                let ext = Path.GetExtension(f).ToLowerInvariant()
-                List.contains ext [".html"; ".htm"; ".njk"; ".nunjucks"; ".zpage.fsx"; ".zhtml"; ".fsx"])
-            |> Array.map (fun f ->
-                let rec stripExts (name: string) =
-                    let e = Path.GetExtension(name)
-                    if String.IsNullOrEmpty e then name
-                    else stripExts (Path.GetFileNameWithoutExtension(name))
-                let key = stripExts (Path.GetFileName(f))
-                key, (f, File.ReadAllText(f)))
-            |> Map.ofArray
+            let mtime =
+                Directory.EnumerateFiles(layoutsDir, "*.*", SearchOption.AllDirectories)
+                |> Seq.map (fun f -> File.GetLastWriteTimeUtc(f).Ticks)
+                |> Seq.append [Directory.GetLastWriteTimeUtc(layoutsDir).Ticks]
+                |> Seq.max |> DateTime
+            match layoutCache2.TryGetValue(layoutsDir) with
+            | true, (cachedMtime, cachedLayouts) when cachedMtime = mtime -> cachedLayouts
+            | _ ->
+                let result =
+                    Directory.GetFiles(layoutsDir, "*.*", SearchOption.AllDirectories)
+                    |> Array.filter (fun f ->
+                        let ext = Path.GetExtension(f).ToLowerInvariant()
+                        List.contains ext [".html"; ".htm"; ".njk"; ".nunjucks"; ".zpage.fsx"; ".zhtml"; ".fsx"])
+                    |> Array.map (fun f ->
+                        let rec stripExts (name: string) =
+                            let e = Path.GetExtension(name)
+                            if String.IsNullOrEmpty e then name
+                            else stripExts (Path.GetFileNameWithoutExtension(name))
+                        let key = stripExts (Path.GetFileName(f))
+                        key, (f, File.ReadAllText(f)))
+                    |> Map.ofArray
+                layoutCache2.[layoutsDir] <- struct(mtime, result)
+                result
 
     let private globalDataCache = ConcurrentDictionary<string, struct(DateTime * IDictionary<string, obj>)>()
     let private loadGlobalData (dataDir: string) : IDictionary<string, obj> =
@@ -163,7 +175,10 @@ module BuildEngine =
     // get a fresh cache for each build's includes dictionary.
     let private processedLayoutCache = ConcurrentDictionary<string, string>()
     let private includesMtimeRef = ref DateTime.MinValue
-    let private setIncludesMtime (t: DateTime) = includesMtimeRef := t
+    let private setIncludesMtime (t: DateTime) = 
+        if t > !includesMtimeRef then
+            processedLayoutCache.Clear()  // Clear stale entries when includes change
+        includesMtimeRef := t
     let private currentIncludesMtime () = !includesMtimeRef
 
     let private applyLayoutCached (path: string) (layoutText: string) (includes: IDictionary<string, string>) =
@@ -285,28 +300,35 @@ module BuildEngine =
     [<Struct>]
     type private CacheEntry = { Mtime: DateTime; OutputHash: int }
     let private buildCache = ConcurrentDictionary<string, CacheEntry>()
+    let private cacheDirty = ref false
     let private cacheFilePath (outputDir: string) = Path.Combine(outputDir, ".zest-cache.json")
 
     let private loadCache (outputDir: string) =
-        let path = cacheFilePath outputDir
-        if File.Exists path then
-            try
-                for line in File.ReadAllLines(path) do
-                    let parts = line.Split([|'\t'|], 3)
-                    if parts.Length = 3 then
-                        match Int64.TryParse(parts.[1]), Int32.TryParse(parts.[2]) with
-                        | (true, ticks), (true, hash) ->
-                            buildCache.[parts.[0]] <- { Mtime = DateTime(ticks, DateTimeKind.Utc); OutputHash = hash }
-                        | _ -> ()
-            with _ -> ()
+        if not (buildCache.IsEmpty) then () // Already loaded in this session
+        else
+            let path = cacheFilePath outputDir
+            if File.Exists path then
+                try
+                    for line in File.ReadAllLines(path) do
+                        let parts = line.Split([|'\t'|], 3)
+                        if parts.Length = 3 then
+                            match Int64.TryParse(parts.[1]), Int32.TryParse(parts.[2]) with
+                            | (true, ticks), (true, hash) ->
+                                buildCache.[parts.[0]] <- { Mtime = DateTime(ticks, DateTimeKind.Utc); OutputHash = hash }
+                            | _ -> ()
+                with _ -> ()
 
     let private saveCache (outputDir: string) =
-        try
-            let path = cacheFilePath outputDir
-            use w = new StreamWriter(path, false, System.Text.Encoding.UTF8)
-            for kv in buildCache do
-                w.WriteLine("{0}\t{1}\t{2}", kv.Key, kv.Value.Mtime.Ticks, kv.Value.OutputHash)
-        with _ -> ()
+        if not !cacheDirty then () // Skip write if nothing changed
+        else
+            try
+                let path = cacheFilePath outputDir
+                let sb = System.Text.StringBuilder(1024 * buildCache.Count)
+                for kv in buildCache do
+                    sb.AppendLine(sprintf "%s\t%d\t%d" kv.Key kv.Value.Mtime.Ticks kv.Value.OutputHash) |> ignore
+                File.WriteAllText(path, sb.ToString(), System.Text.Encoding.UTF8)
+                cacheDirty := false
+            with _ -> ()
 
     let private needsRebuild (srcPath: string) (outPath: string) =
         let mtime = File.GetLastWriteTimeUtc(srcPath)
@@ -316,6 +338,7 @@ module BuildEngine =
 
     let private updateCache (srcPath: string) (html: string) =
         buildCache.[srcPath] <- { Mtime = File.GetLastWriteTimeUtc(srcPath); OutputHash = html.GetHashCode() }
+        cacheDirty := true
 
     let private copyAssets (projectRoot: string) (outputDir: string) =
         let src = Path.Combine(projectRoot, "assets")
@@ -323,26 +346,25 @@ module BuildEngine =
         else
             let dst = Path.Combine(outputDir, "assets")
             Directory.CreateDirectory(dst) |> ignore
+            let createdDirs = System.Collections.Generic.HashSet<string>()
+            let ensureDir (target: string) =
+                let dir = Path.GetDirectoryName(target)
+                if dir <> null && createdDirs.Add(dir) then
+                    Directory.CreateDirectory(dir) |> ignore
             let mutable n = 0
             for file in Directory.GetFiles(src, "*", SearchOption.AllDirectories) do
                 let ext = Path.GetExtension(file).ToLowerInvariant()
                 let rel = Path.GetRelativePath(src, file)
+                let srcLastWrite = File.GetLastWriteTimeUtc(file)
                 if ext = ".zcss" then
                     let target = Path.Combine(dst, Path.ChangeExtension(rel, ".css"))
-                    let dir    = Path.GetDirectoryName(target)
-                    if dir <> null then Directory.CreateDirectory(dir) |> ignore
-                    // Skip ZSS compilation if output is up-to-date
-                    let si = FileInfo(file)
-                    let ti = FileInfo(target)
-                    if not ti.Exists || si.LastWriteTimeUtc > ti.LastWriteTimeUtc then
+                    ensureDir target
+                    if not (File.Exists target) || srcLastWrite > File.GetLastWriteTimeUtc(target) then
                         Processor.processFileTo file target |> ignore
                 else
                     let target = Path.Combine(dst, rel)
-                    let dir    = Path.GetDirectoryName(target)
-                    if dir <> null then Directory.CreateDirectory(dir) |> ignore
-                    let si = FileInfo(file)
-                    let ti = FileInfo(target)
-                    if not ti.Exists || si.LastWriteTimeUtc > ti.LastWriteTimeUtc then
+                    ensureDir target
+                    if not (File.Exists target) || srcLastWrite > File.GetLastWriteTimeUtc(target) then
                         File.Copy(file, target, overwrite = true)
                 n <- n + 1
             n

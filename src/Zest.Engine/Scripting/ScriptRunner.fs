@@ -185,37 +185,43 @@ module ScriptRunner =
     /// Copies the DLL to a temp directory to avoid FSharp.Core version
     /// conflicts (FSI uses SDK's FSharp.Core 10.0.0.0, but publish folder
     /// has NuGet's 10.1.0.0).
+    let mutable private dslDllPath = ""
     let private findDslDll () : string =
-        let engineDir =
-            let loc = System.Reflection.Assembly.GetExecutingAssembly().Location
-            if not (String.IsNullOrEmpty loc) && File.Exists loc then
-                Path.GetDirectoryName loc
-            else
-                AppContext.BaseDirectory
-        let candidates = [
-            Path.Combine(engineDir, "Zest.Dsl.dll")
-            Path.Combine(engineDir, "..", "..", "..", "..", "..", "Zest.Dsl", "bin", "Release", "net10.0", "Zest.Dsl.dll")
-            Path.Combine(engineDir, "..", "..", "..", "..", "..", "Zest.Dsl", "bin", "Debug", "net10.0", "Zest.Dsl.dll")
-        ]
-        match candidates |> List.tryFind File.Exists with
-        | Some p -> p
-        | None ->
-            let rec searchUp (dir: string) =
-                let c1 = Path.Combine(dir, "Zest.Dsl.dll")
-                if File.Exists c1 then Some c1
+        if not (String.IsNullOrEmpty dslDllPath) && File.Exists dslDllPath then dslDllPath
+        else
+            let engineDir =
+                let loc = System.Reflection.Assembly.GetExecutingAssembly().Location
+                if not (String.IsNullOrEmpty loc) && File.Exists loc then
+                    Path.GetDirectoryName loc
                 else
-                    let c2 = Path.Combine(dir, "src", "Zest.Dsl", "bin", "Release", "net10.0", "Zest.Dsl.dll")
-                    if File.Exists c2 then Some c2
-                    else
-                        let c3 = Path.Combine(dir, "src", "Zest.Dsl", "bin", "Debug", "net10.0", "Zest.Dsl.dll")
-                        if File.Exists c3 then Some c3
+                    AppContext.BaseDirectory
+            let candidates = [
+                Path.Combine(engineDir, "Zest.Dsl.dll")
+                Path.Combine(engineDir, "..", "..", "..", "..", "..", "Zest.Dsl", "bin", "Release", "net10.0", "Zest.Dsl.dll")
+                Path.Combine(engineDir, "..", "..", "..", "..", "..", "Zest.Dsl", "bin", "Debug", "net10.0", "Zest.Dsl.dll")
+            ]
+            let result =
+                match candidates |> List.tryFind File.Exists with
+                | Some p -> p
+                | None ->
+                    let rec searchUp (dir: string) =
+                        let c1 = Path.Combine(dir, "Zest.Dsl.dll")
+                        if File.Exists c1 then Some c1
                         else
-                            let parent = Path.GetDirectoryName(dir)
-                            if String.IsNullOrEmpty parent || parent = dir then None
-                            else searchUp parent
-            match searchUp (Directory.GetCurrentDirectory()) with
-            | Some p -> p
-            | None -> failwithf "Zest.Dsl.dll not found. Engine dir: %s" engineDir
+                            let c2 = Path.Combine(dir, "src", "Zest.Dsl", "bin", "Release", "net10.0", "Zest.Dsl.dll")
+                            if File.Exists c2 then Some c2
+                            else
+                                let c3 = Path.Combine(dir, "src", "Zest.Dsl", "bin", "Debug", "net10.0", "Zest.Dsl.dll")
+                                if File.Exists c3 then Some c3
+                                else
+                                    let parent = Path.GetDirectoryName(dir)
+                                    if String.IsNullOrEmpty parent || parent = dir then None
+                                    else searchUp parent
+                    match searchUp (Directory.GetCurrentDirectory()) with
+                    | Some p -> p
+                    | None -> failwithf "Zest.Dsl.dll not found. Engine dir: %s" engineDir
+            dslDllPath <- result
+            result
 
     /// Copy Zest.Dsl.dll to an isolated temp directory (without FSharp.Core.dll)
     /// so FSI uses its own FSharp.Core instead of the publish folder's version.
