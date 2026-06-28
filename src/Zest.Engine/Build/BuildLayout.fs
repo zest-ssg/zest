@@ -27,7 +27,7 @@ module BuildLayout =
                     Directory.GetFiles(layoutsDir, "*.*", SearchOption.AllDirectories)
                     |> Array.filter (fun f ->
                         let ext = Path.GetExtension(f).ToLowerInvariant()
-                        List.contains ext [".html"; ".htm"; ".njk"; ".nunjucks"; ".zpage.fsx"; ".zhtml"; ".fsx"])
+                        List.contains ext [".html"; ".htm"; ".znjk"; ".zpage.fsx"; ".zhtml"; ".fsx"])
                     |> Array.map (fun f ->
                         let rec stripExts (name: string) =
                             let e = Path.GetExtension(name)
@@ -139,15 +139,14 @@ module BuildLayout =
         match layouts.TryFind name with
         | None -> content
         | Some (path, layoutText) ->
-            let isNunjucks = path.EndsWith(".njk", StringComparison.OrdinalIgnoreCase)
-                             || path.EndsWith(".nunjucks", StringComparison.OrdinalIgnoreCase)
+            let isNunjucks = path.EndsWith(".znjk", StringComparison.OrdinalIgnoreCase)
 
             let rendered =
                 if isNunjucks then
-                    let engine = TemplateManager.getOrCreateEngine "nunjucks" {
-                        Engine = "nunjucks"
+                    let engine = TemplateManager.getOrCreateEngine "znjk" {
+                        Engine = "znjk"
                         EnableCache = true
-                        Extension = ".njk"
+                        Extension = ".znjk"
                         Filters = []
                     }
                     match engine with

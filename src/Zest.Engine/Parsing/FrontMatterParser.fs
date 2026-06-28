@@ -64,7 +64,7 @@ module FrontMatterParser =
                 ()  // 跳过文件其余部分
         parsePairs metaLines FrontMeta.empty
 
-    /// 解析 .njk / .html 文件头部的 <!-- @key value --> HTML 注释。
+    /// 解析 .znjk / .html 文件头部的 <!-- @key value --> HTML 注释。
     /// 返回 (meta, cleanedBody)，cleanedBody 已剥离元数据注释行。
     let parseHtmlComments (ext: string) (text: string) : FrontMeta * string =
         let lines = text.Split('\n')
@@ -96,7 +96,7 @@ module FrontMatterParser =
     let parse (ext: string) (text: string) : FrontMeta * string =
         match ext with
         | ".md" | ".markdown" -> parseYaml text
-        | ".njk" | ".nunjucks" ->
+        | ".znjk" ->
             let yamlMeta, body = parseYaml text
             if yamlMeta <> FrontMeta.empty then (yamlMeta, body)
             else parseHtmlComments ext text

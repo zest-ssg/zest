@@ -53,7 +53,7 @@ type SiteConfig = {
     // Author / social (surfaced from _data but can be inlined in _config)
     Author: string
     Language: string
-    /// Template engine: "native" (default, {{ }} placeholders) or "nunjucks"
+    /// Template engine: "native" (default, {{ }} placeholders) or "znjk"
     TemplateEngine: string
 }
 with
