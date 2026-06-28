@@ -5,71 +5,41 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ page.title }} &mdash; {{ site.title }}</title>
   <meta name="description" content="{{ page.description }}">
-  <meta name="theme-color" content="#6c63ff">
   <link rel="stylesheet" href="/assets/css/core.css">
   <script src="/assets/js/main.js" defer></script>
 </head>
 <body>
   <nav class="site-nav">
-    <a href="/" class="logo">
-      <span class="logo-mark">◆</span>
-      <span class="logo-text">Zest</span>
-    </a>
-    <button class="nav-toggle" aria-label="Toggle menu">☰</button>
+    <a href="/" class="logo">Zest SSG</a>
     <ul class="nav-links">
-      {% for item in menu.main %}
-        <li><a href="{{ item.url }}">{{ item.label }}</a></li>
-      {% endfor %}
+      <li><a href="/">首页</a></li>
+      <li><a href="/blog/">博客</a></li>
+      <li><a href="/showcase/">Showcase</a></li>
+      <li><a href="/guide/">指南</a></li>
     </ul>
   </nav>
 
   <main>
-    <article class="post-layout">
-      <header class="post-header">
-        <div class="post-breadcrumb"><a href="/blog/">← 博客</a></div>
-        <h1>{{ page.title }}</h1>
-        <div class="post-meta-line">
-          <time>{{ page.date }}</time>
-          {% if page.tags %}
-          <div class="tags">
-            {% for tag in page.tags %}
-              <a class="tag" href="/tags/{{ tag }}/">{{ tag }}</a>
-            {% endfor %}
-          </div>
-          {% endif %}
-        </div>
-      </header>
+    <article class="post">
+      <p class="post-breadcrumb"><a href="/blog/">← 博客</a></p>
+      <h1>{{ page.title }}</h1>
+      <p class="post-meta">
+        <time>{{ page.date }}</time>
+        {{ page.tags }}
+      </p>
       <div class="post-content">{{ content }}</div>
-      <nav class="post-footer-nav">
-        <a href="/blog/">← 返回博客</a>
-      </nav>
+      <p class="post-footer"><a href="/blog/">← 返回博客</a></p>
     </article>
   </main>
 
   <footer class="site-footer">
-    <div class="footer-inner">
-      <div class="footer-brand">
-        <span class="logo-mark">◆</span>
-        <strong>Zest SSG</strong>
-        <span class="footer-tagline">{{ site.brand_tagline }}</span>
-      </div>
-      <div class="footer-links">
-        <div class="footer-col">
-          <h4>文档</h4>
-          <a href="/guide/">快速指南</a>
-          <a href="/blog/">博客</a>
-          <a href="/showcase/">Showcase</a>
-        </div>
-        <div class="footer-col">
-          <h4>社区</h4>
-          <a href="{{ site.social_github }}">GitHub</a>
-          <a href="{{ site.social_discord }}">Discord</a>
-        </div>
-      </div>
-    </div>
-    <div class="footer-bottom">
-      <p>由 <strong>Zest SSG</strong> {{ site_version | default("2.0.0") }} 强力驱动</p>
-    </div>
+    <p>由 <strong>Zest SSG</strong> {{ site.version }} 强力驱动 &mdash; 构建于 {{ site.build_time }}</p>
+    <p>
+      <a href="/">首页</a> ·
+      <a href="/blog/">博客</a> ·
+      <a href="/showcase/">Showcase</a> ·
+      <a href="/guide/">指南</a>
+    </p>
   </footer>
 </body>
 </html>

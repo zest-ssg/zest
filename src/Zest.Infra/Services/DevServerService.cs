@@ -28,6 +28,11 @@ public class DevServerService : IDisposable
     private long _totalRequests;
     private long _rebuildCount;
 
+    // Keep debounce timer as field to prevent GC from collecting it
+    private System.Timers.Timer? _debounceTimer;
+    // Prevent concurrent rebuilds
+    private readonly object _rebuildLock = new();
+
     public int Port => _config.DevServerPort;
     public string Host => _host;
 
@@ -100,11 +105,19 @@ public class DevServerService : IDisposable
         _listener?.Stop();
         _wsServer.Stop();
         _watcher?.Dispose();
+        _debounceTimer?.Dispose();
 
         Logger.Info($"Total requests: {_totalRequests}, rebuilds: {_rebuildCount}");
     }
 
     public void Dispose() => Stop();
+
+    /// Directories whose contents should NOT trigger rebuilds.
+    private static readonly HashSet<string> IgnoredDirNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "_site", ".git", ".svn", ".hg",
+        "bin", "obj", "node_modules", "packages", ".vs"
+    };
 
     private void StartFileWatcher()
     {
@@ -115,53 +128,75 @@ public class DevServerService : IDisposable
             NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.CreationTime
         };
 
-        var debounceTimer = new System.Timers.Timer(300) { AutoReset = false };
-        debounceTimer.Elapsed += (_, _) => Rebuild();
+        _debounceTimer = new System.Timers.Timer(300) { AutoReset = false };
+        _debounceTimer.Elapsed += (_, _) => Rebuild();
 
         void OnChange(object sender, FileSystemEventArgs e)
         {
+            // Skip changes in the output directory
             if (_outputDir != null && e.FullPath.StartsWith(_outputDir, StringComparison.OrdinalIgnoreCase))
                 return;
 
+            // Check each directory component — only skip known ignore-worthy dirs
             var parts = e.FullPath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             for (int i = 0; i < parts.Length - 1; i++)
             {
                 var p = parts[i];
-                if (p.StartsWith("_") || p.StartsWith(".") ||
-                    string.Equals(p, "bin", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(p, "obj", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(p, "node_modules", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(p, "packages", StringComparison.OrdinalIgnoreCase))
+                // Only check the LAST directory component (the file's parent dir)
+                if (i == parts.Length - 2)
+                {
+                    if (IgnoredDirNames.Contains(p))
+                        return;
+                }
+                else if (p.StartsWith("."))
+                {
+                    // Only skip hidden directories (starting with .)
                     return;
+                }
             }
 
             var ext = Path.GetExtension(e.Name!)?.ToLowerInvariant() ?? "";
             if (!WatchConstants.Extensions.Contains(ext)) return;
 
-            debounceTimer.Stop();
-            debounceTimer.Start();
+            _debounceTimer.Stop();
+            _debounceTimer.Start();
         }
 
         _watcher.Changed += OnChange;
         _watcher.Created += OnChange;
         _watcher.Deleted += OnChange;
-        _watcher.Renamed += (_, _) => { debounceTimer.Stop(); debounceTimer.Start(); };
+        _watcher.Renamed += (_, _) => { _debounceTimer.Stop(); _debounceTimer.Start(); };
         _watcher.EnableRaisingEvents = true;
     }
 
     private void Rebuild()
     {
-        var result = _buildService.Execute(_config);
-        BuildService.PrintResult(result, _config);
-
-        if (result.Errors.Length > 0)
+        lock (_rebuildLock)
         {
-            foreach (var err in result.Errors)
-                Logger.Error("Build", err);
-        }
+            try
+            {
+                var result = _buildService.Execute(_config);
+                BuildService.PrintResult(result, _config);
 
-        Interlocked.Increment(ref _rebuildCount);
-        _wsServer.BroadcastReload();
+                if (result.Errors.Length > 0)
+                {
+                    foreach (var err in result.Errors)
+                        Logger.Error("Build", err);
+                }
+
+                Interlocked.Increment(ref _rebuildCount);
+
+                // Small delay to ensure all file writes are flushed to disk
+                // before the browser reloads and requests the updated files
+                Thread.Sleep(100);
+
+                _wsServer.BroadcastReload();
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("DevServer", $"Rebuild failed: {ex.Message}");
+            }
+        }
     }
 
     private async Task ServeHttp(CancellationToken ct)

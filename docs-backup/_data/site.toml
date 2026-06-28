@@ -1,8 +1,0 @@
-# Zest SSG — 全局数据
-author    = "Zest Team"
-copyright = "MIT License"
-language  = "zh-CN"
-
-[social]
-github  = "https://github.com/example/zest"
-twitter = "https://twitter.com/example"

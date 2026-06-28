@@ -102,6 +102,9 @@ render [
   <li><strong>响应式简写：</strong>@sm、@md、@lg、@xl</li>
   <li><strong>@apply：</strong>复用工具类</li>
   <li><strong>三种语法：</strong>SCSS 风格 / 缩进风格 / F# 风格 — 可混用</li>
-</ul>"
+</ul>
+<div class=\"callout callout-warning\">
+  <p><strong>注意：</strong><code>@use</code> 仅支持内置模块（<code>zest:reset</code>、<code>zest:utilities</code> 等）和本地文件路径，不支持 CDN 外部链接。如需引用外部样式，请在 HTML 布局中使用 <code>&lt;link&gt;</code> 标签，或在 ZCSS 中使用原生 CSS <code>@import url(...)</code>。</p>
+</div>"
     ]
 ]

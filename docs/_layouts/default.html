@@ -5,60 +5,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ page.title }} &mdash; {{ site.title }}</title>
   <meta name="description" content="{{ page.description }}">
-  <meta name="theme-color" content="#6c63ff">
   <link rel="stylesheet" href="/assets/css/core.css">
   <script src="/assets/js/main.js" defer></script>
 </head>
 <body>
-  <!-- 🔹 Navigation -->
   <nav class="site-nav">
-    <a href="/" class="logo">
-      <span class="logo-mark">◆</span>
-      <span class="logo-text">Zest</span>
-    </a>
-    <button class="nav-toggle" aria-label="Toggle menu">☰</button>
+    <a href="/" class="logo">Zest SSG</a>
     <ul class="nav-links">
-      {% for item in menu.main %}
-        <li><a href="{{ item.url }}">{{ item.label }}</a></li>
-      {% endfor %}
-      <li><a href="https://github.com/example/zest" class="nav-external">GitHub ↗</a></li>
+      <li><a href="/">首页</a></li>
+      <li><a href="/blog/">博客</a></li>
+      <li><a href="/showcase/">Showcase</a></li>
+      <li><a href="/guide/">指南</a></li>
+      <li><a href="/archive/">归档</a></li>
     </ul>
   </nav>
 
-  <!-- 🔹 Main Content -->
   <main>{{ content }}</main>
 
-  <!-- 🔹 Footer -->
   <footer class="site-footer">
-    <div class="footer-inner">
-      <div class="footer-brand">
-        <span class="logo-mark">◆</span>
-        <strong>Zest SSG</strong>
-        <span class="footer-tagline">{{ site.brand_tagline }}</span>
-      </div>
-      <div class="footer-links">
-        <div class="footer-col">
-          <h4>文档</h4>
-          <a href="/guide/">快速指南</a>
-          <a href="/blog/">博客</a>
-          <a href="/showcase/">Showcase</a>
-        </div>
-        <div class="footer-col">
-          <h4>社区</h4>
-          <a href="{{ site.social_github }}">GitHub</a>
-          <a href="{{ site.social_discord }}">Discord</a>
-        </div>
-        <div class="footer-col">
-          <h4>技术栈</h4>
-          <span>F# + C#</span>
-          <span>.NET 10</span>
-          <span>MIT License</span>
-        </div>
-      </div>
-    </div>
-    <div class="footer-bottom">
-      <p>由 <strong>Zest SSG</strong> {{ site_version | default("2.0.0") }} 强力驱动 &mdash; 构建于 {{ site.build_time | default("N/A") }}</p>
-    </div>
+    <p>由 <strong>Zest SSG</strong> {{ site.version }} 强力驱动 &mdash; 构建于 {{ site.build_time }}</p>
+    <p>
+      <a href="/">首页</a> ·
+      <a href="/blog/">博客</a> ·
+      <a href="/showcase/">Showcase</a> ·
+      <a href="/guide/">指南</a> ·
+      <a href="https://github.com/example/zest">GitHub</a>
+    </p>
   </footer>
 </body>
 </html>
