@@ -1,77 +1,57 @@
 // ============================================================
-// Responsive — Media queries, scrollbar, print styles
+// Responsive — Media queries
 // ============================================================
 
-// ── Mobile ────────────────────────────────────────────────
 @media (max-width: 640px)
   .hero
-    padding-top = s10
-    padding-bottom = s10
+    padding = s16 s4 s12
     h1
       font-size = 2rem
-    &-tagline
+    &-desc
       font-size = 1rem
-
+    .hero-stats
+      flex-wrap: wrap
+      gap = s4
   .site-nav
-    flex-wrap: wrap
-    padding-left = s4
-    padding-right = s4
-
-  body
-    font-size = 0.95rem
-
+    padding = s3 s4
+    .nav-links
+      display: none
+      position: absolute
+      top: 100%
+      left: 0
+      right: 0
+      background-color = bg
+      flex-direction: column
+      padding = s4
+      border-bottom: 1px solid border
+      box-shadow = 0 4px 12px rgba(0,0,0,0.06)
+      &.open
+        display: flex
+    .nav-toggle
+      display: block
+  .feature-grid, .showcase-grid, .blog-grid
+    grid-template-columns: 1fr
+  .footer-inner
+    grid-template-columns: 1fr
+  .footer-links
+    grid-template-columns: 1fr 1fr
+  .section
+    padding = s10 s4
   h1
     font-size = 1.6rem
   h2
     font-size = 1.25rem
+  .container
+    padding = 0 s4
 
-  main
-    padding-left = s4
-    padding-right = s4
-    padding-top = s6
-    padding-bottom = s6
-
-  .feature-grid
-    grid-template-columns: 1fr
-  .features
-    padding-left = s4
-    padding-right = s4
-  .post
-    padding-left = s4
-    padding-right = s4
-  .docs-layout
-    padding-left = s4
-    padding-right = s4
-
-// ── Tablet ────────────────────────────────────────────────
 @media (max-width: 768px)
-  .docs-layout
+  .footer-links
     grid-template-columns: 1fr
 
-  .docs-sidebar
-    position: relative
-    top: 0
-
-// ── Scrollbar ─────────────────────────────────────────────
-::-webkit-scrollbar
-  width: 8px
-  height: 8px
-
-::-webkit-scrollbar-track
-  background-color: transparent
-
-::-webkit-scrollbar-thumb
-  background-color = border
-  border-radius: 4px
-  &:hover
-    background-color = textSoft |> alpha(0.4)
-
-// ── Print ─────────────────────────────────────────────────
 @media print
-  .site-nav, .site-footer, .docs-sidebar
+  .site-nav, .site-footer, .nav-toggle
     display: none
   body
     font-size: 12pt
-    line-height: 1.6
   main
     max-width: none

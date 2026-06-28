@@ -1,0 +1,156 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZCSS 语法指南 &mdash; Zest SSG</title>
+  <meta name="description" content="深入了解 ZCSS — 三种语法风格、变量、管道运算符、颜色函数与响应式断点。">
+  <meta name="theme-color" content="#6c63ff">
+  <link rel="stylesheet" href="/assets/css/core.css">
+  <script src="/assets/js/main.js" defer></script>
+</head>
+<body>
+  <nav class="site-nav">
+    <a href="/" class="logo">Zest SSG</a>
+    <ul>
+      <li><a href="/">首页</a></li>
+      <li><a href="/guide/">指南</a></li>
+      <li><a href="/zcss/">ZCSS</a></li>
+      <li><a href="/programming/">编程</a></li>
+      <li><a href="/templates/">模板</a></li>
+      <li><a href="/blog/">博客</a></li>
+      <li><a href="/demo/">演示</a></li>
+      <li><a href="/archive/">归档</a></li>
+    </ul>
+  </nav>
+
+  <h1 id="zcss-语法指南">ZCSS 语法指南</h1>
+<p>ZCSS（Zest Style Sheets）是 <strong>CSS 超集</strong>，编译为标准 CSS。任何合法 CSS 都是合法 ZCSS。</p>
+<h2 id="三种语法风格">三种语法风格</h2>
+<h3 id="1-传统大括号风格-scss-风格">1. 传统大括号风格（SCSS 风格）</h3>
+<pre><code class="language-zcss" >.card {
+  background-color: #fff;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+}
+</code></pre>
+<h3 id="2-python-缩进风格-无大括号">2. Python 缩进风格（无大括号）</h3>
+<pre><code class="language-zcss" >.card
+  background-color: #fff
+  border-radius: 0.5rem
+  padding: 1.5rem
+</code></pre>
+<h3 id="3-f-c-风格-等号赋值-let-绑定">3. F#/C# 风格（等号赋值 + let 绑定）</h3>
+<pre><code class="language-zcss" >let primary = #6c63ff
+let radius  = 0.5rem
+
+.card
+  background-color = primary
+  border-radius = radius
+  padding = 1.5rem
+</code></pre>
+<blockquote><p>三种风格可在同一文件中混用，解析器自动检测模式。</p></blockquote>
+<h2 id="变量">变量</h2>
+<pre><code class="language-zcss" >$primary: #3b82f6
+$radius:  0.5rem
+
+let primary = #3b82f6
+let radius  = 0.5rem
+</code></pre>
+<p>引用统一使用 <code>$name</code>：</p>
+<pre><code class="language-zcss" >.btn
+  color = $primary
+  border-radius = $radius
+</code></pre>
+<h2 id="管道运算符">管道运算符</h2>
+<pre><code class="language-zcss" >let base = #6c63ff
+
+.btn-primary
+  background-color = base |&gt; lighten(10%)
+  box-shadow = #000 |&gt; mix(base, 25%) |&gt; alpha(0.1)
+</code></pre>
+<h2 id="数学表达式">数学表达式</h2>
+<pre><code class="language-zcss" >let base-size = 16px
+
+.title
+  font-size = $base-size * 1.5        // → 24px
+  padding = $base-size / 2 + 4px      // → 12px
+</code></pre>
+<h2 id="颜色函数">颜色函数</h2>
+<pre><code class="language-zcss" >let brand = #6c63ff
+
+lighten(brand, 20%)       // 变亮
+darken(brand, 20%)        // 变暗
+alpha(brand, 0.5)         // 透明度
+mix(#000, brand, 25%)     // 混合
+complement(brand)         // 互补色
+</code></pre>
+<h2 id="混入-mixin-include">混入 @mixin / @include</h2>
+<pre><code class="language-zcss" >@mixin card($pad: 1.5rem)
+  background-color: #fff
+  border-radius: 0.5rem
+  padding: $pad
+
+.post-card { @include card() }
+.sidebar  { @include card(1rem) }
+</code></pre>
+<h2 id="each-循环">@each 循环</h2>
+<pre><code class="language-zcss" >@each $size in (sm, md, lg)
+  .text-#{$size} {
+    font-size: var(--text-$size)
+  }
+</code></pre>
+<h2 id="for-循环">@for 循环</h2>
+<pre><code class="language-zcss" >@for $i from 1 through 4
+  .col-#{$i} {
+    width: calc($i * 25%)
+  }
+</code></pre>
+<h2 id="响应式断点简写">响应式断点简写</h2>
+<pre><code class="language-zcss" >.grid
+  display: grid
+  grid-template-columns: 1fr
+
+  @md
+    grid-template-columns: repeat(2, 1fr)
+
+  @lg
+    grid-template-columns: repeat(3, 1fr)
+</code></pre>
+<table><thead><tr>
+<th>简写</th>
+<th>等价 media query</th>
+</tr></thead><tbody>
+<tr>
+<td><code>@sm</code></td>
+<td><code>(min-width:640px)</code></td>
+</tr>
+<tr>
+<td><code>@md</code></td>
+<td><code>(min-width:768px)</code></td>
+</tr>
+<tr>
+<td><code>@lg</code></td>
+<td><code>(min-width:1024px)</code></td>
+</tr>
+<tr>
+<td><code>@xl</code></td>
+<td><code>(min-width:1280px)</code></td>
+</tr>
+</tbody></table>
+<h2 id="css-变量导出">CSS 变量导出</h2>
+<pre><code class="language-zcss" >let brand = #6366f1
+@export $brand   // 生成 :root { --brand: #6366f1; }
+</code></pre>
+<h2 id="自动前缀">自动前缀</h2>
+<p>ZCSS 自动为需要前缀的属性添加 <code>-webkit-</code>、<code>-moz-</code>、<code>-ms-</code>：</p>
+<pre><code class="language-zcss" >.modal
+  backdrop-filter: blur(10px)
+  user-select: none
+</code></pre>
+
+  <footer class="site-footer">
+    <p>由 <strong>Zest SSG</strong> 强力驱动 &mdash; Zenith Efficient Static Toolkit</p>
+  </footer>
+</body>
+</html>

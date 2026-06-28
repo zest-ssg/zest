@@ -1,0 +1,43 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zest SSG — F# 静态站点生成器 &mdash; Zest SSG</title>
+  <meta name="description" content="Zest 是基于 F# 的现代化静态站点生成器">
+  <meta name="theme-color" content="#6c63ff">
+  <link rel="stylesheet" href="/assets/css/core.css">
+  <script src="/assets/js/main.js" defer></script>
+</head>
+<body>
+  <nav class="site-nav">
+    <a href="/" class="logo">Zest SSG</a>
+    <ul>
+      <li><a href="/">首页</a></li>
+      <li><a href="/guide/">指南</a></li>
+      <li><a href="/zcss/">ZCSS</a></li>
+      <li><a href="/programming/">编程</a></li>
+      <li><a href="/templates/">模板</a></li>
+      <li><a href="/blog/">博客</a></li>
+      <li><a href="/demo/">演示</a></li>
+      <li><a href="/archive/">归档</a></li>
+    </ul>
+  </nav>
+
+  <section class="hero"><div class="hero-inner"><div class="hero-badge">基于 F# 的现代化 SSG 框架</div><h1>用 F# 构建静态站点</h1><p class="hero-tagline">.zpage.fsx 模板 + ZCSS 样式超集 + TOML 配置，为开发者打造丝滑体验。</p><p class="hero-tagline">主题色  · 构建时间  · Git </p><div class="hero-actions"><a href="/guide/" class="btn-primary">快速开始</a><a href="/zcss/" class="btn-secondary">ZCSS 样式</a><a href="/demo/" class="btn-ghost">功能演示</a></div></div></section><div class="section-title"><h2>核心特性</h2><p>集模板引擎、样式系统与开发体验于一体</p></div>
+<div class="features"><div class="feature-grid"><div class="feature-card"><span class="feat-icon">01</span><h3>F# 模板引擎</h3><p>类型安全的 HTML DSL + Markdown 三合一，divC 风格构造器。</p><a href="/templates/">了解模板</a></div><div class="feature-card"><span class="feat-icon">02</span><h3>ZSS 样式超集</h3><p>任何 CSS 即 ZSS。支持 F# 语法、管道运算符、数学表达式。</p><a href="/zcss/">探索 ZCSS</a></div><div class="feature-card"><span class="feat-icon">03</span><h3>极致开发体验</h3><p>热重载实时预览、增量构建跳过未改动页面。zest serve 一键启动。</p><a href="/guide/">阅读指南</a></div><div class="feature-card"><span class="feat-icon">04</span><h3>11ty 风格短代码</h3><p>Markdown 渲染、模板插入、数据注入，动态转换内容。</p><a href="/templates/">了解更多</a></div><div class="feature-card"><span class="feat-icon">05</span><h3>Nunjucks + 原生</h3><p>支持 Nunjucks 模板引擎和原生替换双模式。_init.fsx 执行初始化。</p><a href="/guide/">查看配置</a></div><div class="feature-card"><span class="feat-icon">06</span><h3>.zhtml 纯 HTML</h3><p>轻量级页面格式，不经 FSI 编译，构建速度最快。</p><a href="/guide/">快速开始</a></div></div></div><div class="section-title"><h2>技术栈一览</h2><p>每个文件格式各尽其责，协作构建高效静态站点</p></div>
+<table>
+<tr><th>文件</th><th>用途</th><th>示例</th></tr>
+<tr><td>.zpage.fsx</td><td>内容模板 (F# + Markdown)</td><td><code>page { title Home }</code></td></tr>
+<tr><td>.zhtml</td><td>纯 HTML 页面</td><td><code>nunjucks 模板语法</code></td></tr>
+<tr><td>.zcss</td><td>样式表 (CSS 超集)</td><td><code>body { bgc: #fff }</code></td></tr>
+<tr><td>.toml</td><td>配置与全局数据</td><td><code>title = Site</code></td></tr>
+<tr><td>.md</td><td>标准 Markdown</td><td>兼容任意编辑器</td></tr>
+<tr><td>.js</td><td>客户端脚本</td><td>原样复制到输出目录</td></tr>
+</table>
+
+  <footer class="site-footer">
+    <p>由 <strong>Zest SSG</strong> 强力驱动 &mdash; Zenith Efficient Static Toolkit</p>
+  </footer>
+</body>
+</html>
