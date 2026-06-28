@@ -101,8 +101,7 @@ module BuildEngine =
                 else
                     [| yield! Directory.GetFiles(contentDir, "*.zpage.fsx", SearchOption.AllDirectories)
                        yield! Directory.GetFiles(contentDir, "*.zhtml",    SearchOption.AllDirectories)
-                       yield! Directory.GetFiles(contentDir, "*.njk",      SearchOption.AllDirectories)
-                       yield! Directory.GetFiles(contentDir, "*.nunjucks", SearchOption.AllDirectories)
+                       yield! Directory.GetFiles(contentDir, "*.znjk",      SearchOption.AllDirectories)
                        yield! Directory.GetFiles(contentDir, "*.fsx",      SearchOption.AllDirectories)
                        yield! Directory.GetFiles(contentDir, "*.md",       SearchOption.AllDirectories)
                        yield! Directory.GetFiles(contentDir, "*.markdown", SearchOption.AllDirectories) |]

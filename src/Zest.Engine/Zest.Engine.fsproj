@@ -34,7 +34,7 @@
     <Compile Include="Parsing/FrontMatterParser.fs" />
     <!-- Template engines -->
     <Compile Include="Template/ITemplateEngine.fs" />
-    <Compile Include="Template/NunjucksEngine.fs" />
+    <Compile Include="Template/ZestNjkEngine.fs" />
     <Compile Include="Template/TemplateManager.fs" />
     <!-- HTML components -->
     <Compile Include="Html/HtmlElements.fs" />

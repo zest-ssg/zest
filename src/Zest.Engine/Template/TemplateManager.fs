@@ -13,11 +13,11 @@ open System.IO
 
 /// Configuration for the template engine.
 type TemplateConfig = {
-    /// Which engine to use. "nunjucks" or "native" (old placeholder system).
+    /// Which engine to use. "znjk" or "native" (old placeholder system).
     Engine: string
     /// Whether to cache parsed templates in memory.
     EnableCache: bool
-    /// Template file extension (e.g. ".html", ".njk").
+    /// Template file extension (e.g. ".html", ".znjk").
     Extension: string
     /// Optional custom filters to register.
     Filters: (string * FilterFn) list
@@ -38,8 +38,8 @@ module TemplateManager =
     /// Initialize a template engine by name.
     let initEngine (name: string) (config: TemplateConfig) : ITemplateEngine option =
         match name with
-        | "nunjucks" ->
-            let engine = NunjucksEngine()
+        | "znjk" ->
+            let engine = ZestNjkEngine()
             for (fnName, fn) in config.Filters do
                 (engine :> ITemplateEngine).RegisterFilter fnName fn
             engines.[name] <- engine
@@ -125,3 +125,80 @@ module TemplateManager =
                         current <- sub
                 current.[parts.[parts.Length - 1]] <- value
         root :> IDictionary<string, obj>
+
+    /// Register standard Zest filters on a Nunjucks engine.
+    /// These filters provide access to Zest's page data from templates.
+    /// The `getPages` callback returns the current page data array.
+    let registerZestFilters (engine: ITemplateEngine) (getPages: unit -> IDictionary<string, obj>[]) =
+        // ── pages_by_tag: filter pages by a tag ────────────
+        engine.RegisterFilter "pages_by_tag" (fun value args ->
+            let tag = if args.Length > 0 then args.[0] else ""
+            let pages = getPages ()
+            pages
+            |> Array.filter (fun p ->
+                match p.TryGetValue "tags" with
+                | true, (:? (string[]) as tags) ->
+                    tags |> Array.exists (fun t -> t.Equals(tag, StringComparison.OrdinalIgnoreCase))
+                | _ -> false)
+            |> Array.map (fun d -> d :> obj) |> box)
+
+        // ── recent: get N most recent pages ────────────────
+        engine.RegisterFilter "recent" (fun value args ->
+            let n = if args.Length > 0 then (try int args.[0] with _ -> 5) else 5
+            getPages ()
+            |> Array.filter (fun p ->
+                match p.TryGetValue "date" with
+                | true, (:? string as d) -> d <> ""
+                | _ -> false)
+            |> Array.sortByDescending (fun p ->
+                match p.TryGetValue "date" with
+                | true, (:? string as d) -> d
+                | _ -> "")
+            |> Array.truncate n
+            |> Array.map (fun d -> d :> obj) |> box)
+
+        // ── by_collection: filter pages by collection name ─
+        engine.RegisterFilter "by_collection" (fun value args ->
+            let name = if args.Length > 0 then args.[0] else ""
+            let pages = getPages ()
+            pages
+            |> Array.filter (fun p ->
+                match p.TryGetValue "collection" with
+                | true, (:? string as c) ->
+                    c.Equals(name, StringComparison.OrdinalIgnoreCase)
+                | _ -> false)
+            |> Array.map (fun d -> d :> obj) |> box)
+
+        // ── search: simple full-text search across pages ───
+        engine.RegisterFilter "search" (fun value args ->
+            let query = if args.Length > 0 then args.[0].ToLowerInvariant() else ""
+            let pages = getPages ()
+            if query = "" then pages |> Array.map (fun d -> d :> obj) |> box
+            else
+                pages
+                |> Array.filter (fun p ->
+                    [ "title"; "content"; "excerpt"; "description" ]
+                    |> List.exists (fun key ->
+                        match p.TryGetValue key with
+                        | true, (:? string as s) ->
+                            s.ToLowerInvariant().Contains(query)
+                        | _ -> false))
+                |> Array.map (fun d -> d :> obj) |> box)
+
+        // ── where: generic attribute filter (like Liquid's where) ──
+        engine.RegisterFilter "where" (fun value args ->
+            let key = if args.Length > 0 then args.[0] else ""
+            let expected = if args.Length > 1 then args.[1] else ""
+            let toStr (v: obj) = if isNull v then "" else v.ToString()
+            match value with
+            | :? System.Collections.IEnumerable as ie ->
+                ie |> Seq.cast<obj>
+                |> Seq.filter (fun item ->
+                    match item with
+                    | :? IDictionary<string, obj> as d ->
+                        match d.TryGetValue key with
+                        | true, v -> toStr v = expected
+                        | _ -> false
+                    | _ -> false)
+                |> Array.ofSeq :> obj
+            | _ -> value)

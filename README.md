@@ -21,7 +21,7 @@
 - **HTML DSL** — Compose HTML declaratively: `render [ h1 []; p [] ]`.
 - **Markdown** — Standard `.md` files with frontmatter support.
 - **ZCSS** — A CSS superset with nesting, F#-style `let` bindings, math expressions, color functions, and mixins — compiled to standard CSS.
-- **Nunjucks Templates** — Rich template engine for layouts: filters, expressions, macros, `{% if %}`, `{% for %}`.
+- **ZestNjk Templates** — Nunjucks-compatible template engine for layouts: filters, expressions, macros, `{% if %}`, `{% for %}`, template inheritance, Zest API integration. Files use `.znjk` extension.
 - **`_init.fsx`** — Optional initialization script (runs before build) to inject dynamic data, load JSON/TOML, read env vars.
 - **TOML Config** — Zero-config defaults; customize via `_config.toml` and `_data/*.toml`. No YAML.
 - **Live Reload** — `zest serve` watches for changes and auto-rebuilds.
@@ -132,7 +132,7 @@ my-site/
 | Project | Language | Responsibility |
 |---------|----------|----------------|
 | **Zest.App** | C# | CLI entry point, command routing |
-| **Zest.Engine** | F# | Core engine: builds, HTML DSL, ScriptRunner, Markdown, ZCSS compiler, Nunjucks |
+| **Zest.Engine** | F# | Core engine: builds, HTML DSL, ScriptRunner, Markdown, ZCSS compiler, ZestNjk template engine |
 | **Zest.Dsl** | F# | Precompiled DSL helpers for FSI script evaluation |
 | **Zest.Infra** | C# | Configuration loading, file watching, dev server |
 
@@ -156,7 +156,8 @@ dotnet publish src/Zest.App/Zest.App.csproj -c Release -r win-x64 --self-contain
 | Extension | Purpose | Processing |
 |-----------|---------|------------|
 | `.zpage.fsx` | F# script templates (F# + Markdown + HTML DSL) | Compiled via `dotnet fsi` |
-| `.zhtml` | Pure HTML pages | Copied as-is (optional Nunjucks) |
+| `.zhtml` | Pure HTML pages | Copied as-is (optional ZestNjk) |
+| `.znjk` | Zest Nunjucks templates (Nunjucks-compatible syntax with Zest API integration) | Rendered via ZestNjkEngine — supports filters, expressions, `{% if %}`, `{% for %}`, macros, template inheritance |
 | `.zcss` | ZCSS stylesheets (CSS superset) | Compiled to `.css` |
 | `.md` | Standard Markdown | Rendered to HTML |
 | `.toml` | Configuration and data (no YAML) | Parsed at build time |
@@ -192,7 +193,7 @@ dotnet publish src/Zest.App/Zest.App.csproj -c Release -r win-x64 --self-contain
 
 | Engine | Config Value | Features |
 |--------|-------------|----------|
-| **Nunjucks** (default) | `template_engine = "nunjucks"` | Filters, expressions, `{% if %}`, `{% for %}`, macros |
+| **ZestNjk** (default) | `template_engine = "znjk"` | Filters, expressions, `{% if %}`, `{% for %}`, macros, template inheritance, Zest API filters (`pages_by_tag`, `recent`, `by_collection`, `search`, `where`) |
 | **Native Replace** | `template_engine = "replace"` | Simple `{{ variable }}` substitution |
 
 ### HTML DSL Reference

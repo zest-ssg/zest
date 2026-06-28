@@ -34,7 +34,7 @@ module ScriptEvaluator =
                 |> Array.skipWhile String.IsNullOrWhiteSpace
             Markdown.toHtml (String.concat "\n" lines)
 
-    /// 使用 Nunjucks 引擎渲染 .njk 内容页面。
+    /// 使用 ZestNjk 引擎渲染 .znjk 内容页面。
     /// 构建嵌套上下文（site.*、page.* 等），使 {{ site.title }} 模板语法充分生效。
     /// 同时注入 Zest 页面数据（pages、tags、collections）和注册 Zest 自定义过滤器。
     let private renderNunjucksContent
@@ -45,10 +45,10 @@ module ScriptEvaluator =
         (slug: string)
         (filePath: string)
         : string =
-        match TemplateManager.getOrCreateEngine "nunjucks" {
-            Engine = "nunjucks"
+        match TemplateManager.getOrCreateEngine "znjk" {
+            Engine = "znjk"
             EnableCache = true
-            Extension = ".njk"
+            Extension = ".znjk"
             Filters = []
         } with
         | Some engine ->
@@ -261,7 +261,7 @@ module ScriptEvaluator =
 
                     let contentHtml =
                         match ext with
-                        | ".njk" | ".nunjucks" ->
+                        | ".znjk" ->
                             renderNunjucksContent bodyText config globalData meta slug filePath
                         | _ ->
                             renderContent ext bodyText text
@@ -298,7 +298,7 @@ module ScriptEvaluator =
 
                 let contentHtml =
                     match ext with
-                    | ".njk" | ".nunjucks" ->
+                    | ".znjk" ->
                         renderNunjucksContent bodyText config globalData meta slug filePath
                     | _ ->
                         renderContent ext bodyText text
