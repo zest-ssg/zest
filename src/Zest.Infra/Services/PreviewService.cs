@@ -122,7 +122,7 @@ public class PreviewService : IDisposable
             if (method == "OPTIONS")
             {
                 ctx.Response.StatusCode = 204;
-                HttpResponseUtility.AddCorsHeaders(ctx.Response);
+                HttpResponseHelper.AddCorsHeaders(ctx.Response);
                 ctx.Response.OutputStream.Close();
                 sw.Stop();
                 Logger.Request(method, urlPath, 204, sw.ElapsedMilliseconds);
@@ -134,7 +134,7 @@ public class PreviewService : IDisposable
             {
                 ctx.Response.StatusCode = 405;
                 ctx.Response.Headers["Allow"] = "GET, HEAD, OPTIONS";
-                await HttpResponseUtility.WriteStringResponse(ctx, 405, "<h1>405 — Method Not Allowed</h1>");
+                await HttpResponseHelper.WriteStringResponse(ctx, 405, "<h1>405 — Method Not Allowed</h1>");
                 sw.Stop();
                 Logger.Request(method, urlPath, 405, sw.ElapsedMilliseconds);
                 return;
@@ -145,12 +145,12 @@ public class PreviewService : IDisposable
             string filePath;
             try
             {
-                filePath = HttpResponseUtility.ResolveFilePath(outputDir, urlPath);
+                filePath = FilePathResolver.ResolveFilePath(outputDir, urlPath);
             }
             catch (UnauthorizedAccessException)
             {
                 ctx.Response.StatusCode = 403;
-                await HttpResponseUtility.WriteStringResponse(ctx, 403, "<h1>403 — Forbidden</h1>");
+                await HttpResponseHelper.WriteStringResponse(ctx, 403, "<h1>403 — Forbidden</h1>");
                 sw.Stop();
                 Logger.Request(method, urlPath, 403, sw.ElapsedMilliseconds);
                 Logger.Warn("Security", $"Path traversal blocked: {urlPath}");
@@ -159,7 +159,7 @@ public class PreviewService : IDisposable
 
             if (!File.Exists(filePath))
             {
-                await HttpResponseUtility.WriteNotFoundResponse(ctx, outputDir, urlPath);
+                await NotFoundResponse.WriteNotFound(ctx, outputDir, urlPath);
                 sw.Stop();
                 Logger.Request(method, urlPath, 404, sw.ElapsedMilliseconds);
                 Logger.VerboseLog($"404 for {urlPath} → resolved to {filePath}");
@@ -167,7 +167,7 @@ public class PreviewService : IDisposable
             }
 
             // Serve the file with ETag/caching
-            var cacheHit = await HttpResponseUtility.WriteFileResponseAsync(ctx, filePath);
+            var cacheHit = await HttpResponseHelper.WriteFileResponseAsync(ctx, filePath);
 
             // HEAD request: don't send body
             if (method == "HEAD")
@@ -195,7 +195,7 @@ public class PreviewService : IDisposable
             try
             {
                 ctx.Response.StatusCode = 500;
-                await HttpResponseUtility.WriteStringResponse(ctx, 500,
+                await HttpResponseHelper.WriteStringResponse(ctx, 500,
                     $"<h1>500 — Internal Server Error</h1><p>{System.Net.WebUtility.HtmlEncode(ex.Message)}</p>");
             }
             catch { }
