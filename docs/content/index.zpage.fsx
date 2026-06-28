@@ -13,7 +13,7 @@ render [
             divC "hero-actions" [
                 aC "btn btn-primary" "/guide/" [text "快速开始"]
                 aC "btn btn-secondary" "/showcase/" [text "查看 Showcase"]
-                aC "btn btn-ghost" "https://github.com/example/zest" [text "GitHub ↗"]
+                aC "btn btn-ghost" "https://github.com/zest-ssg/zest" [text "GitHub ↗"]
             ]
             divC "hero-stats" [
                 divC "stat" [ spanC "stat-num" [text (string (site_pages().Length))]; spanC "stat-label" [text "Pages"] ]
