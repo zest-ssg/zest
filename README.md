@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="zest.png" alt="Zest" width="128" height="128">
+  <img src="Zest.png" alt="Zest" width="128" height="128">
 </p>
 
 <h1 align="center">Zest SSG</h1>
