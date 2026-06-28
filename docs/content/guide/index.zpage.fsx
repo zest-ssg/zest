@@ -98,7 +98,6 @@ render [
   <li><strong>管道运算符：</strong><code>color = base |> lighten(20%)</code></li>
   <li><strong>颜色函数：</strong>lighten、darken、alpha、mix、complement</li>
   <li><strong>混入：</strong><code>@mixin / @include</code></li>
-  <li><strong>属性简写：</strong>bgc、bdr、fs、fw、bxsh 等 60+</li>
   <li><strong>响应式简写：</strong>@sm、@md、@lg、@xl</li>
   <li><strong>@apply：</strong>复用工具类</li>
   <li><strong>三种语法：</strong>SCSS 风格 / 缩进风格 / F# 风格 — 可混用</li>
