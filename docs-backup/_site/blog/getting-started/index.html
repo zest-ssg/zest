@@ -1,0 +1,95 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zest SSG 快速入门 &mdash; Zest SSG</title>
+  <meta name="description" content="5 分钟内搭建你的第一个 Zest 静态站点，了解核心概念与工作流。">
+  <meta name="theme-color" content="#6c63ff">
+  <link rel="stylesheet" href="/assets/css/core.css">
+  <script src="/assets/js/main.js" defer></script>
+</head>
+<body>
+  <nav class="site-nav">
+    <a href="/" class="logo">Zest SSG</a>
+    <ul>
+      <li><a href="/">首页</a></li>
+      <li><a href="/guide/">指南</a></li>
+      <li><a href="/zcss/">ZCSS</a></li>
+      <li><a href="/programming/">编程</a></li>
+      <li><a href="/templates/">模板</a></li>
+      <li><a href="/blog/">博客</a></li>
+      <li><a href="/demo/">演示</a></li>
+      <li><a href="/archive/">归档</a></li>
+    </ul>
+  </nav>
+
+  <h1 id="zest-ssg-快速入门">Zest SSG 快速入门</h1>
+<p>Zest 是一个基于 F# 的现代化静态站点生成器，支持 <code>.zpage.fsx</code> 模板脚本和 ZCSS 样式表。</p>
+<h2 id="核心概念">核心概念</h2>
+<p>Zest 围绕四种文件类型构建：</p>
+<table><thead><tr>
+<th>文件</th>
+<th>作用</th>
+</tr></thead><tbody>
+<tr>
+<td><code>.zpage.fsx</code></td>
+<td>F# 脚本模板 — 类型安全 + HTML DSL + Markdown</td>
+</tr>
+<tr>
+<td><code>.zhtml</code></td>
+<td>纯 HTML 页面（可选 Nunjucks 模板语法）</td>
+</tr>
+<tr>
+<td><code>.zcss</code></td>
+<td>CSS 超集样式表（编译为 CSS）</td>
+</tr>
+<tr>
+<td><code>.toml</code></td>
+<td>站点配置与全局数据</td>
+</tr>
+</tbody></table>
+<h2 id="安装">安装</h2>
+<pre><code class="language-bash" >git clone https://github.com/example/zest
+cd zest
+dotnet build
+</code></pre>
+<h2 id="创建项目">创建项目</h2>
+<pre><code class="language-bash" >zest init my-site
+cd my-site
+</code></pre>
+<h2 id="目录结构">目录结构</h2>
+<pre><code>my-site/
+  _config.toml            # 站点配置
+  _init.fsx               # 初始化脚本（可选）
+  _data/                  # 全局数据（.toml）
+  _layouts/               # HTML 布局模板（Nunjucks/原生）
+  _includes/              # 可复用 HTML 片段
+  content/                # 内容文件
+    index.zpage.fsx       # 首页
+    blog/                 # 博客文章
+  assets/
+    css/style.zcss        # ZCSS 样式
+  _site/                  # 构建产物（自动生成）
+</code></pre>
+<h2 id="创建第一篇文章">创建第一篇文章</h2>
+<p>在 <code>content/blog/</code> 下创建 <code>hello.zpage.fsx</code>：</p>
+<pre><code class="language-fsharp" >
+# 你好，Zest
+
+这是我的第一篇文章。
+</code></pre>
+<h2 id="启动开发服务器">启动开发服务器</h2>
+<pre><code class="language-bash" >zest serve
+</code></pre>
+<p>访问 <code>http://localhost:8080</code> 预览站点，修改文件后浏览器自动刷新。</p>
+<h2 id="构建生产版本">构建生产版本</h2>
+<pre><code class="language-bash" >zest build
+</code></pre>
+<p>输出到 <code>_site/</code> 目录，可直接部署。</p>
+
+  <footer class="site-footer">
+    <p>由 <strong>Zest SSG</strong> 强力驱动 &mdash; Zenith Efficient Static Toolkit</p>
+  </footer>
+</body>
+</html>

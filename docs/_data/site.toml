@@ -2,7 +2,28 @@
 author    = "Zest Team"
 copyright = "MIT License"
 language  = "zh-CN"
+version   = "2.0.0"
+
+[brand]
+tagline  = "Zenith Efficient Static Toolkit"
+primary  = "#6c63ff"
+accent   = "#f59e0b"
 
 [social]
 github  = "https://github.com/example/zest"
-twitter = "https://twitter.com/example"
+discord = "https://discord.gg/zest"
+
+[stats]
+total_features  = 6
+file_types      = 6
+since           = "2026"
+
+[[links]]
+name = "GitHub"
+url  = "https://github.com/example/zest"
+icon = "github"
+
+[[links]]
+name = "文档"
+url  = "/guide/"
+icon = "book"

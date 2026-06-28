@@ -1,0 +1,491 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZSS 2.0 样式指南 &mdash; Zest SSG</title>
+  <meta name="description" content="基于 F# 的现代化静态站点生成器 — .zpage.fsx 模板 + ZCSS 样式 + TOML 配置">
+  <meta name="theme-color" content="#6c63ff">
+  <link rel="stylesheet" href="/assets/css/core.css">
+  <script src="/assets/js/main.js" defer></script>
+</head>
+<body>
+  <nav class="site-nav">
+    <a href="/" class="logo">Zest SSG</a>
+    <ul>
+      <li><a href="/">首页</a></li>
+      <li><a href="/guide/">指南</a></li>
+      <li><a href="/zcss/">ZCSS</a></li>
+      <li><a href="/programming/">编程</a></li>
+      <li><a href="/templates/">模板</a></li>
+      <li><a href="/blog/">博客</a></li>
+      <li><a href="/demo/">演示</a></li>
+      <li><a href="/archive/">归档</a></li>
+    </ul>
+  </nav>
+
+  <h1 id="zss-2-0-样式指南">ZSS 2.0 样式指南</h1>
+<p>ZSS（Zest Style Sheets）2.0 是 <strong>CSS 超集</strong>，编译为标准 CSS。任何合法 CSS 文件都是合法 ZSS 文件。</p>
+<p>2.0 版本新增：<strong>F#/C# 风格语法</strong>、<strong>Python 缩进风格</strong>、<strong>管道运算符</strong>、<strong>数学表达式</strong>、<strong>@apply 工具类</strong>、<strong>更多颜色函数</strong>、<strong>嵌套属性简写</strong>。</p>
+<h2 id="三种语法风格">三种语法风格</h2>
+<p>ZSS 2.0 支持三种写法，可按需选择或混用：</p>
+<h3 id="1-传统大括号风格-scss-风格">1. 传统大括号风格（SCSS 风格）</h3>
+<pre><code class="language-zss" >.card {
+  bgc: #fff
+  bdr: 0.5r
+  p: 1.5r
+}
+</code></pre>
+<h3 id="2-python-缩进风格-无大括号">2. Python 缩进风格（无大括号）</h3>
+<pre><code class="language-zss" >.card
+  bgc: #fff
+  bdr: 0.5r
+  p: 1.5r
+</code></pre>
+<h3 id="3-f-c-风格-等号赋值-let-绑定">3. F#/C# 风格（等号赋值 + let 绑定）</h3>
+<pre><code class="language-zss" >let primary = #6c63ff
+let radius  = 0.5r
+
+.card
+  bgc = primary
+  bdr = radius
+  p   = 1.5r
+</code></pre>
+<blockquote><p>三种风格可自动检测并在同一文件中混用。解析器会根据缩进和大括号自动判断模式。</p></blockquote>
+<h2 id="变量">变量</h2>
+<p>支持两种变量声明方式：</p>
+<pre><code class="language-zss" >$primary: #6c63ff
+$radius:  0.5r
+
+let primary = #6c63ff
+let radius  = 0.5r
+
+$base-font: 16px !default
+let baseFont = 16px !default
+</code></pre>
+<p>变量引用统一使用 <code>$name</code> 语法（无论用哪种方式声明）：</p>
+<pre><code class="language-zss" >.button
+  bgc = $primary
+  bdr = $radius
+</code></pre>
+<h2 id="f-管道运算符">F# 管道运算符</h2>
+<p>使用 <code>|&gt;</code> 将值传递给函数，让代码更易读：</p>
+<pre><code class="language-zss" >let base = #6c63ff
+
+.btn-primary
+  bgc = base |&gt; lighten(10%)
+  bdc = base |&gt; darken(20%) |&gt; alpha(0.3)
+  bxsh = #000 |&gt; mix(base, 25%) |&gt; alpha(0.1)
+</code></pre>
+<p>等价于：</p>
+<pre><code class="language-zss" >.btn-primary
+  bgc = lighten(base, 10%)
+  bdc = alpha(darken(base, 20%), 0.3)
+</code></pre>
+<h2 id="嵌套属性简写">嵌套属性简写</h2>
+<p>使用点号访问嵌套属性，自动转换为连字符：</p>
+<pre><code class="language-zss" >.card
+  margin.top    = 10px     // → margin-top: 10px
+  margin.bottom = 20px     // → margin-bottom: 20px
+  border.radius = 0.5r     // → border-radius: 0.5rem
+  font.size     = 1.2r     // → font-size: 1.2rem
+  font.weight   = 600       // → font-weight: 600
+</code></pre>
+<h2 id="数学表达式">数学表达式</h2>
+<p>在值中直接使用算术运算：</p>
+<pre><code class="language-zss" >let base-size = 16px
+
+.title
+  fs = $base-size * 1.5        // → 24px
+  p  = $base-size / 2 + 4px    // → 12px
+  w  = (100% - 40px) / 2       // → calc((100% - 40px) / 2)
+  mt = $base-size + 10px       // → 26px
+</code></pre>
+<p>支持的运算符：<code>+</code> <code>-</code> <code>*</code> <code>/</code> <code>()</code>，支持单位自动推导。</p>
+<h2 id="颜色函数">颜色函数</h2>
+<p>ZSS 2.0 提供完整的颜色操作工具箱：</p>
+<pre><code class="language-zss" >let brand = #6c63ff
+
+lighten(brand, 20%)       // 变亮 20%
+darken(brand, 20%)        // 变暗 20%
+
+alpha(brand, 0.5)          // 50% 透明度
+transparentize(brand, 0.3) // 减少 30% 不透明度
+
+mix(#000, brand, 25%)      // 25% 黑 + 75% brand
+tint(brand, 30%)           // 混入白色
+shade(brand, 30%)          // 混入黑色
+
+adjust-hue(brand, 30deg)   // 色相旋转 30&#176;
+complement(brand)          // 互补色
+grayscale(brand)           // 灰度
+invert(brand)              // 反色
+
+saturate(brand, 20%)
+desaturate(brand, 20%)
+
+rgba(108, 99, 255, 0.8)
+rgb(108, 99, 255)
+hsl(250, 100%, 60%)
+hsla(250, 100%, 60%, 0.5)
+</code></pre>
+<h2 id="属性简写">属性简写</h2>
+<table><thead><tr>
+<th>简写</th>
+<th>完整属性</th>
+<th>简写</th>
+<th>完整属性</th>
+</tr></thead><tbody>
+<tr>
+<td><code>m</code></td>
+<td>margin</td>
+<td><code>p</code></td>
+<td>padding</td>
+</tr>
+<tr>
+<td><code>mt/mr/mb/ml</code></td>
+<td>margin-*</td>
+<td><code>pt/pr/pb/pl</code></td>
+<td>padding-*</td>
+</tr>
+<tr>
+<td><code>mx</code></td>
+<td>margin-inline</td>
+<td><code>my</code></td>
+<td>margin-block</td>
+</tr>
+<tr>
+<td><code>d</code></td>
+<td>display</td>
+<td><code>pos</code></td>
+<td>position</td>
+</tr>
+<tr>
+<td><code>c</code></td>
+<td>color</td>
+<td><code>fs</code></td>
+<td>font-size</td>
+</tr>
+<tr>
+<td><code>fw</code></td>
+<td>font-weight</td>
+<td><code>ff</code></td>
+<td>font-family</td>
+</tr>
+<tr>
+<td><code>bdr</code></td>
+<td>border-radius</td>
+<td><code>bxsh</code></td>
+<td>box-shadow</td>
+</tr>
+<tr>
+<td><code>tr</code></td>
+<td>transition</td>
+<td><code>trf</code></td>
+<td>transform</td>
+</tr>
+<tr>
+<td><code>ai</code></td>
+<td>align-items</td>
+<td><code>jc</code></td>
+<td>justify-content</td>
+</tr>
+<tr>
+<td><code>gtc</code></td>
+<td>grid-template-columns</td>
+<td><code>gap</code></td>
+<td>gap</td>
+</tr>
+<tr>
+<td><code>bgc</code></td>
+<td>background-color</td>
+<td><code>bgi</code></td>
+<td>background-image</td>
+</tr>
+<tr>
+<td><code>bdc</code></td>
+<td>border-color</td>
+<td><code>bd</code></td>
+<td>border</td>
+</tr>
+<tr>
+<td><code>bxz</code></td>
+<td>box-sizing</td>
+<td><code>ov</code></td>
+<td>overflow</td>
+</tr>
+<tr>
+<td><code>td</code></td>
+<td>text-decoration</td>
+<td><code>ta</code></td>
+<td>text-align</td>
+</tr>
+<tr>
+<td><code>lh</code></td>
+<td>line-height</td>
+<td><code>ls</code></td>
+<td>list-style</td>
+</tr>
+<tr>
+<td><code>o</code></td>
+<td>opacity</td>
+<td><code>z</code></td>
+<td>z-index</td>
+</tr>
+<tr>
+<td><code>w</code></td>
+<td>width</td>
+<td><code>h</code></td>
+<td>height</td>
+</tr>
+<tr>
+<td><code>mw</code></td>
+<td>max-width</td>
+<td><code>mh</code></td>
+<td>max-height</td>
+</tr>
+<tr>
+<td><code>anim</code></td>
+<td>animation</td>
+<td><code>asp</code></td>
+<td>aspect-ratio</td>
+</tr>
+</tbody></table>
+<h3 id="code-bdr-code-简写的歧义解析"><code>bdr</code> 简写的歧义解析</h3>
+<p><code>bdr</code> 同时可能是 <code>border</code> 或 <code>border-radius</code>，编译器会<strong>按值内容动态判断</strong>：</p>
+<ul>
+<li>值<strong>包含</strong> border-style 关键字（<code>solid</code> / <code>dashed</code> / <code>dotted</code> / <code>double</code> / <code>groove</code> 等）→ 解析为 <code>border</code></li>
+<li>否则 → 解析为 <code>border-radius</code></li>
+</ul>
+<pre><code class="language-zss" >.btn      { bdr: 1px solid #ccc }   // → border:        1px solid #ccc
+.card     { bdr: 8px            }    // → border-radius: 8px
+</code></pre>
+<h3 id="多段属性简写">多段属性简写</h3>
+<p>带连字符的属性名（如 <code>min-width</code>）通过<strong>连字符不敏感的最长公共子串匹配</strong>解析。 下列写法全部等价：</p>
+<pre><code class="language-zss" >.x { mn-width: 0 }   // → min-width: 0
+.x { mnw:      0 }   // → min-width: 0
+.x { blc: #f00 }     // → border-left-color: #f00
+.x { mnh: 100vh }    // → min-height: 100vh
+</code></pre>
+<blockquote><p><strong>避坑提示</strong>：避免把 <code>let border = #e2e8f0</code> 之类的变量名与 CSS 关键字重名。</p></blockquote>
+<blockquote><p>编译器会按词边界替换变量，但如果你的变量名恰好是 <code>border</code>、<code>box</code> 等</p></blockquote>
+<blockquote><p>CSS 关键字，utility 中的 <code>border-box</code>、<code>box-shadow</code> 等值会被误替换。</p></blockquote>
+<blockquote><p>推荐用 <code>let bdColor = #e2e8f0</code>、<code>let shadowColor = #000</code> 这类带语义前缀的名字。</p></blockquote>
+<h2 id="值简写">值简写</h2>
+<pre><code>1r   → 1rem       50p  → 50%
+100v → 100vh      0.3s → 0.3s
+</code></pre>
+<h2 id="嵌套">嵌套</h2>
+<pre><code class="language-zss" >nav
+  d: flex
+  gap: 1r
+
+  ul
+    ls: none
+    d: flex
+
+  a
+    td: none
+    c: $primary
+
+    &amp;:hover
+      td: underline
+</code></pre>
+<h2 id="混入-mixin">混入（Mixin）</h2>
+<pre><code class="language-zss" >@mixin card($pad: 1.5r)
+  bgc: #fff
+  bdr: $radius
+  p: $pad
+  bxsh: 0 2px 12px rgba(0,0,0,0.07)
+
+.post { @include card() }
+.sidebar { @include card(1r) }
+</code></pre>
+<h2 id="apply-工具类应用">@apply — 工具类应用</h2>
+<p>使用 <code>@apply</code> 在规则中直接引入预定义的工具类：</p>
+<pre><code class="language-zss" >@use &quot;zest:utilities&quot;
+
+.custom-card
+  @apply d-block p-4 bg-white rounded-lg shadow-md
+  bdr: 0.5r
+
+.icon-button
+  @apply d-inline-flex ai-center jc-center
+  w: 2.5r
+  h: 2.5r
+  bdr: 50%
+</code></pre>
+<h2 id="use-模块系统">@use — 模块系统</h2>
+<p>引入内置工具箱：</p>
+<pre><code class="language-zss" >@use &quot;zest:utilities&quot;   // 基础工具类（display, spacing, flex 等）
+@use &quot;zest:reset&quot;       // CSS Reset
+@use &quot;zest:palette&quot;     // 颜色调色板 + 语义色变量
+@use &quot;zest:animations&quot;  // 动画关键帧 + 动画类
+@use &quot;zest:gradients&quot;   // 渐变背景工具
+@use &quot;zest:filters&quot;     // 滤镜 + 变换工具
+@use &quot;zest:layout&quot;      // 容器 + 宽高比 + 多列布局
+@use &quot;zest:all&quot;         // 全部引入
+</code></pre>
+<h3 id="内置调色板">内置调色板</h3>
+<p>引入 <code>zest:palette</code> 后可直接使用：</p>
+<pre><code class="language-zss" >@use &quot;zest:palette&quot;
+
+$primary: #6c63ff   // 覆盖默认值
+
+.btn-primary
+  bgc: $primary
+.btn-success
+  bgc: $success
+.btn-danger
+  bgc: $danger
+
+.bg-blue   { bgc: $palette-blue }
+.bg-purple { bgc: $palette-purple }
+</code></pre>
+<h3 id="动画工具箱">动画工具箱</h3>
+<pre><code class="language-zss" >@use &quot;zest:animations&quot;
+
+.loading
+  @apply animate-spin
+
+.notification
+  @apply animate-slide-in-right
+
+.pulse-button
+  @apply animate-pulse
+</code></pre>
+<h3 id="渐变工具箱">渐变工具箱</h3>
+<pre><code class="language-zss" >@use &quot;zest:gradients&quot;
+
+.hero-bg
+  @apply bg-gradient-primary
+
+.rainbow-header
+  @apply bg-gradient-rainbow
+</code></pre>
+<h3 id="滤镜与变换">滤镜与变换</h3>
+<pre><code class="language-zss" >@use &quot;zest:filters&quot;
+
+.glass-card
+  @apply backdrop-blur-md
+  bgc: rgba(255,255,255,0.8)
+
+.hover-zoom
+  @apply scale-100
+  &amp;:hover
+    @apply scale-110
+    tr: transform 0.2s
+</code></pre>
+<h2 id="export-css-变量导出">@export — CSS 变量导出</h2>
+<p>将 ZSS 变量输出为 CSS 自定义属性：</p>
+<pre><code class="language-zss" >let primary = #3b82f6
+let radius  = 0.5r
+
+@export $primary
+@export $radius
+
+</code></pre>
+<h2 id="each-循环生成">@each — 循环生成</h2>
+<pre><code class="language-zss" >@each $size in (sm, md, lg, xl)
+  .text-#{$size}
+    fs: var(--text-$size)
+
+</code></pre>
+<h2 id="for-数值循环">@for — 数值循环</h2>
+<pre><code class="language-zss" >@for $i from 1 through 4
+  .col-#{$i}
+    w: calc($i * 25%)
+</code></pre>
+<h2 id="if-else-条件">@if / @else — 条件</h2>
+<pre><code class="language-zss" >@mixin theme($dark: false)
+  @if $dark
+    bgc: #1a1a2e
+    c: #e0e0e0
+  @else
+    bgc: #ffffff
+    c: #1a1a2e
+</code></pre>
+<h2 id="响应式断点简写">响应式断点简写</h2>
+<p>在规则集内用 <code>@sm</code>、<code>@md</code>、<code>@lg</code>、<code>@xl</code>、<code>@2xl</code> 代替完整的 <code>@media</code> 查询：</p>
+<pre><code class="language-zss" >.grid
+  d: grid
+  gtc: 1fr
+
+  @md
+    gtc: repeat(2, 1fr)   // min-width: 768px
+
+  @lg
+    gtc: repeat(3, 1fr)   // min-width: 1024px
+</code></pre>
+<table><thead><tr>
+<th>简写</th>
+<th>等价 media query</th>
+</tr></thead><tbody>
+<tr>
+<td><code>@sm</code></td>
+<td><code>(min-width:640px)</code></td>
+</tr>
+<tr>
+<td><code>@md</code></td>
+<td><code>(min-width:768px)</code></td>
+</tr>
+<tr>
+<td><code>@lg</code></td>
+<td><code>(min-width:1024px)</code></td>
+</tr>
+<tr>
+<td><code>@xl</code></td>
+<td><code>(min-width:1280px)</code></td>
+</tr>
+<tr>
+<td><code>@2xl</code></td>
+<td><code>(min-width:1536px)</code></td>
+</tr>
+</tbody></table>
+<h2 id="自动前缀">自动前缀</h2>
+<p>ZSS 自动为需要浏览器前缀的属性添加 <code>-webkit-</code>、<code>-moz-</code>、<code>-ms-</code> 前缀：</p>
+<pre><code class="language-zss" >.modal
+  backdrop-filter: blur(10px)
+
+  user-select: none
+</code></pre>
+<h2 id="完整示例">完整示例</h2>
+<pre><code class="language-zss" >@use &quot;zest:palette&quot;
+@use &quot;zest:utilities&quot;
+
+let radius = 0.5r
+let shadow = 0 4px 12px rgba(0,0,0,0.1)
+
+@mixin card
+  @apply d-block bg-white p-4
+  bdr = radius
+  bxsh = shadow
+
+.feature-card
+  @include card
+  tr = box-shadow 0.2s
+
+  &amp;:hover
+    bxsh = shadow |&gt; alpha(0.15)
+    trf = scale(1.02)
+
+  h3
+    fs = 1.1r
+    c = $primary |&gt; darken(10%)
+
+  p
+    fs = 0.9r
+    c = $text-muted
+    lh = 1.6
+</code></pre>
+<h2 id="集成">集成</h2>
+<p><code>assets/</code> 目录下的 ZSS 文件在 <code>zest build</code> 时<strong>自动编译为 CSS</strong>。输出目录结构保持镜像：</p>
+<pre><code>assets/css/style.zcss  →  _site/assets/css/style.css
+</code></pre>
+<p><a href="/">← 返回首页</a></p>
+
+  <footer class="site-footer">
+    <p>由 <strong>Zest SSG</strong> 强力驱动 &mdash; Zenith Efficient Static Toolkit</p>
+  </footer>
+</body>
+</html>

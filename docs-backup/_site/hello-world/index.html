@@ -1,0 +1,102 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>功能演示：.zpage.fsx 实战 &mdash; Zest SSG</title>
+  <meta name="description" content="基于 F# 的现代化静态站点生成器 — .zpage.fsx 模板 + ZCSS 样式 + TOML 配置">
+  <meta name="theme-color" content="#6c63ff">
+  <link rel="stylesheet" href="/assets/css/core.css">
+  <script src="/assets/js/main.js" defer></script>
+</head>
+<body>
+  <nav class="site-nav">
+    <a href="/" class="logo">Zest SSG</a>
+    <ul>
+      <li><a href="/">首页</a></li>
+      <li><a href="/guide/">指南</a></li>
+      <li><a href="/zcss/">ZCSS</a></li>
+      <li><a href="/programming/">编程</a></li>
+      <li><a href="/templates/">模板</a></li>
+      <li><a href="/blog/">博客</a></li>
+      <li><a href="/demo/">演示</a></li>
+      <li><a href="/archive/">归档</a></li>
+    </ul>
+  </nav>
+
+  <h1 id="zpage-fsx-实战演示">.zpage.fsx 实战演示</h1>
+<p>本文展示了 <code>.zpage.fsx</code> 文件的工作方式——通过 <code>// @</code> 注解设置元数据，Markdown 编写内容。</p>
+<h2 id="元数据注解">元数据注解</h2>
+<pre><code class="language-fsharp" ></code></pre>
+<h2 id="markdown-特性">Markdown 特性</h2>
+<h3 id="行内格式">行内格式</h3>
+<ul>
+<li><strong>粗体</strong>：<code>&lt;strong&gt;双星号&lt;/strong&gt;</code></li>
+<li><em>斜体</em>：<code>&lt;em&gt;单星号&lt;/em&gt;</code></li>
+<li><del>删除线</del>：<code>&lt;del&gt;双波浪线&lt;/del&gt;</code></li>
+<li><code>行内代码</code>：反引号</li>
+<li><a href="/guide/">链接</a>：<code>&lt;a href=&quot;地址&quot;&gt;文字&lt;/a&gt;</code></li>
+</ul>
+<h3 id="代码块">代码块</h3>
+<p>带语法高亮的围栏代码块：</p>
+<pre><code class="language-fsharp" >let greet name = sprintf &quot;你好，%s！&quot; name
+let message = greet &quot;Zest&quot;
+</code></pre>
+<h3 id="表格">表格</h3>
+<table><thead><tr>
+<th>特性</th>
+<th>语法</th>
+<th>示例</th>
+</tr></thead><tbody>
+<tr>
+<td>元数据</td>
+<td><code>// @关键词 值</code></td>
+<td><code>// @title 首页</code></td>
+</tr>
+<tr>
+<td>粗体</td>
+<td><code>&lt;strong&gt;文字&lt;/strong&gt;</code></td>
+<td><strong>文字</strong></td>
+</tr>
+<tr>
+<td>链接</td>
+<td><code>&lt;a href=&quot;地址&quot;&gt;标签&lt;/a&gt;</code></td>
+<td><a href="/guide/">Zest</a></td>
+</tr>
+<tr>
+<td>图片</td>
+<td><code>&lt;img src=&quot;src&quot; alt=&quot;说明&quot; /&gt;</code></td>
+<td><img src="https://via.placeholder.com/40" alt="图标" /></td>
+</tr>
+</tbody></table>
+<h3 id="列表">列表</h3>
+<ol>
+<li>有序列表第一项</li>
+<li>第二项</li>
+</ol>
+<ul>
+<li>嵌套无序</li>
+<li>更多项</li>
+</ul>
+<ol>
+<li>第三项</li>
+</ol>
+<h3 id="引用">引用</h3>
+<blockquote><p>Zest 是一个基于 F# 的现代静态站点生成器。</p></blockquote>
+<blockquote><p>它将 F# 的表达力与 Markdown 的简洁性融于一身。</p></blockquote>
+<h3 id="分割线">分割线</h3>
+<h2 id="toml-数据集成">TOML 数据集成</h2>
+<p>Zest 从 <code>_data/*.toml</code> 加载全局数据。例如 <code>site.toml</code> 提供了 <code>site.author</code> 和 <code>site.social</code> 等值，在整个模板中都可访问。</p>
+<h2 id="继续阅读">继续阅读</h2>
+<ul>
+<li><a href="/guide/">使用指南</a></li>
+<li><a href="/zcss/">ZCSS 样式系统</a></li>
+<li><a href="/templates/">模板语言参考</a></li>
+<li><a href="/posts/zcss-vs-css/">ZCSS vs CSS 对比</a></li>
+</ul>
+
+  <footer class="site-footer">
+    <p>由 <strong>Zest SSG</strong> 强力驱动 &mdash; Zenith Efficient Static Toolkit</p>
+  </footer>
+</body>
+</html>

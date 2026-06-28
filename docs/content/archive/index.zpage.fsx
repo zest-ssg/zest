@@ -1,28 +1,27 @@
-// @title  文章归档
+// @title 归档
 // @layout default
-// @permalink /archive/
+// @description 站点全部页面归档 — 按年份排列
 
-# 文章归档
+let allPages = site_pages ()
+let byYear = group_pages_by_year ()
 
-## 2026 年
+render [
+    divC "page-header" [
+        h1 [text "归档"]
+        p [text (sprintf "共 %d 个页面" allPages.Length)]
+    ]
 
-### 6 月
-
-| 日期 | 标题 | 标签 |
-|------|------|------|
-| 2026-06-20 | [.zpage.fsx 实战演示](/hello-world/) | `演示`, `fsharp` |
-| 2026-06-19 | [ZCSS vs CSS 全面对比](/posts/zcss-vs-css/) | `zcss`, `教程` |
-
-## 按分类浏览
-
-- [使用指南](/guide/) — 项目结构、布局、配置
-- [像 11ty.js 一样编程](/programming/) — F# 模版 DSL、短代码、集合
-- [ZCSS 样式参考](/zcss/) — 变量、嵌套、简写
-- [模板语言参考](/templates/) — 元数据、DSL、短代码
-- [博客](/blog/) — 技术文章与教程
-- [ZCSS vs CSS 对比](/posts/zcss-vs-css/) — 技术对比
-- [功能演示](/hello-world/) — 全特性展示
-
----
-
-[← 返回首页](/)
+    divC "container-wide" [
+        for year, yearPages in byYear do
+            yield h2 [text year]
+            yield ulC "archive-list" [
+                for r in yearPages do
+                    yield li [
+                        yield spanC "text-muted" [text (if r.date.Length >= 10 then r.date else "")]
+                        yield a r.url [text r.title]
+                    ]
+            ]
+    ]
+    if allPages.Length = 0 then
+        yield pC "empty-state" [text "暂无页面"]
+]

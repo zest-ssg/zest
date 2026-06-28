@@ -10,24 +10,55 @@
   <script src="/assets/js/main.js" defer></script>
 </head>
 <body>
+  <!-- 🔹 Navigation -->
   <nav class="site-nav">
-    <a href="/" class="logo">Zest SSG</a>
-    <ul>
-      <li><a href="/">首页</a></li>
-      <li><a href="/guide/">指南</a></li>
-      <li><a href="/zcss/">ZCSS</a></li>
-      <li><a href="/programming/">编程</a></li>
-      <li><a href="/templates/">模板</a></li>
-      <li><a href="/blog/">博客</a></li>
-      <li><a href="/demo/">演示</a></li>
-      <li><a href="/archive/">归档</a></li>
+    <a href="/" class="logo">
+      <span class="logo-mark">◆</span>
+      <span class="logo-text">Zest</span>
+    </a>
+    <button class="nav-toggle" aria-label="Toggle menu">☰</button>
+    <ul class="nav-links">
+      {% for item in menu.main %}
+        <li><a href="{{ item.url }}">{{ item.label }}</a></li>
+      {% endfor %}
+      <li><a href="https://github.com/example/zest" class="nav-external">GitHub ↗</a></li>
     </ul>
   </nav>
 
-  {{ content }}
+  <!-- 🔹 Main Content -->
+  <main>{{ content }}</main>
 
+  <!-- 🔹 Footer -->
   <footer class="site-footer">
-    <p>由 <strong>Zest SSG</strong> 强力驱动 &mdash; Zenith Efficient Static Toolkit</p>
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <span class="logo-mark">◆</span>
+        <strong>Zest SSG</strong>
+        <span class="footer-tagline">{{ site.brand_tagline }}</span>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <h4>文档</h4>
+          <a href="/guide/">快速指南</a>
+          <a href="/blog/">博客</a>
+          <a href="/showcase/">Showcase</a>
+        </div>
+        <div class="footer-col">
+          <h4>社区</h4>
+          <a href="{{ site.social_github }}">GitHub</a>
+          <a href="{{ site.social_discord }}">Discord</a>
+        </div>
+        <div class="footer-col">
+          <h4>技术栈</h4>
+          <span>F# + C#</span>
+          <span>.NET 10</span>
+          <span>MIT License</span>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>由 <strong>Zest SSG</strong> {{ site_version | default("2.0.0") }} 强力驱动 &mdash; 构建于 {{ site.build_time | default("N/A") }}</p>
+    </div>
   </footer>
 </body>
 </html>

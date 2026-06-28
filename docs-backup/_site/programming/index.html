@@ -1,0 +1,99 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>像 11ty.js 一样编程 — 真实 F# 脚本构建 &mdash; Zest SSG</title>
+  <meta name="description" content="展示 Zest 如何像 11ty.js 那样在构建时执行 F# 代码生成 HTML">
+  <meta name="theme-color" content="#6c63ff">
+  <link rel="stylesheet" href="/assets/css/core.css">
+  <script src="/assets/js/main.js" defer></script>
+</head>
+<body>
+  <nav class="site-nav">
+    <a href="/" class="logo">Zest SSG</a>
+    <ul>
+      <li><a href="/">首页</a></li>
+      <li><a href="/guide/">指南</a></li>
+      <li><a href="/zcss/">ZCSS</a></li>
+      <li><a href="/programming/">编程</a></li>
+      <li><a href="/templates/">模板</a></li>
+      <li><a href="/blog/">博客</a></li>
+      <li><a href="/demo/">演示</a></li>
+      <li><a href="/archive/">归档</a></li>
+    </ul>
+  </nav>
+
+  <h1>像 11ty.js 一样编程</h1>
+<blockquote><p>「Zest 的模版即代码——就像 11ty.js 中 JavaScript 模版在构建时执行，Zest 的 .zpage.fsx 文件是真实 F# 脚本，在构建时编译求值。」</p></blockquote>
+<h2>概述</h2>
+<p>Zest 的 .zpage.fsx 文件不仅仅是模版——它们是真正的 F# 脚本。</p>
+<p>就像 11ty.js 中 JavaScript 模版文件在构建时执行一样，Zest 使用 FSharp.Compiler.Service 的 FsiEvaluationSession 在进程内编译并执行 F# 代码，将结果合并到生成的 HTML 页面中。</p>
+<h2>页面结构</h2>
+<p>一个典型的 .zpage.fsx 文件由两部分组成：</p>
+<h3>1. 元数据注释（// @ 前缀）</h3>
+<pre><code class="lang-fsharp">// @title 页面标题
+// @layout 布局模板
+// @description 页面描述
+// @tags ["tag1"; "tag2"]</code></pre>
+<h3>2. HTML 内容表达式</h3>
+<p>使用 render 函数将 DSL 构建的 HTML 节点列表渲染为字符串：</p>
+<pre><code class="lang-fsharp">render [
+    h1 [ text "Hello" ]
+    p  [ text "World" ]
+    ul [ li [ text "Item 1" ]; li [ text "Item 2" ] ]
+]</code></pre>
+<h2>构建时计算示例</h2>
+<p>这些值在构建时由 F# 编译器真实计算：</p>
+<div class="example-box"><p><strong>当前构建时间：</strong></p><p>2026-06-28 17:12:19</p><p><strong>列表运算结果：</strong></p><p>1 到 10 中偶数的平方和 = 220</p><p><strong>条件分支：</strong></p><p>下午好！</p></div>
+<h2>HTML DSL 元素</h2>
+<p>Zest 提供了一套完整的 HTML 构造函数，可直接在 F# 中使用：</p>
+<h3>文本与内联元素</h3>
+<pre><code class="lang-fsharp">text "纯文本"        // 纯文本节点
+raw "<em>原始HTML</em>"  // 原始 HTML（不转义）
+strong [ text "粗体" ]   // <strong>
+span [ text "内联" ]     // <span>
+a "https://example.com" [ text "链接" ]  // <a></code></pre>
+<h3>块级元素</h3>
+<pre><code class="lang-fsharp">h1  [ text "标题1" ]
+h2  [ text "标题2" ]
+h3  [ text "标题3" ]
+p   [ text "段落" ]
+ul  [ li [ text "项目" ] ]
+ol  [ li [ text "项目" ] ]
+div [ text "容器" ]
+divC "my-class" [ text "带类名的容器" ]</code></pre>
+<h3>代码与预格式化</h3>
+<pre><code class="lang-fsharp">codeBlock "fsharp" "let x = 42"         // <pre><code class="lang-fsharp">
+codeBlock "" "inline code"               // 无语言标记
+pre [ code [ text "code block" ] ]        // 手动构建</code></pre>
+<h2>render 辅助函数</h2>
+<p>setup 阶段定义了 `render` 辅助函数，它是 `HtmlRenderer.render` 的别名：</p>
+<pre><code class="lang-fsharp">// 以下两种写法等价：
+render [ h1 [ text "A" ]; p [ text "B" ] ]
+HtmlRenderer.render [ h1 [ text "A" ]; p [ text "B" ] ]</code></pre>
+<h2>完整示例</h2>
+<p>下面是一个完整的 .zpage.fsx 页面文件：</p>
+<pre><code class="lang-fsharp">// @title 我的文章
+// @layout default
+// @date 2026-06-20
+// @tags ["demo"]
+
+let pageTitle = "我的文章标题"
+let items = ["F#"; "Zest"; "SSG"]
+
+render [
+    h1 [ text pageTitle ]
+    p  [ text "这是一篇由 F# 脚本生成的页面。" ]
+    p  [ text (sprintf "共有 %d 个项目：" items.Length) ]
+    ul [ for i in items -> li [ text i ] ]
+]</code></pre>
+<h2>工作原理</h2>
+<p>Zest 的 F# 脚本执行流程：</p>
+<ol><li><p>检测文件是否以 F# 脚本开头（通过 isPageScript 启发式检查）</p></li><li><p>解析 // @ 元数据注释，提取 title/layout/permalink/tags/date</p></li><li><p>将所有页面数据序列化为 JSON 临时文件</p></li><li><p>生成 preamble 脚本（DSL 函数 + collections API），通过 @&quot;...&quot; 路径读取 JSON</p></li><li><p>拼接 preamble + 用户脚本，写入临时 .fsx 文件</p></li><li><p>启动 dotnet fsi 子进程执行脚本，捕获 stdout 作为 HTML 输出</p></li><li><p>将 HTML 内容与元数据合并，应用布局模板，写出最终文件</p></li><li><p>如果脚本求值失败，自动回退到 Markdown 传统模式</p></li></ol>
+
+  <footer class="site-footer">
+    <p>由 <strong>Zest SSG</strong> 强力驱动 &mdash; Zenith Efficient Static Toolkit</p>
+  </footer>
+</body>
+</html>

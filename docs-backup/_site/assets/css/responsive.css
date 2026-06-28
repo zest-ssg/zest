@@ -1,0 +1,79 @@
+﻿@media (max-width: 640px) {
+.hero {
+  padding-top: s10;
+  padding-bottom: s10;
+}
+.hero h1 {
+  font-size: 2rem;
+}
+.hero-tagline {
+  font-size: 1rem;
+}
+.site-nav {
+  flex-wrap: wrap;
+  padding-left: s4;
+  padding-right: s4;
+}
+body {
+  font-size: 0.95rem;
+}
+h1 {
+  font-size: 1.6rem;
+}
+h2 {
+  font-size: 1.25rem;
+}
+main {
+  padding-left: s4;
+  padding-right: s4;
+  padding-top: s6;
+  padding-bottom: s6;
+}
+.feature-grid {
+  grid-template-columns: 1fr;
+}
+.features {
+  padding-left: s4;
+  padding-right: s4;
+}
+.post {
+  padding-left: s4;
+  padding-right: s4;
+}
+.docs-layout {
+  padding-left: s4;
+  padding-right: s4;
+}
+}
+@media (max-width: 768px) {
+.docs-layout {
+  grid-template-columns: 1fr;
+}
+.docs-sidebar {
+  position: relative;
+  top: 0;
+}
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: border;
+  border-radius: 4px;
+}
+@media print {
+.site-nav, .site-footer, .docs-sidebar {
+  display: none;
+}
+body {
+  font-size: 12pt;
+  line-height: 1.6;
+}
+main {
+  max-width: none;
+}
+}

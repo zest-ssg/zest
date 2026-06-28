@@ -1,260 +1,107 @@
-// @title  使用指南
+// @title 快速指南
 // @layout default
-// @permalink /guide/
-// @tags   指南, 入门
-// @description Zest SSG 完整使用指南 — 安装、项目结构、内容创建、布局系统、配置详解
-
-# Zest 使用指南
-
-## 安装
-
-### 从源码构建
-
-```bash
-git clone https://github.com/example/zest
-cd zest
-dotnet build
-```
-
-构建完成后，`zest` 命令位于 `src/Zest.App/bin/Release/net10.0/win-x64/publish/` 目录。
-
-### 创建新项目
-
-```bash
-zest init my-site    # 创建新项目
-cd my-site
-zest serve           # 启动开发服务器
-```
-
-访问 `http://localhost:8080` 即可预览站点，修改文件后浏览器自动刷新。
-
-## 项目结构
-
-```
-my-site/
-├── _config.toml       ← 站点配置（TOML）
-├── _init.zpage.fsx    ← 初始化脚本（可选，构建前自动执行）
-├── _data/             ← 全局数据文件（.toml）
-│   └── site.toml      ←   作者、社交链接等
-├── _layouts/          ← HTML 布局模板
-│   ├── default.html   ←   默认布局（Nunjucks/原生 HTML）
-│   └── post.html      ←   文章布局
-├── _includes/         ← HTML 片段（可复用）
-│   └── header.html
-├── content/           ← 内容文件（.zpage.fsx / .md / .zhtml）
-│   ├── index.zpage.fsx ←   首页
-│   └── posts/         ←   按集合组织内容
-├── assets/            ← 静态资源
-│   ├── css/style.zcss ←   ZCSS 编译为 CSS
-│   └── js/site-init.js
-└── _site/             ← 构建产物（自动生成）
-```
-
-## 创建内容
-
-### 方式一：`.zpage.fsx`（推荐）
-
-F# 脚本模板，支持完整类型安全和 HTML DSL：
-
-```fsharp
-// @title  我的页面
-// @layout default
-// @permalink /my-page/
-// @tags   教程, fsharp
-// @date   2026-06-20
-
-# 我的页面
-
-这里写 **Markdown** 内容，支持所有标准 Markdown 语法。
-```
-
-### 方式二：`.md` 文件
-
-标准 Markdown 文件，YAML frontmatter：
-
-```markdown
----
-title: 我的页面
-layout: default
-permalink: /my-page/
-tags: ["教程"]
-date: 2026-06-20
----
-
-# 我的页面
-
-标准 Markdown 内容。
-```
-
-### 方式三：`.zhtml` — 纯 HTML 页面
-
-适合不需要 Markdown 或 F# 逻辑的静态 HTML 页面：
-
-```html
-<h1>关于我们</h1>
-<p>这是一个纯 HTML 页面，不经 FSI 编译，构建速度最快。</p>
-```
-
-在 `_config.toml` 中设置 `template_engine = "nunjucks"` 即可在 `.zhtml` 中使用 Nunjucks 模板语法。
-
-### 方式四：HTML DSL（高级）
-
-完全用 F# 构建页面，适合动态内容：
-
-```fsharp
-// @title 动态页面
-// @layout default
-
-let posts = recent_pages 5
+// @description 完整了解 Zest SSG 的安装、使用和所有核心功能
 
 render [
-    h1 [ text "最新文章" ]
-    ul [
-        for p in posts ->
-            li [ a p.url [ text p.title ] ]
+    divC "page-header" [
+        h1 [text "快速指南"]
+        p [text "从零开始使用 Zest SSG 构建静态站点"]
+    ]
+
+    divC "container" [
+        h2 [text "安装"]
+        codeBlock "bash" "git clone https://github.com/example/zest\ncd zest\ndotnet build"
+
+        h2 [text "初始化项目"]
+        codeBlock "bash" "zest init my-site\ncd my-site"
+
+        h2 [text "目录结构"]
+        yield raw "<pre><code>my-site/\n  _config.toml         # 站点配置\n  _init.zest.fsx        # 初始化脚本（可选）\n  _data/                # 全局数据\n  _layouts/             # HTML 布局\n  _includes/            # 可复用片段\n  content/              # 页面内容\n  assets/               # 资源文件\n  _site/                # 构建输出（自动）</code></pre>"
+
+        h2 [text "创建第一篇文章"]
+        p [text "在 content/blog/ 下创建 hello.zpage.fsx："]
+        codeBlock "fsharp" "// @title 你好，Zest\n// @layout default\n// @date 2026-06-20\n// @tags hello\n\nrender [\n    h1 [text \"你好，Zest\"]\n    p [text \"这是我的第一篇文章。\"]\n]"
+
+        h2 [text "启动开发服务器"]
+        p [text "运行以下命令，Zest 会在 localhost:8080 启动开发服务器，支持热重载："]
+        codeBlock "bash" "zest serve"
+
+        h2 [text "构建生产版本"]
+        p [text "输出到 _site/ 目录，可直接部署到任意静态托管服务："]
+        codeBlock "bash" "zest build"
+
+        h2 [text "预定义宏"]
+        p [text "在 F# 脚本中可用的 HTML 辅助函数："]
+        yield raw "<table>
+  <thead><tr><th>函数</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>h1, h2, h3, h4, h5, h6</code></td><td>标题元素</td></tr>
+    <tr><td><code>p, a, span, div</code></td><td>文本元素</td></tr>
+    <tr><td><code>divC, pC, spanC, aC, sectionC</code></td><td>带类名快捷构造</td></tr>
+    <tr><td><code>ul, ol, li</code></td><td>列表</td></tr>
+    <tr><td><code>img</code></td><td>图片</td></tr>
+    <tr><td><code>table, thead, tbody, tr, th, td</code></td><td>表格</td></tr>
+    <tr><td><code>text, html, raw</code></td><td>文本/HTML/原始输出</td></tr>
+    <tr><td><code>render</code></td><td>将 HTML 片段列表输出到页面</td></tr>
+    <tr><td><code>codeBlock</code></td><td>代码块</td></tr>
+    <tr><td><code>include_partial</code></td><td>引入局部模板</td></tr>
+  </tbody>
+</table>"
+
+        h2 [text "元数据"]
+        p [text "在 .zpage.fsx 文件开头使用 F# 注释声明元数据："]
+        yield raw "<table>
+  <thead><tr><th>元数据</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>@title</code></td><td>页面标题</td></tr>
+    <tr><td><code>@layout</code></td><td>使用的布局</td></tr>
+    <tr><td><code>@permalink</code></td><td>URL 路径（默认 /:slug/）</td></tr>
+    <tr><td><code>@tags</code></td><td>标签</td></tr>
+    <tr><td><code>@date</code></td><td>发布日期</td></tr>
+    <tr><td><code>@description</code></td><td>描述</td></tr>
+  </tbody>
+</table>"
+
+        h2 [text "Collections API"]
+        p [text "在 F# 脚本中可直接调用的 API："]
+        yield raw "<ul>
+  <li><code>site_pages()</code> — 所有页面</li>
+  <li><code>recent_pages(n)</code> — 最新 N 篇</li>
+  <li><code>pages_by_tag(tag)</code> — 按标签过滤</li>
+  <li><code>pages_by_dir(dir)</code> — 按目录过滤</li>
+  <li><code>pages_by_collection(col)</code> — 按集合过滤</li>
+  <li><code>all_tags()</code> — 所有标签</li>
+  <li><code>tag_cloud(min)</code> — 标签云</li>
+  <li><code>all_collections()</code> — 所有集合</li>
+  <li><code>search_pages(q)</code> — 按标题搜索</li>
+  <li><code>sort_pages_by(key, order)</code> — 排序</li>
+  <li><code>group_pages_by_year()</code> — 按年分组</li>
+  <li><code>site_data(key)</code> — 读取全局数据（_data/ 或 _config.toml）</li>
+</ul>"
+
+        h2 [text "ZestNjk 过滤器"]
+        yield raw "<table>
+  <thead><tr><th>过滤器</th><th>用法</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>pages_by_tag</td><td><code>pages | pages_by_tag(\"tag\")</code></td><td>按标签筛选</td></tr>
+    <tr><td>recent</td><td><code>pages | recent(5)</code></td><td>最近 N 篇</td></tr>
+    <tr><td>by_collection</td><td><code>pages | by_collection(\"col\")</code></td><td>按集合筛选</td></tr>
+    <tr><td>search</td><td><code>pages | search(\"query\")</code></td><td>搜索</td></tr>
+    <tr><td>where</td><td><code>pages | where(\"key\", \"val\")</code></td><td>属性筛选</td></tr>
+  </tbody>
+</table>"
+
+        h2 [text "ZCSS 快速参考"]
+        p [text "ZCSS 是 CSS 超集，任何合法 CSS 都是合法 ZCSS。核心特性："]
+        yield raw "<ul>
+  <li><strong>变量绑定：</strong><code>let primary = #6c63ff</code></li>
+  <li><strong>管道运算符：</strong><code>color = base |> lighten(20%)</code></li>
+  <li><strong>颜色函数：</strong>lighten、darken、alpha、mix、complement</li>
+  <li><strong>混入：</strong><code>@mixin / @include</code></li>
+  <li><strong>属性简写：</strong>bgc、bdr、fs、fw、bxsh 等 60+</li>
+  <li><strong>响应式简写：</strong>@sm、@md、@lg、@xl</li>
+  <li><strong>@apply：</strong>复用工具类</li>
+  <li><strong>三种语法：</strong>SCSS 风格 / 缩进风格 / F# 风格 — 可混用</li>
+</ul>"
     ]
 ]
-```
-
-## 元数据字段
-
-| 字段 | 说明 | 示例 |
-|------|------|------|
-| `title` | 页面标题 | `// @title 首页` |
-| `layout` | 布局模板 | `// @layout default` |
-| `permalink` | 永久链接 | `// @permalink /about/` |
-| `description` | 页面描述 | `// @description 关于我们` |
-| `tags` | 标签列表 | `// @tags fsharp, 教程` |
-| `date` | 发布日期 | `// @date 2026-06-20` |
-
-## 布局系统
-
-布局文件是 HTML 模板，用 `{{ content }}` 作为内容插入点：
-
-```html
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <title>{{ page.title }} | {{ site.title }}</title>
-  <meta name="description" content="{{ page.description }}">
-  <link rel="stylesheet" href="/assets/css/style.css">
-</head>
-<body>
-  <nav><!-- 导航 --></nav>
-  <main>{{ content }}</main>
-  <footer><!-- 页脚 --></footer>
-</body>
-</html>
-```
-
-### 可用模板变量
-
-| 变量 | 说明 |
-|------|------|
-| `{{ content }}` | 页面内容插入点 |
-| `{{ page.title }}` | 页面标题（从 frontmatter） |
-| `{{ page.date }}` | 发布日期 |
-| `{{ page.permalink }}` | 永久链接 |
-| `{{ site.title }}` | 站点标题（从 `_config.toml`） |
-| `{{ site.description }}` | 站点描述 |
-| `{{ site.author }}` | 作者（从 `_data/site.toml`） |
-
-### 引入局部模板
-
-使用 `{{include filename}}` 引入 `_includes/` 中的片段：
-
-```html
-{{include header.html}}
-{{include nav.html}}
-```
-
-## 配置
-
-### 站点配置 `_config.toml`
-
-```toml
-# 基础信息
-title        = "我的 Zest 站点"
-description  = "用 Zest SSG 构建"
-base_url     = "http://localhost:8080"
-language     = "zh-CN"
-
-# 目录配置
-content_dir  = "./content"
-output_dir   = "./_site"
-layouts_dir  = "./_layouts"
-includes_dir = "./_includes"
-data_dir     = "./_data"
-assets_dir   = "./assets"
-
-# 构建选项
-default_layout          = "default"
-permalink_format        = "/:slug/"
-dev_server_port         = 8080
-live_reload_port        = 35729
-enable_parallel_build   = true
-enable_incremental_build = true
-```
-
-> 所有字段都有默认值——空 `_config.toml` 也能正常工作！
-
-### 全局数据 `_data/site.toml`
-
-```toml
-author    = "张三"
-copyright = "2026"
-language  = "zh-CN"
-
-[social]
-github  = "https://github.com/example"
-twitter = "https://twitter.com/example"
-```
-
-在模板中通过 `{{ data site.author }}` 或脚本中通过 `site_data "site.author"` 访问。
-
-## 初始化脚本 `_init.fsx`
-
-项目根目录的 `_init.fsx` 在构建前自动执行，用于动态注入全局数据：
-
-```fsharp
-// _init.fsx
-addGlobal "api_url" "https://api.example.com"
-let data = loadJson "data/team.json"
-addGlobal "team" data
-
-let env = loadEnv "ZEST_ENV"
-if env = "production" then
-    addGlobal "analytics_id" "UA-XXXXX-Y"
-
-console_log "✓ 初始化完成"
-```
-
-可用 API：`addGlobal`、`loadJson`、`loadToml`、`loadEnv`、`console_log`、`exec`。
-
-## 模板引擎
-
-支持两种模板引擎渲染布局文件：
-
-| 引擎 | 值 | 说明 |
-|------|-----|------|
-| **Nunjucks**（推荐） | `template_engine = "nunjucks"` | 丰富的过滤器、表达式、宏，`_layouts/*.html` |
-| **原生替换** | `template_engine = "replace"` | 仅 `{{ variable }}` 替换，无表达式 |
-
-在 `_config.toml` 中配置 `template_engine` 即可切换。Nunjucks 模式下布局文件支持 `{% if %}`、`{% for %}`、`{{ var \| filter }}` 等语法。
-
-## 命令参考
-
-| 命令 | 说明 |
-|------|------|
-| `zest init [name]` | 创建新项目 |
-| `zest build` | 构建站点到 `_site/` |
-| `zest serve` | 启动开发服务器（热重载） |
-| `zest serve --verbose` | 显示 FSI 详细输出 |
-| `zest clean` | 清理构建产物 |
-
-## 下一步
-
-- [ZCSS 2.0 样式指南](/zcss/) — 三种语法、变量、混入、颜色函数
-- [模板语言参考](/templates/) — HTML DSL、短代码、集合 API
-- [F# 脚本编程](/programming/) — 构建时计算、工作原理
-- [ZCSS vs CSS 对比](/posts/zcss-vs-css/) — 代码量对比

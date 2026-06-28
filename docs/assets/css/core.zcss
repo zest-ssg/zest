@@ -1,20 +1,21 @@
 // ============================================================
-// Core — Design tokens, base reset, typography, code, tables
+// Core — Design tokens, base reset, typography
 // ============================================================
 
 @use "zest:reset"
 @use "zest:palette"
-
-// 引入同目录下的模块文件
 @use "./components.zcss"
 @use "./responsive.zcss"
 
 // ── Design Tokens ─────────────────────────────────────────
 let primary    = #6c63ff
 let primary2   = #a78bfa
+let primary3   = #8b5cf6
 let accent     = #f59e0b
-let text       = #1e293b
+let accent2    = #f97316
+let text       = #0f172a
 let textSoft   = #64748b
+let textMuted  = #94a3b8
 let border     = #e2e8f0
 let bg         = #ffffff
 let bgSoft     = #f8fafc
@@ -24,25 +25,19 @@ let codeText   = #cdd6f4
 let radius     = 0.5rem
 let radiusLg   = 0.75rem
 let radiusXl   = 1rem
-let maxWidth   = 820px
+let maxWidth   = 860px
 let fontSans   = system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif
 let fontMono   = 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', Consolas, monospace
 
 let u          = 0.25rem
-let s1         = u * 1
-let s2         = u * 2
-let s3         = u * 3
-let s4         = u * 4
-let s5         = u * 5
-let s6         = u * 6
-let s8         = u * 8
-let s10        = u * 10
-let s12        = u * 12
-let s16        = u * 16
+let s1 = u * 1;  let s2 = u * 2;  let s3 = u * 3
+let s4 = u * 4;  let s5 = u * 5;  let s6 = u * 6
+let s8 = u * 8;  let s10 = u * 10; let s12 = u * 12
+let s16 = u * 16; let s20 = u * 20; let s24 = u * 24
 
-let primaryLight = primary |> lighten(40%)
 let primaryFade  = primary |> alpha(0.06)
 let primaryGlow  = primary |> alpha(0.12)
+let primaryLight = primary |> lighten(42%)
 
 // ── Base ──────────────────────────────────────────────────
 html
@@ -57,13 +52,11 @@ body
   background-color = $bg
   min-height: 100vh
   -webkit-font-smoothing: antialiased
-  -moz-osx-font-smoothing: grayscale
 
 ::selection
   background-color = primary |> alpha(0.18)
   color = text
 
-// ── Typography ────────────────────────────────────────────
 h1
   font-size = 2.2rem
   font-weight: 800
@@ -77,24 +70,12 @@ h2
   margin-top = s10
   margin-bottom = s3
   line-height: 1.35
-  letter-spacing: -0.01em
-  &::before
-    content: "# "
-    color = primary |> alpha(0.4)
-    font-weight: 400
 
 h3
   font-size = 1.15rem
   font-weight: 600
   margin-top = s8
   margin-bottom = s2
-
-h4
-  font-size = 1.05rem
-  font-weight: 600
-  margin-top = s6
-  margin-bottom = s2
-  color = textSoft
 
 p
   margin-bottom = s4
@@ -107,16 +88,13 @@ a
 
 ul, ol
   margin-bottom = s4
-  padding-left = 1.5rem
+  padding-left: 1.5rem
 
 li
   margin-bottom = s2
-  &::marker
-    color = primary |> alpha(0.5)
 
 strong
   font-weight: 600
-  color = text
 
 hr
   border: none
@@ -142,48 +120,12 @@ pre
   overflow: auto
   margin-bottom = s6
   line-height: 1.65
-  position: relative
-
-  &::before
-    content: attr(data-lang)
-    position: absolute
-    top: 0
-    right: s3
-    font-size = 0.7rem
-    color = textSoft
-    text-transform: uppercase
-    letter-spacing = 0.08em
-    background-color = rgba(255,255,255,0.06)
-    padding-left = s2
-    padding-right = s2
-    padding-top = 0.1rem
-    padding-bottom = 0.1rem
-    border-radius = 0 0 0.25rem 0.25rem
-
   code
     background-color: transparent
     color: inherit
     padding: 0
     border-radius: 0
     font-size = 0.85rem
-    font-weight: 400
-
-// ── Blockquote ────────────────────────────────────────────
-blockquote
-  border-left: 3px solid primary
-  padding-left = s5
-  margin-left: 0
-  margin-right: 0
-  color = textSoft
-  font-size = 0.95rem
-  margin-bottom = s6
-  background-color = primaryFade
-  padding = s4 s5
-  border-radius = 0 radius radius 0
-  border-left-color = primary
-
-  p:last-child
-    margin-bottom: 0
 
 // ── Tables ────────────────────────────────────────────────
 table
@@ -191,36 +133,25 @@ table
   border-collapse: collapse
   margin-bottom = s6
   font-size = 0.9rem
-  border-radius = radiusLg
-  overflow: hidden
-  box-shadow = 0 1px 3px rgba(0,0,0,0.04)
-
   th, td
     padding = s3 s4
     text-align: left
     border: 1px solid border
-    vertical-align: top
-
   th
     background-color = bgSoft
     font-weight: 700
-    color = text
     font-size = 0.82rem
-    text-transform: uppercase
-    letter-spacing = 0.04em
 
-  tr:nth-child(even) td
-    background-color = bgSoft |> alpha(0.5)
-
-  tr:hover td
-    background-color = primaryFade
-
-// ── Content Area ──────────────────────────────────────────
 main
-  max-width = maxWidth
-  margin-left: auto
-  margin-right: auto
-  padding-left = s6
-  padding-right = s6
-  padding-top = s8
+  min-height: 60vh
   padding-bottom = s8
+
+// ── Blockquote ────────────────────────────────────────────
+blockquote
+  border-left: 3px solid primary
+  padding = s4 s5
+  margin = 0 0 s6
+  background-color = primaryFade
+  border-radius = 0 radius radius 0
+  p:last-child
+    margin-bottom: 0
