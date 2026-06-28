@@ -9,7 +9,7 @@ open System.Text
 open System.Text.Json
 open Zest.Engine
 
-/// Evaluates .zest.fsx scripts by spawning `dotnet fsi` as a subprocess.
+/// Evaluates .zpage.fsx / .fsx scripts by spawning `dotnet fsi` as a subprocess.
 /// Context data (pages, site config) is passed via a temp JSON file.
 /// The script preamble injects DSL helpers + collections API via #load.
 module ScriptRunner =
@@ -120,6 +120,43 @@ module ScriptRunner =
             p.Date.Value >= fromDt &&
             p.Date.Value <= toDt)
 
+    // ── Nunjucks data helpers ────────────────────────────────────────────
+
+    /// Convert a Page record to a plain dict for Nunjucks template context.
+    let pageToNunjucksDict (p: Page) : IDictionary<string, obj> =
+        let d = Dictionary<string, obj>()
+        d.["url"]    <- box p.Url
+        d.["title"]  <- box p.Title
+        d.["slug"]   <- box p.Slug
+        d.["date"]   <- box (p.Date |> Option.map (fun d -> d.ToString("yyyy-MM-dd")) |> Option.defaultValue "")
+        d.["tags"]   <- box (p.Tags |> Array.ofList)
+        match p.Data.TryGetValue "description" with
+        | true, v -> d.["description"] <- box v
+        | _ -> ()
+        d :> IDictionary<string, obj>
+
+    /// Get all pages as plain dict arrays for Nunjucks template injection.
+    let getPagesForNunjucks () : IDictionary<string, obj>[] =
+        allPagesRef |> List.map pageToNunjucksDict |> Array.ofList
+
+    /// Get all unique tags as string array.
+    let getTagsForNunjucks () : string[] =
+        allPagesRef
+        |> List.collect (fun p -> p.Tags)
+        |> List.distinct
+        |> List.sort
+        |> Array.ofList
+
+    /// Get all collections (first URL segment) as string array.
+    let getCollectionsForNunjucks () : string[] =
+        allPagesRef
+        |> List.map (fun p ->
+            let parts = p.Url.Trim('/').Split('/')
+            if parts.Length > 0 && parts.[0] <> "" then parts.[0] else "root")
+        |> List.distinct
+        |> List.sort
+        |> Array.ofList
+
     // ── Context serialisation ─────────────────────────────────────────────
 
     /// Serialise all context to a JSON file that the subprocess preamble reads.
@@ -206,9 +243,18 @@ module ScriptRunner =
         let sb = Text.StringBuilder()
         sb.AppendLine("#r @\"" + dllPath + "\"") |> ignore
         sb.AppendLine("open System") |> ignore
+        sb.AppendLine("open System.Text.RegularExpressions") |> ignore
+        sb.AppendLine("open System.Collections.Generic") |> ignore
         sb.AppendLine("open Zest.Dsl") |> ignore
         sb.AppendLine("Zest.Dsl.Context.current <- Some (Zest.Dsl.ZestContext(@\"" + ctxFile + "\"))") |> ignore
         sb.AppendLine("open Zest.Dsl.Dsl") |> ignore
+        sb.AppendLine("open Zest.Dsl.DslComponents") |> ignore
+        sb.AppendLine("open Zest.Dsl.DslCollections") |> ignore
+        sb.AppendLine("open Zest.Dsl.DslUtilities") |> ignore
+        sb.AppendLine("open Zest.Dsl.DslSeo") |> ignore
+        sb.AppendLine("open Zest.Dsl.DslXml") |> ignore
+        // Debug helper: prints a message to stderr during FSI evaluation
+        sb.AppendLine("""let console_log (message: string) = eprintfn "[DEBUG] %s" message""") |> ignore
         sb.ToString()
 
     // ── Subprocess evaluation ─────────────────────────────────────────────
@@ -247,12 +293,28 @@ module ScriptRunner =
                 Console.ResetColor()
             if proc.ExitCode = 0 then Ok stdout
             else
-                // Extract error lines with line numbers for better reporting
+                // Build a comprehensive error report with formatted lines
                 let errLines =
                     stderr.Split('\n')
-                    |> Array.filter (fun l -> l.Contains("error FS") || l.Contains("error:"))
-                    |> Array.truncate 10
-                Error(String.concat "\n" errLines)
+                    |> Array.filter (fun l ->
+                        not (String.IsNullOrWhiteSpace l)
+                        && not (l.Contains("warning FS"))
+                        && not (l.Contains("info :")))
+                    |> Array.truncate 20
+                let formattedErrors =
+                    errLines
+                    |> Array.mapi (fun i line ->
+                        if line.Contains("error FS") || line.Contains("error:") then
+                            sprintf "  ▶ %s" (line.Trim())
+                        else
+                            sprintf "    %s" (line.Trim()))
+                    |> String.concat "\n"
+                if verboseRef && errLines.Length > 0 then
+                    Console.ForegroundColor <- ConsoleColor.Red
+                    Console.Error.WriteLine(sprintf "[FSI] Evaluation failed — %d error(s)" errLines.Length)
+                    Console.Error.WriteLine(formattedErrors)
+                    Console.ResetColor()
+                Error(formattedErrors)
 
     // ── Context file path (per-build, shared) ─────────────────────────────
 
