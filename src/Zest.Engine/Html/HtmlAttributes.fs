@@ -6,7 +6,7 @@ open System.Net
 open System.Text
 open System.Text.RegularExpressions
 open Zest.Engine
-open Zest.Engine.Zss
+open Zest.Engine.Zcss
 
 // ============================================================
 // HTML DSL — Attribute helpers

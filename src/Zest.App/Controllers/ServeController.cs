@@ -1,3 +1,4 @@
+using Zest.App.CommandLine;
 using Zest.Engine;
 using Zest.Engine.Scripting;
 using Zest.Infra.Configuration;
@@ -16,72 +17,37 @@ public static class ServeController
     /// </summary>
     public static int Execute(string[] args)
     {
-        int? portOverride = null;
-        string host = "localhost";
-        bool openBrowser = false;
-        bool verbose = false;
-        bool quiet = false;
-
-        for (int i = 1; i < args.Length; i++)
+        ServeCommandOptions opts;
+        try
         {
-            switch (args[i].ToLowerInvariant())
-            {
-                case "--port":
-                case "-p":
-                    if (i + 1 < args.Length && int.TryParse(args[++i], out var p))
-                        portOverride = p;
-                    else
-                    {
-                        Console.Error.WriteLine("Error: --port requires a numeric value");
-                        return 1;
-                    }
-                    break;
-                case "--host":
-                    if (i + 1 < args.Length)
-                        host = args[++i];
-                    else
-                    {
-                        Console.Error.WriteLine("Error: --host requires a value");
-                        return 1;
-                    }
-                    break;
-                case "--open":
-                case "-o":
-                    openBrowser = true;
-                    break;
-                case "--verbose":
-                case "-v":
-                    verbose = true;
-                    break;
-                case "--quiet":
-                case "-q":
-                    quiet = true;
-                    break;
-                case "--help":
-                case "-h":
-                    PrintServeHelp();
-                    return 0;
-                default:
-                    Console.Error.WriteLine($"Unknown option: {args[i]}");
-                    Console.Error.WriteLine("Run 'zest serve --help' for usage.");
-                    return 1;
-            }
+            opts = CliParser.ParseServe(args);
+        }
+        catch (ArgumentException ex)
+        {
+            Console.Error.WriteLine($"Error: {ex.Message}");
+            return 1;
         }
 
-        Logger.SetVerbose(verbose);
-        Logger.SetQuiet(quiet);
+        if (opts.ShowHelp)
+        {
+            CliParser.PrintServeHelp();
+            return 0;
+        }
+
+        Logger.SetVerbose(opts.Verbose);
+        Logger.SetQuiet(opts.Quiet);
 
         // Enable FSI verbose output
-        if (verbose)
+        if (opts.Verbose)
             ScriptRunner.setVerbose(true);
 
         var config = SiteConfigLoader.Load();
-        if (portOverride.HasValue)
+        if (opts.PortOverride.HasValue)
         {
-            config = config.WithDevServerPort(portOverride.Value);
+            config = config.WithDevServerPort(opts.PortOverride.Value);
         }
 
-        using var server = new DevServerService(config, host, openBrowser);
+        using var server = new DevServerService(config, opts.Host, opts.OpenBrowser);
         server.Start();
 
         var evt = new ManualResetEventSlim(false);
@@ -102,63 +68,28 @@ public static class ServeController
     /// </summary>
     public static int ExecutePreview(string[] args)
     {
-        int port = 8080;
-        string host = "localhost";
-        bool openBrowser = false;
-        bool verbose = false;
-        bool quiet = false;
-
-        for (int i = 1; i < args.Length; i++)
+        PreviewCommandOptions opts;
+        try
         {
-            switch (args[i].ToLowerInvariant())
-            {
-                case "--port":
-                case "-p":
-                    if (i + 1 < args.Length && int.TryParse(args[++i], out var p))
-                        port = p;
-                    else
-                    {
-                        Console.Error.WriteLine("Error: --port requires a numeric value");
-                        return 1;
-                    }
-                    break;
-                case "--host":
-                    if (i + 1 < args.Length)
-                        host = args[++i];
-                    else
-                    {
-                        Console.Error.WriteLine("Error: --host requires a value");
-                        return 1;
-                    }
-                    break;
-                case "--open":
-                case "-o":
-                    openBrowser = true;
-                    break;
-                case "--verbose":
-                case "-v":
-                    verbose = true;
-                    break;
-                case "--quiet":
-                case "-q":
-                    quiet = true;
-                    break;
-                case "--help":
-                case "-h":
-                    PrintPreviewHelp();
-                    return 0;
-                default:
-                    Console.Error.WriteLine($"Unknown option: {args[i]}");
-                    Console.Error.WriteLine("Run 'zest preview --help' for usage.");
-                    return 1;
-            }
+            opts = CliParser.ParsePreview(args);
+        }
+        catch (ArgumentException ex)
+        {
+            Console.Error.WriteLine($"Error: {ex.Message}");
+            return 1;
         }
 
-        Logger.SetVerbose(verbose);
-        Logger.SetQuiet(quiet);
+        if (opts.ShowHelp)
+        {
+            CliParser.PrintPreviewHelp();
+            return 0;
+        }
+
+        Logger.SetVerbose(opts.Verbose);
+        Logger.SetQuiet(opts.Quiet);
 
         var config = SiteConfigLoader.Load();
-        using var server = new PreviewService(config, port, host, openBrowser);
+        using var server = new PreviewService(config, opts.Port, opts.Host, opts.OpenBrowser);
         server.Start();
 
         var evt = new ManualResetEventSlim(false);
@@ -172,44 +103,5 @@ public static class ServeController
         };
         evt.Wait();
         return 0;
-    }
-
-    private static void PrintServeHelp()
-    {
-        Console.WriteLine("Usage: zest serve [options]");
-        Console.WriteLine();
-        Console.WriteLine("Start the development server with live reload.");
-        Console.WriteLine();
-        Console.WriteLine("Options:");
-        Console.WriteLine("  --port, -p PORT     Dev server port (default: 8080)");
-        Console.WriteLine("  --host HOST         Bind to host (default: localhost)");
-        Console.WriteLine("  --open, -o          Open browser on start");
-        Console.WriteLine("  --verbose, -v       Show detailed FSI output");
-        Console.WriteLine("  --quiet, -q         Suppress INFO logs");
-        Console.WriteLine("  --help, -h          Show this help");
-        Console.WriteLine();
-        Console.WriteLine("Examples:");
-        Console.WriteLine("  zest serve --open");
-        Console.WriteLine("  zest serve --port 3000 --verbose");
-        Console.WriteLine("  zest serve --host 0.0.0.0 --port 8080");
-    }
-
-    private static void PrintPreviewHelp()
-    {
-        Console.WriteLine("Usage: zest preview [options]");
-        Console.WriteLine();
-        Console.WriteLine("Preview the built _site/ directory without rebuilding.");
-        Console.WriteLine();
-        Console.WriteLine("Options:");
-        Console.WriteLine("  --port, -p PORT     Preview server port (default: 8080)");
-        Console.WriteLine("  --host HOST         Bind to host (default: localhost)");
-        Console.WriteLine("  --open, -o          Open browser on start");
-        Console.WriteLine("  --verbose, -v       Show detailed request info");
-        Console.WriteLine("  --quiet, -q         Suppress INFO logs");
-        Console.WriteLine("  --help, -h          Show this help");
-        Console.WriteLine();
-        Console.WriteLine("Examples:");
-        Console.WriteLine("  zest preview --open");
-        Console.WriteLine("  zest preview --port 3000 --host 0.0.0.0");
     }
 }

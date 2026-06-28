@@ -49,7 +49,7 @@ public static class Program
     private static int ShowVersion()
     {
         Console.WriteLine($"Zest v{Version} — Zenith Efficient Static Toolkit");
-        Console.WriteLine("Ecosystem: .zest.fsx + .zss + .toml + .js");
+        Console.WriteLine("Ecosystem: .zpage.fsx + .zcss + .toml + .js");
         return 0;
     }
 
@@ -73,8 +73,9 @@ public static class Program
         Console.WriteLine("  --watch, -w                 Watch files and auto-rebuild");
         Console.WriteLine();
         Console.WriteLine("File formats:");
-        Console.WriteLine("  .zest.fsx   F# template scripts with HTML DSL & Markdown");
-        Console.WriteLine("  .zss        Zest Stylesheet — CSS superset with nesting/vars");
+        Console.WriteLine("  .zpage.fsx  F# template scripts with HTML DSL & Markdown");
+        Console.WriteLine("  .zhtml      Lightweight HTML templates (no F#)");
+        Console.WriteLine("  .zcss       Zest Stylesheet — CSS superset with nesting/vars");
         Console.WriteLine("  .toml       Site config & global data (zero-config by default)");
         Console.WriteLine("  .js         Client scripts, copied as-is to output");
         Console.WriteLine("  .md         Standard Markdown content files");

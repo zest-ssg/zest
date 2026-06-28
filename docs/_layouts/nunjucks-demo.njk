@@ -15,19 +15,15 @@
     <ul>
       <li><a href="/">首页</a></li>
       <li><a href="/guide/">指南</a></li>
-      <li><a href="/zcss/">ZCSS</a></li>
-      <li><a href="/programming/">编程</a></li>
-      <li><a href="/templates/">模板</a></li>
-      <li><a href="/blog/">博客</a></li>
-      <li><a href="/demo/">演示</a></li>
-      <li><a href="/archive/">归档</a></li>
+      <li><a href="/demo/nunjucks-demo/">Nunjucks</a></li>
     </ul>
   </nav>
 
   {{ content }}
 
   <footer class="site-footer">
-    <p>由 <strong>Zest SSG</strong> 强力驱动 &mdash; Zenith Efficient Static Toolkit</p>
+    <p>由 <strong>Zest SSG</strong> 强力驱动 &mdash; Nunjucks Layout Demo</p>
+    <p class="text-muted">渲染时间：{{ site.build_time | default("N/A") }}</p>
   </footer>
 </body>
 </html>

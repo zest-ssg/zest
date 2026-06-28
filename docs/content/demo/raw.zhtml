@@ -1,0 +1,32 @@
+<!-- @title 原始 HTML 页面 -->
+<!-- @layout default -->
+<!-- @description 演示 .zhtml 原始 HTML 支持 -->
+
+<div class="container">
+  <h1>原始 HTML 页面</h1>
+
+  <div class="callout callout-info">
+    <p>该页面由 <code>.zhtml</code> 文件生成，内容为纯 HTML，不经 Markdown 转换。</p>
+  </div>
+
+  <h2>语法特征</h2>
+  <ul>
+    <li>HTML 5 标签原生支持</li>
+    <li>元数据通过 HTML 注释的 <code>@title</code>、<code>@layout</code> 等声明</li>
+    <li>构建时原样复制到输出目录</li>
+    <li>适用场景：着陆页、嵌入组件、性能敏感页</li>
+  </ul>
+
+  <h2>测试表格</h2>
+  <table>
+    <thead>
+      <tr><th>特性</th><th>.zpage.fsx</th><th>.zhtml</th><th>.njk</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>F# 脚本</td><td>✅</td><td>❌</td><td>❌</td></tr>
+      <tr><td>DSL 渲染</td><td>✅</td><td>❌</td><td>❌</td></tr>
+      <tr><td>原始 HTML</td><td>❌</td><td>✅</td><td>✅</td></tr>
+      <tr><td>Nunjucks 语法</td><td>❌</td><td>❌</td><td>✅</td></tr>
+    </tbody>
+  </table>
+</div>

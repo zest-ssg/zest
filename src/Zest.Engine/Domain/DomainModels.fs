@@ -16,7 +16,7 @@ type HtmlNode =
     | Repeat of items: HtmlNode list
 
 /// <summary>
-/// A page produced by a .zest.fsx template, ready for layout wrapping and output.
+/// A page produced by a .zpage.fsx template, ready for layout wrapping and output.
 /// </summary>
 type Page = {
     /// URL path, e.g. "/" or "/posts/hello-world/"
@@ -110,7 +110,7 @@ type SiteConfig = {
     /// Root directory for content discovery.
     /// When set to "." or empty, uses the project root directly.
     /// When not specified, defaults to "content" (implicit content directory).
-    /// This allows index.zest.fsx to be placed at the project root.
+    /// This allows index.zpage.fsx to be placed at the project root.
     RootDir: string
     ContentDir: string
     OutputDir: string
@@ -138,6 +138,8 @@ type SiteConfig = {
     // Author / social (surfaced from _data but can be inlined in _config)
     Author: string
     Language: string
+    /// Template engine: "native" (default, {{ }} placeholders) or "nunjucks"
+    TemplateEngine: string
 }
 with
     /// Create a copy with a different dev server port.
@@ -182,7 +184,8 @@ module SiteConfigDefaults =
           Taxonomies = [ { Name = "tag"; Plural = "tags" }; { Name = "category"; Plural = "categories" } ]
           Menus = dict []
           Author = ""
-          Language = "en" }
+          Language = "en"
+          TemplateEngine = "native" }
 
 /// <summary>
 /// Result of a build operation.
