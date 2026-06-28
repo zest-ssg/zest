@@ -1,6 +1,6 @@
 # Zest SSG — 全局数据
 author    = "Zest Team"
-copyright = "MIT License"
+copyright = "Apache 2 License"
 language  = "zh-CN"
 version   = "2.0.0"
 
@@ -10,7 +10,7 @@ primary  = "#6c63ff"
 accent   = "#f59e0b"
 
 [social]
-github  = "https://github.com/example/zest"
+github  = "https://github.com/zest-ssg/zest"
 discord = "https://discord.gg/zest"
 
 [stats]
@@ -20,7 +20,7 @@ since           = "2026"
 
 [[links]]
 name = "GitHub"
-url  = "https://github.com/example/zest"
+url  = "https://github.com/zest-ssg/zest"
 icon = "github"
 
 [[links]]
