@@ -10,7 +10,8 @@ open Zest.Engine
 open Zest.Engine.Parsing
 open Zest.Engine.Routing
 open Zest.Engine.Scripting
-open Zest.Engine.Zss
+open Zest.Engine.Zcss
+open Zest.Engine.Template
 open System.Text.RegularExpressions
 
 /// 核心构建管线：内容发现 → 求值 → 布局应用 → 资产处理 → 输出。
@@ -32,7 +33,7 @@ module BuildEngine =
             Directory.GetFiles(layoutsDir, "*.*", SearchOption.AllDirectories)
             |> Array.filter (fun f ->
                 let ext = Path.GetExtension(f).ToLowerInvariant()
-                List.contains ext [".html"; ".htm"; ".zest.fsx"; ".fsx"])
+                List.contains ext [".html"; ".htm"; ".njk"; ".nunjucks"; ".zpage.fsx"; ".zhtml"; ".fsx"])
             |> Array.map (fun f ->
                 let rec stripExts (name: string) =
                     let e = Path.GetExtension(name)
@@ -179,12 +180,92 @@ module BuildEngine =
         match layouts.TryFind name with
         | None -> content
         | Some (path, layoutText) ->
-            let withIncludes = applyLayoutCached path layoutText includes
-            let ctx = Dictionary<string, string>()
-            for kv in replacements do ctx.[kv.Key] <- kv.Value
-            ctx.["content"]      <- content
-            ctx.["page.content"] <- content
-            let rendered = replacePlaceholders withIncludes ctx
+            let isNunjucks = path.EndsWith(".njk", StringComparison.OrdinalIgnoreCase)
+                             || path.EndsWith(".nunjucks", StringComparison.OrdinalIgnoreCase)
+
+            let rendered =
+                if isNunjucks then
+                    // Use Nunjucks engine for .njk templates
+                    let engine = TemplateManager.getOrCreateEngine "nunjucks" {
+                        Engine = "nunjucks"
+                        EnableCache = true
+                        Extension = ".njk"
+                        Filters = []
+                    }
+                    match engine with
+                    | Some e ->
+                        // Register Zest custom filters on engine
+                        e.RegisterFilter "pages_by_tag" (fun value args ->
+                            let tag = if args.Length > 0 then args.[0] else ""
+                            ScriptRunner.getPagesForNunjucks ()
+                            |> Array.filter (fun p ->
+                                match p.TryGetValue "tags" with
+                                | true, (:? (string[]) as tags) -> tags |> Array.exists (fun t -> t.Equals(tag, StringComparison.OrdinalIgnoreCase))
+                                | _ -> false)
+                            |> Array.map (fun d -> d :> obj) |> box)
+                        e.RegisterFilter "recent" (fun value args ->
+                            let n = if args.Length > 0 then (try int args.[0] with _ -> 5) else 5
+                            ScriptRunner.getPagesForNunjucks ()
+                            |> Array.filter (fun p ->
+                                match p.TryGetValue "date" with
+                                | true, (:? string as d) -> d <> ""
+                                | _ -> false)
+                            |> Array.sortByDescending (fun p ->
+                                match p.TryGetValue "date" with
+                                | true, (:? string as d) -> d
+                                | _ -> "")
+                            |> Array.truncate n
+                            |> Array.map (fun d -> d :> obj) |> box)
+                        e.RegisterFilter "by_collection" (fun value args ->
+                            let col = if args.Length > 0 then args.[0] else ""
+                            ScriptRunner.getPagesForNunjucks ()
+                            |> Array.filter (fun p ->
+                                match p.TryGetValue "url" with
+                                | true, (:? string as u) ->
+                                    let parts = u.Trim('/').Split('/')
+                                    parts.Length > 0 && parts.[0].Equals(col, StringComparison.OrdinalIgnoreCase)
+                                | _ -> false)
+                            |> Array.map (fun d -> d :> obj) |> box)
+
+                        // Convert flat string dict to nested Nunjucks context
+                        let pairs = ResizeArray<string * obj>()
+                        for kv in replacements do pairs.Add(kv.Key, box kv.Value)
+                        pairs.Add("content", box content)
+                        pairs.Add("page.content", box content)
+                        // Also add page.* keys as nested dict entries
+                        pairs.Add("page.url", box (replacements.TryGetValue "page.url" |> function true,v -> box v | _ -> box ""))
+                        pairs.Add("page.date", box (replacements.TryGetValue "page.date" |> function true,v -> box v | _ -> box ""))
+                        pairs.Add("page.tags", box (replacements.TryGetValue "page.tags" |> function true,v -> box (v.Split(',') |> Array.map (fun t -> t.Trim())) | _ -> box [||]))
+                        for kv in includes do
+                            if not (pairs |> Seq.exists (fun (k, _) -> k = kv.Key)) then
+                                pairs.Add(kv.Key, box kv.Value)
+                        // Inject Zest collection data
+                        pairs.Add("pages", box (ScriptRunner.getPagesForNunjucks () |> Array.map box))
+                        pairs.Add("tags", box (ScriptRunner.getTagsForNunjucks ()))
+                        pairs.Add("collections", box (ScriptRunner.getCollectionsForNunjucks ()))
+                        let ctx = TemplateManager.buildNestedContext pairs
+                        match e.Render layoutText ctx with
+                        | Ok html -> html
+                        | Error err ->
+                            eprintfn "[Zest] Nunjucks error in layout '%s': %O" name err
+                            sprintf "<!-- Template error: %O -->" err
+                    | None ->
+                        // Fallback to placeholder system
+                        let withIncludes = applyLayoutCached path layoutText includes
+                        let ctx = Dictionary<string, string>()
+                        for kv in replacements do ctx.[kv.Key] <- kv.Value
+                        ctx.["content"]      <- content
+                        ctx.["page.content"] <- content
+                        replacePlaceholders withIncludes ctx
+                else
+                    // Native placeholder system
+                    let withIncludes = applyLayoutCached path layoutText includes
+                    let ctx = Dictionary<string, string>()
+                    for kv in replacements do ctx.[kv.Key] <- kv.Value
+                    ctx.["content"]      <- content
+                    ctx.["page.content"] <- content
+                    replacePlaceholders withIncludes ctx
+
             let nestedLayout =
                 if layoutText.StartsWith "---" then
                     let endIdx = layoutText.IndexOf("---", 3)
@@ -246,7 +327,7 @@ module BuildEngine =
             for file in Directory.GetFiles(src, "*", SearchOption.AllDirectories) do
                 let ext = Path.GetExtension(file).ToLowerInvariant()
                 let rel = Path.GetRelativePath(src, file)
-                if ext = ".zss" then
+                if ext = ".zcss" then
                     let target = Path.Combine(dst, Path.ChangeExtension(rel, ".css"))
                     let dir    = Path.GetDirectoryName(target)
                     if dir <> null then Directory.CreateDirectory(dir) |> ignore
@@ -346,11 +427,26 @@ module BuildEngine =
 
             ScriptRunner.setGlobalData globalData
 
+            // ── 执行 _init.zest.fsx（项目根目录下的初始化脚本）────
+            let initResult = InitEngine.run root globalData
+            if initResult.HasErrors then
+                for err in initResult.Errors do
+                    eprintfn "[Zest] _init.zest.fsx: %s" err
+                    errors.Add err
+            // 合并 _init.zest.fsx 注入的全局数据
+            for kv in initResult.GlobalData do
+                if not (gData.ContainsKey kv.Key) then
+                    gData.[kv.Key] <- kv.Value
+            ScriptRunner.setGlobalData globalData
+
             let allFiles =
                 if not (Directory.Exists contentDir) then
                     Directory.CreateDirectory(contentDir) |> ignore; [||]
                 else
-                    [| yield! Directory.GetFiles(contentDir, "*.zest.fsx", SearchOption.AllDirectories)
+                    [| yield! Directory.GetFiles(contentDir, "*.zpage.fsx", SearchOption.AllDirectories)
+                       yield! Directory.GetFiles(contentDir, "*.zhtml",    SearchOption.AllDirectories)
+                       yield! Directory.GetFiles(contentDir, "*.njk",      SearchOption.AllDirectories)
+                       yield! Directory.GetFiles(contentDir, "*.nunjucks", SearchOption.AllDirectories)
                        yield! Directory.GetFiles(contentDir, "*.fsx",      SearchOption.AllDirectories)
                        yield! Directory.GetFiles(contentDir, "*.md",       SearchOption.AllDirectories)
                        yield! Directory.GetFiles(contentDir, "*.markdown", SearchOption.AllDirectories) |]
@@ -404,7 +500,9 @@ module BuildEngine =
                                 let contentDir = resolveEffectiveContentDir root config
                                 let relPath = Path.GetRelativePath(contentDir, f)
                                 let fn = Path.GetFileNameWithoutExtension(f)
-                                let rawSlug = if fn.EndsWith(".zest") then fn.[..fn.Length - 6] else fn
+                                let rawSlug =
+                                    let fn2 = if fn.EndsWith(".zpage") then fn.[..fn.Length - 7] else fn
+                                    if fn2.EndsWith(".zest") then fn2.[..fn2.Length - 6] else fn2
                                 let slug = PermalinkRouter.slugify rawSlug
                                 // We need to compute output path to check cache
                                 // For now, just check mtime against buildCache
@@ -463,7 +561,8 @@ module BuildEngine =
                                     let relPath, rawSlug =
                                         let rel = Path.GetRelativePath(contentDir, f)
                                         let fn = Path.GetFileNameWithoutExtension(f)
-                                        let raw = if fn.EndsWith(".zest") then fn.[..fn.Length - 6] else fn
+                                        let fn2 = if fn.EndsWith(".zpage") then fn.[..fn.Length - 7] else fn
+                                        let raw = if fn2.EndsWith(".zest") then fn2.[..fn2.Length - 6] else fn2
                                         rel, raw
                                     let slug = PermalinkRouter.slugify rawSlug
                                     let meta, _ = FrontMatterParser.parse ext text
@@ -509,7 +608,8 @@ module BuildEngine =
                                 let relPath, rawSlug =
                                     let rel = Path.GetRelativePath(contentDir, f)
                                     let fn = Path.GetFileNameWithoutExtension(f)
-                                    let raw = if fn.EndsWith(".zest") then fn.[..fn.Length - 6] else fn
+                                    let fn2 = if fn.EndsWith(".zpage") then fn.[..fn.Length - 7] else fn
+                                    let raw = if fn2.EndsWith(".zest") then fn2.[..fn2.Length - 6] else fn2
                                     rel, raw
                                 let slug = PermalinkRouter.slugify rawSlug
                                 let meta, _ = FrontMatterParser.parse ext text

@@ -8,8 +8,9 @@ open Zest.Engine
 open Zest.Engine.Parsing
 open Zest.Engine.Routing
 open Zest.Engine.Html
+open Zest.Engine.Template
 
-/// 负责将 .zest.fsx / .md 文件求值为 Page 记录。
+/// 负责将 .zpage.fsx / .md 文件求值为 Page 记录。
 module ScriptEvaluator =
 
     /// 从脚本文本中提取并渲染内容 HTML（传统 Markdown 回退模式）。
@@ -17,8 +18,11 @@ module ScriptEvaluator =
         match ext with
         | ".md" | ".markdown" ->
             Markdown.toHtml bodyText
+        | ".zhtml" ->
+            // .zhtml: 纯 HTML 内容，无需任何转换
+            bodyText
         | _ ->
-            // .zest.fsx: 剥去元数据注释和 #r / #load 指令，其余视为 Markdown 内容
+            // .zpage.fsx: 剥去元数据注释和 #r / #load 指令，其余视为 Markdown 内容
             let lines =
                 fullText.Split('\n')
                 |> Array.filter (fun l ->
@@ -29,6 +33,98 @@ module ScriptEvaluator =
                     && not (t.StartsWith("#load ")))
                 |> Array.skipWhile String.IsNullOrWhiteSpace
             Markdown.toHtml (String.concat "\n" lines)
+
+    /// 使用 Nunjucks 引擎渲染 .njk 内容页面。
+    /// 构建嵌套上下文（site.*、page.* 等），使 {{ site.title }} 模板语法充分生效。
+    /// 同时注入 Zest 页面数据（pages、tags、collections）和注册 Zest 自定义过滤器。
+    let private renderNunjucksContent
+        (bodyText: string)
+        (config: SiteConfig)
+        (globalData: IDictionary<string, obj>)
+        (meta: FrontMeta)
+        (slug: string)
+        (filePath: string)
+        : string =
+        match TemplateManager.getOrCreateEngine "nunjucks" {
+            Engine = "nunjucks"
+            EnableCache = true
+            Extension = ".njk"
+            Filters = []
+        } with
+        | Some engine ->
+            // ── 注册 Zest 自定义 filters ────────────────────
+            engine.RegisterFilter "pages_by_tag" (fun value args ->
+                let tag = if args.Length > 0 then args.[0] else ""
+                let pages = ScriptRunner.getPagesForNunjucks ()
+                pages |> Array.filter (fun p ->
+                    match p.TryGetValue "tags" with
+                    | true, (:? (string[]) as tags) -> tags |> Array.exists (fun t -> t.Equals(tag, StringComparison.OrdinalIgnoreCase))
+                    | _ -> false)
+                |> Array.map (fun d -> d :> obj) |> box)
+
+            engine.RegisterFilter "recent" (fun value args ->
+                let n = if args.Length > 0 then (try int args.[0] with _ -> 5) else 5
+                ScriptRunner.getPagesForNunjucks ()
+                |> Array.filter (fun p ->
+                    match p.TryGetValue "date" with
+                    | true, (:? string as d) -> d <> ""
+                    | _ -> false)
+                |> Array.sortByDescending (fun p ->
+                    match p.TryGetValue "date" with
+                    | true, (:? string as d) -> d
+                    | _ -> "")
+                |> Array.truncate n
+                |> Array.map (fun d -> d :> obj) |> box)
+
+            engine.RegisterFilter "by_collection" (fun value args ->
+                let col = if args.Length > 0 then args.[0] else ""
+                let pages = ScriptRunner.getPagesForNunjucks ()
+                pages |> Array.filter (fun p ->
+                    match p.TryGetValue "url" with
+                    | true, (:? string as u) ->
+                        let parts = u.Trim('/').Split('/')
+                        parts.Length > 0 && parts.[0].Equals(col, StringComparison.OrdinalIgnoreCase)
+                    | _ -> false)
+                |> Array.map (fun d -> d :> obj) |> box)
+
+            engine.RegisterFilter "search" (fun value args ->
+                let q = if args.Length > 0 then args.[0] else ""
+                ScriptRunner.getPagesForNunjucks ()
+                |> Array.filter (fun p ->
+                    match p.TryGetValue "title" with
+                    | true, (:? string as t) -> t.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0
+                    | _ -> false)
+                |> Array.map (fun d -> d :> obj) |> box)
+
+            // ── 构建上下文 ──────────────────────────────────
+            let pairs = ResizeArray<string * obj>()
+            // ── site.* ──────────────────────────────────────
+            pairs.Add("site.title",       box config.Title)
+            pairs.Add("site.description", box config.Description)
+            pairs.Add("site.base_url",    box config.BaseUrl)
+            pairs.Add("site.version",     box config.SiteVersion)
+            pairs.Add("site.author",      box config.Author)
+            pairs.Add("site.language",    box config.Language)
+            for kv in globalData do
+                pairs.Add("site." + kv.Key, kv.Value)
+            // ── page.* ──────────────────────────────────────
+            pairs.Add("page.title", box (meta.Title |> Option.defaultValue slug))
+            meta.Description |> Option.iter (fun v -> pairs.Add("page.description", box v))
+            for kv in meta.Extra do
+                pairs.Add("page." + kv.Key, box kv.Value)
+            // ── Zest 集合数据 ───────────────────────────────
+            pairs.Add("pages", box (ScriptRunner.getPagesForNunjucks () |> Array.map box))
+            pairs.Add("tags", box (ScriptRunner.getTagsForNunjucks ()))
+            pairs.Add("collections", box (ScriptRunner.getCollectionsForNunjucks ()))
+            let ctx = TemplateManager.buildNestedContext pairs
+            match engine.Render bodyText ctx with
+            | Ok html -> html
+            | Error err ->
+                eprintfn "[Zest] Nunjucks error in content '%s': %O" filePath err
+                bodyText
+        | None ->
+            // Nunjucks 引擎不可用时，原样返回
+            bodyText
 
     /// 构建内容目录的绝对路径。
     /// 使用 EffectiveContentDir 支持根目录管理机制：
@@ -44,7 +140,10 @@ module ScriptEvaluator =
         let relPath  = Path.GetRelativePath(contentDir, filePath)
         let rawSlug  =
             let fn = Path.GetFileNameWithoutExtension(filePath)
-            if fn.EndsWith(".zest") then fn.[..fn.Length - 6] else fn
+            // Handle .zpage.fsx → slug without .zpage suffix
+            let fn2 = if fn.EndsWith(".zpage") then fn.[..fn.Length - 7] else fn
+            // Handle .zest → legacy fallback
+            if fn2.EndsWith(".zest") then fn2.[..fn2.Length - 6] else fn2
         relPath, rawSlug
 
     /// 构造 pageData 字典（全局数据 + 元数据扩展）。
@@ -160,7 +259,12 @@ module ScriptEvaluator =
                         | Some p when p.Length > 0 -> PermalinkRouter.computePermalink p
                         | _                         -> PermalinkRouter.defaultRoute relPath slug
 
-                    let contentHtml = renderContent ext bodyText text
+                    let contentHtml =
+                        match ext with
+                        | ".njk" | ".nunjucks" ->
+                            renderNunjucksContent bodyText config globalData meta slug filePath
+                        | _ ->
+                            renderContent ext bodyText text
 
                     Ok { Page.empty with
                             SourcePath   = filePath
@@ -192,7 +296,12 @@ module ScriptEvaluator =
                     | Some p when p.Length > 0 -> PermalinkRouter.computePermalink p
                     | _                         -> PermalinkRouter.defaultRoute relPath slug
 
-                let contentHtml = renderContent ext bodyText text
+                let contentHtml =
+                    match ext with
+                    | ".njk" | ".nunjucks" ->
+                        renderNunjucksContent bodyText config globalData meta slug filePath
+                    | _ ->
+                        renderContent ext bodyText text
 
                 Ok { Page.empty with
                         SourcePath   = filePath

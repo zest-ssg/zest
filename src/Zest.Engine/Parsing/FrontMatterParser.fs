@@ -62,7 +62,7 @@ module FrontMatterParser =
                 let meta = parsePairs (fm.Split('\n')) FrontMeta.empty
                 (meta, body)
 
-    /// 解析 .zest.fsx 文件头部的 // @key value 注释。
+    /// 解析 .zpage.fsx 文件头部的 // @key value 注释。
     /// 只解析文件开头的连续注释块，遇到非注释行即停止，
     /// 避免误解析代码块中的示例元数据。
     let parseFsxComments (text: string) : FrontMeta =
@@ -81,10 +81,42 @@ module FrontMatterParser =
                 ()  // 跳过文件其余部分
         parsePairs metaLines FrontMeta.empty
 
+    /// 解析 .njk / .html 文件头部的 <!-- @key value --> HTML 注释。
+    /// 返回 (meta, cleanedBody)，cleanedBody 已剥离元数据注释行。
+    let parseHtmlComments (ext: string) (text: string) : FrontMeta * string =
+        let lines = text.Split('\n')
+        let metaLines = ResizeArray<string>()
+        let cleanedLines = ResizeArray<string>()
+        let mutable inHeader = true
+        for line in lines do
+            let t = line.Trim()
+            if inHeader then
+                let m = Regex.Match(t, @"^<!--\s*@(\w+)\s+(.+?)\s*-->$")
+                if m.Success then
+                    metaLines.Add(m.Groups.[1].Value.ToLowerInvariant() + ": " + m.Groups.[2].Value.Trim().Trim('"', '\''))
+                elif t.StartsWith("<!--") && t.Contains("-->") then
+                    // Non-meta HTML comment — keep it
+                    cleanedLines.Add(line)
+                    inHeader <- false
+                elif t <> "" && not (t.StartsWith("<!--")) then
+                    cleanedLines.Add(line)
+                    inHeader <- false
+                else
+                    cleanedLines.Add(line)  // empty line in header
+            else
+                cleanedLines.Add(line)
+        let meta = parsePairs metaLines FrontMeta.empty
+        let body = String.concat "\n" cleanedLines
+        (meta, body)
+
     /// 统一入口：先尝试 YAML，再尝试注释风格。返回 (meta, body)。
     let parse (ext: string) (text: string) : FrontMeta * string =
         match ext with
         | ".md" | ".markdown" -> parseYaml text
+        | ".njk" | ".nunjucks" ->
+            let yamlMeta, body = parseYaml text
+            if yamlMeta <> FrontMeta.empty then (yamlMeta, body)
+            else parseHtmlComments ext text
         | _ ->
             let yamlMeta, body = parseYaml text
             if yamlMeta <> FrontMeta.empty then (yamlMeta, body)
