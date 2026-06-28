@@ -33,37 +33,37 @@ render [
         ]
         yield divC "feature-grid" [
             yield divC "feature-card" [
-                divC "feat-icon" [text "◇"]
+                divC "feat-icon" [text "◆"]
                 h3 [text "F# 即模板"]
                 p [text ".zpage.fsx 文件是真实 F# 脚本 — 类型安全、可计算、可组合。不是字符串，是代码。"]
                 spanC "feat-tag" [text ".zpage.fsx"]
             ]
             yield divC "feature-card" [
-                divC "feat-icon" [text "◈"]
+                divC "feat-icon" [text "◆"]
                 h3 [text "ZCSS 样式超集"]
                 p [text "任何 CSS 都是合法 ZCSS。支持 F# 风格 let 绑定、管道运算符、颜色函数、混入。减少 40% 样板代码。"]
                 spanC "feat-tag" [text ".zcss"]
             ]
             yield divC "feature-card" [
-                divC "feat-icon" [text "◇"]
+                divC "feat-icon" [text "◆"]
                 h3 [text "ZestNjk 模板"]
                 p [text "Nunjucks 兼容语法 + Zest API 深度集成。支持 extends/block、macros、pages_by_tag 等过滤器。"]
                 spanC "feat-tag" [text ".znjk"]
             ]
             yield divC "feature-card" [
-                divC "feat-icon" [text "◈"]
+                divC "feat-icon" [text "◆"]
                 h3 [text "纯 HTML 支持"]
                 p [text ".zhtml 页面不经 FSI 编译，构建速度最快。可选 ZestNjk 模板语法渲染。极简场景的首选。"]
                 spanC "feat-tag" [text ".zhtml"]
             ]
             yield divC "feature-card" [
-                divC "feat-icon" [text "◇"]
+                divC "feat-icon" [text "◆"]
                 h3 [text "增量 & 并行构建"]
                 p [text "文件变更检测跳过未修改页面。并行构建充分利用多核 CPU。开发服务器热重载即时反馈。"]
                 spanC "feat-tag" [text "Performance"]
             ]
             yield divC "feature-card" [
-                divC "feat-icon" [text "◈"]
+                divC "feat-icon" [text "◆"]
                 h3 [text "TOML 配置生态"]
                 p [text "零 YAML。_config.toml + _data/*.toml + _init.fsx 动态数据注入。优雅而简洁。"]
                 spanC "feat-tag" [text ".toml"]

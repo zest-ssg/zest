@@ -3,6 +3,7 @@ title        = "Zest SSG"
 base_url     = "http://localhost:8080"
 description  = "Zenith Efficient Static Toolkit — 基于 F# 的现代化静态站点生成器"
 language     = "zh-CN"
+site_version = "2.0.0"
 
 content_dir  = "./content"
 output_dir   = "./_site"

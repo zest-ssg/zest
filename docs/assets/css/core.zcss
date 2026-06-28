@@ -1,157 +1,430 @@
-// ============================================================
-// Core — Design tokens, base reset, typography
-// ============================================================
+// core.zcss — Minimal "nostyle" design
+// No decoration, just readability.
 
-@use "zest:reset"
-@use "zest:palette"
-@use "./components.zcss"
-@use "./responsive.zcss"
+// ── Reset ──
+*, *::before, *::after
+  box-sizing: border-box
+  margin: 0
+  padding: 0
 
-// ── Design Tokens ─────────────────────────────────────────
-let primary    = #6c63ff
-let primary2   = #a78bfa
-let primary3   = #8b5cf6
-let accent     = #f59e0b
-let accent2    = #f97316
-let text       = #0f172a
-let textSoft   = #64748b
-let textMuted  = #94a3b8
-let border     = #e2e8f0
-let bg         = #ffffff
-let bgSoft     = #f8fafc
-let bgMuted    = #f1f5f9
-let codeBg     = #1e1e2e
-let codeText   = #cdd6f4
-let radius     = 0.5rem
-let radiusLg   = 0.75rem
-let radiusXl   = 1rem
-let maxWidth   = 860px
-let fontSans   = system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif
-let fontMono   = 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', Consolas, monospace
-
-let u          = 0.25rem
-let s1 = u * 1;  let s2 = u * 2;  let s3 = u * 3
-let s4 = u * 4;  let s5 = u * 5;  let s6 = u * 6
-let s8 = u * 8;  let s10 = u * 10; let s12 = u * 12
-let s16 = u * 16; let s20 = u * 20; let s24 = u * 24
-
-let primaryFade  = primary |> alpha(0.06)
-let primaryGlow  = primary |> alpha(0.12)
-let primaryLight = primary |> lighten(42%)
-
-// ── Base ──────────────────────────────────────────────────
-html
-  scroll-behavior: smooth
-  scroll-padding-top: s16
-
+// ── Typography ──
 body
-  font-family = fontSans
-  font-size = 1rem
-  line-height: 1.75
-  color = $text
-  background-color = $bg
-  min-height: 100vh
-  -webkit-font-smoothing: antialiased
+  font-family: system-ui, -apple-system, sans-serif
+  font-size: 16px
+  line-height: 1.6
+  color: #111
+  background: #fff
+  padding: 1rem 1rem 0
+  max-width: 48rem
+  margin: 0 auto
 
-::selection
-  background-color = primary |> alpha(0.18)
-  color = text
+h1, h2, h3, h4
+  font-weight: 700
+  line-height: 1.3
+  margin-top: 1.5rem
+  margin-bottom: 0.5rem
 
 h1
-  font-size = 2.2rem
-  font-weight: 800
-  line-height: 1.25
-  margin-bottom = s4
-  letter-spacing: -0.02em
+  font-size: 1.75rem
 
 h2
-  font-size = 1.5rem
-  font-weight: 700
-  margin-top = s10
-  margin-bottom = s3
-  line-height: 1.35
+  font-size: 1.35rem
+  border-bottom: 1px solid #ddd
+  padding-bottom: 0.25rem
 
 h3
-  font-size = 1.15rem
-  font-weight: 600
-  margin-top = s8
-  margin-bottom = s2
+  font-size: 1.1rem
 
 p
-  margin-bottom = s4
+  margin-bottom: 0.75rem
 
 a
-  color = primary
-  text-decoration: none
-  &:hover
-    text-decoration: underline
+  color: #0044cc
+  text-decoration: underline
+
+a:hover
+  color: #002266
 
 ul, ol
-  margin-bottom = s4
-  padding-left: 1.5rem
+  margin: 0.5rem 0 0.75rem 1.5rem
 
 li
-  margin-bottom = s2
+  margin-bottom: 0.25rem
 
-strong
-  font-weight: 600
+blockquote
+  margin: 0.75rem 0
+  padding: 0.5rem 1rem
+  border-left: 3px solid #ccc
+  color: #444
+
+code
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace
+  font-size: 0.85rem
+  background: #f0f0f0
+  padding: 0.1rem 0.3rem
+
+pre
+  background: #f0f0f0
+  padding: 0.75rem 1rem
+  overflow: auto
+  margin: 0.75rem 0
+  font-size: 0.82rem
+  line-height: 1.45
+  code
+    background: none
+    padding: 0
+
+table
+  border-collapse: collapse
+  margin: 0.75rem 0
+  width: 100%
+  font-size: 0.9rem
+  th, td
+    border: 1px solid #ccc
+    padding: 0.35rem 0.5rem
+    text-align: left
+    vertical-align: top
+  th
+    background: #f5f5f5
+    font-weight: 600
 
 hr
   border: none
-  border-top: 1px solid border
-  margin-top = s8
-  margin-bottom = s8
+  border-top: 1px solid #ddd
+  margin: 1.5rem 0
 
-// ── Code ──────────────────────────────────────────────────
-code
-  font-family = fontMono
-  font-size = 0.85rem
-  background-color = bgMuted
-  color = #e53e6e
-  padding = 0.1rem 0.35rem
-  border-radius = 0.25rem
-  font-weight: 500
+img
+  max-width: 100%
 
-pre
-  background-color = codeBg
-  color = codeText
-  padding = s5 s6
-  border-radius = radiusLg
-  overflow: auto
-  margin-bottom = s6
-  line-height: 1.65
-  code
-    background-color: transparent
-    color: inherit
-    padding: 0
-    border-radius: 0
-    font-size = 0.85rem
+// ── Navigation ──
+.site-nav
+  display: flex
+  align-items: center
+  gap: 1rem
+  padding: 0.5rem 0
+  margin-bottom: 1rem
+  border-bottom: 1px solid #ddd
 
-// ── Tables ────────────────────────────────────────────────
-table
-  width: 100%
-  border-collapse: collapse
-  margin-bottom = s6
-  font-size = 0.9rem
-  th, td
-    padding = s3 s4
-    text-align: left
-    border: 1px solid border
-  th
-    background-color = bgSoft
+  .logo
     font-weight: 700
-    font-size = 0.82rem
+    font-size: 1rem
+    color: #111
+    text-decoration: none
+    margin-right: auto
 
-main
-  min-height: 60vh
-  padding-bottom = s8
+  .nav-links
+    display: flex
+    gap: 0.25rem
+    list-style: none
+    margin: 0
+    padding: 0
+    a
+      font-size: 0.88rem
+      color: #555
+      text-decoration: none
+      padding: 0.2rem 0.5rem
+      &:hover
+        text-decoration: underline
+        color: #111
 
-// ── Blockquote ────────────────────────────────────────────
-blockquote
-  border-left: 3px solid primary
-  padding = s4 s5
-  margin = 0 0 s6
-  background-color = primaryFade
-  border-radius = 0 radius radius 0
-  p:last-child
-    margin-bottom: 0
+// ── Tags ──
+.tag
+  font-size: 0.8rem
+  color: #555
+  background: #eee
+  padding: 0.1rem 0.4rem
+  text-decoration: none
+  &:hover
+    background: #ddd
+
+.tag-cloud
+  display: flex
+  flex-wrap: wrap
+  gap: 0.35rem
+  margin: 0.5rem 0
+
+.tag-item
+  font-size: 0.85rem
+  color: #0044cc
+  text-decoration: underline
+  &:hover
+    color: #002266
+
+// ── Hero (index page) ──
+.hero
+  padding: 1.5rem 0
+  margin-bottom: 1rem
+  border-bottom: 1px solid #ddd
+
+  &-inner
+    text-align: center
+
+  .hero-badge
+    font-size: 0.8rem
+    color: #666
+
+  h1
+    font-size: 2rem
+    margin: 0.5rem 0
+    .gradient
+      background: none
+      -webkit-background-clip: unset
+      -webkit-text-fill-color: unset
+      color: #111
+
+  &-desc
+    font-size: 1rem
+    color: #444
+    max-width: 36rem
+    margin: 0 auto 1rem
+
+  &-actions
+    display: flex
+    gap: 0.5rem
+    justify-content: center
+    flex-wrap: wrap
+
+  .hero-stats
+    display: flex
+    gap: 2rem
+    justify-content: center
+    margin-top: 1rem
+    .stat
+      text-align: center
+      .stat-num
+        display: block
+        font-size: 1.5rem
+        font-weight: 700
+      .stat-label
+        font-size: 0.75rem
+        color: #666
+
+// ── Buttons ──
+.btn
+  display: inline-block
+  padding: 0.35rem 0.85rem
+  font-size: 0.88rem
+  text-decoration: none
+  border: 1px solid #888
+  color: #111
+  cursor: pointer
+
+  &-primary
+    background: #111
+    color: #fff
+    border-color: #111
+    &:hover
+      background: #333
+
+  &-secondary
+    background: #fff
+    color: #111
+    &:hover
+      background: #eee
+
+// ── Section ──
+.section
+  padding: 0.75rem 0
+
+.section-sm
+  padding: 0.5rem 0
+
+.section-title
+  margin: 1rem 0 0.75rem
+  text-align: center
+  p
+    color: #555
+    font-size: 0.9rem
+
+// ── Feature grid ──
+.feature-grid
+  display: grid
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr))
+  gap: 0.75rem
+  margin: 0.5rem 0
+
+.feature-card
+  border: 1px solid #ddd
+  padding: 0.75rem
+
+  .feat-icon
+    font-size: 1.1rem
+    margin-bottom: 0.25rem
+
+  h3
+    margin: 0 0 0.25rem
+    font-size: 0.95rem
+
+  p
+    font-size: 0.85rem
+    color: #444
+    margin-bottom: 0.25rem
+
+  .feat-tag
+    font-size: 0.72rem
+    color: #888
+    text-transform: uppercase
+
+// ── Showcase grid ──
+.showcase-grid
+  display: grid
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr))
+  gap: 0.75rem
+
+.showcase-card
+  border: 1px solid #ddd
+  padding: 0.75rem
+
+  .showcase-label
+    font-size: 0.72rem
+    font-weight: 700
+    text-transform: uppercase
+    color: #888
+
+  h3
+    margin: 0.25rem 0
+    font-size: 1rem
+
+  p
+    font-size: 0.85rem
+    color: #444
+    margin-bottom: 0.35rem
+
+  a::after
+    content: " →"
+
+// ── Blog grid ──
+.blog-grid
+  display: grid
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr))
+  gap: 0.75rem
+
+.blog-card
+  border: 1px solid #ddd
+  padding: 0.75rem
+
+  .post-meta
+    font-size: 0.8rem
+    color: #888
+    margin-bottom: 0.25rem
+
+  h2
+    border: none
+    margin: 0 0 0.35rem
+    font-size: 1rem
+    a
+      color: #111
+      text-decoration: none
+      &:hover
+        text-decoration: underline
+
+  p
+    font-size: 0.85rem
+    color: #444
+    margin-bottom: 0.35rem
+
+  .tags
+    display: flex
+    gap: 0.25rem
+    flex-wrap: wrap
+
+// ── Archive list ──
+.archive-list
+  list-style: none
+  padding: 0
+  li
+    padding: 0.25rem 0
+    border-bottom: 1px solid #eee
+    a
+      margin-left: 0.5rem
+
+// ── Post layout ──
+.post-layout
+  max-width: 36rem
+
+.post-header
+  margin-bottom: 1rem
+
+.post-content
+  line-height: 1.7
+  h2:first-child
+    margin-top: 0
+
+// ── Page header ──
+.page-header
+  text-align: center
+  padding: 1rem 0
+  h1
+    font-size: 2rem
+  p
+    color: #555
+
+// ── File types ──
+.file-types
+  display: grid
+  grid-template-columns: repeat(3, 1fr)
+  gap: 0.5rem
+
+.file-type-card
+  border: 1px solid #ddd
+  padding: 0.5rem
+  text-align: center
+  .file-ext
+    display: block
+    font-family: monospace
+    font-size: 0.95rem
+    font-weight: 700
+  .file-desc
+    font-size: 0.78rem
+    color: #666
+
+// ── Demo grid ──
+.demo-grid
+  display: grid
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr))
+  gap: 0.75rem
+
+.demo-card
+  border: 1px solid #ddd
+  padding: 0.75rem
+  .demo-ext
+    font-family: monospace
+    font-size: 0.85rem
+    font-weight: 700
+  h3
+    margin: 0.25rem 0
+  p
+    font-size: 0.85rem
+    color: #444
+  a::after
+    content: " →"
+
+// ── Callout ──
+.callout
+  border-left: 3px solid #ccc
+  padding: 0.5rem 0.75rem
+  margin: 0.75rem 0
+  font-size: 0.9rem
+  background: #f8f8f8
+
+// ── Footer ──
+.site-footer
+  margin-top: 2rem
+  padding-top: 0.75rem
+  border-top: 1px solid #ddd
+  font-size: 0.82rem
+  color: #666
+  p
+    margin-bottom: 0.35rem
+  a
+    color: #555
+    font-size: 0.82rem
+
+// ── Utilities ──
+.text-muted
+  color: #888
+
+.empty-state
+  text-align: center
+  color: #888
+  padding: 2rem 0
