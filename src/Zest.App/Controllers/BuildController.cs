@@ -56,7 +56,7 @@ public static class BuildController
         BuildService.PrintResult(result, config);
 
         if (opts.Watch)
-            BuildService.StartWatcher(config);
+            FileWatcherService.StartWatcher(config);
 
         return result.Success ? 0 : 1;
     }

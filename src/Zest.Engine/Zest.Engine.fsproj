@@ -8,7 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Domain/DomainModels.fs" />
+    <!-- Domain types (ordered by dependency) -->
+    <Compile Include="Domain/HtmlNodes.fs" />
+    <Compile Include="Domain/Page.fs" />
+    <Compile Include="Domain/Collections.fs" />
+    <Compile Include="Domain/SiteConfig.fs" />
+    <Compile Include="Domain/BuildResult.fs" />
+    <Compile Include="Domain/ScriptGlobals.fs" />
+    <!-- ZCSS pipeline -->
     <Compile Include="Zcss/ZcssAst.fs" />
     <Compile Include="Zcss/ZcssEvaluator.fs" />
     <Compile Include="Zcss/ZcssParserCore.fs" />
@@ -20,11 +27,16 @@
     <Compile Include="Zcss/ZcssProcessor.fs" />
     <Compile Include="Zcss/ZcssCompletions.fs" />
     <Compile Include="Zcss/ZcssTypeChecker.fs" />
+    <!-- Routing -->
     <Compile Include="Routing/PermalinkRouter.fs" />
+    <!-- Parsing -->
+    <Compile Include="Parsing/FrontMeta.fs" />
     <Compile Include="Parsing/FrontMatterParser.fs" />
+    <!-- Template engines -->
     <Compile Include="Template/ITemplateEngine.fs" />
     <Compile Include="Template/NunjucksEngine.fs" />
     <Compile Include="Template/TemplateManager.fs" />
+    <!-- HTML components -->
     <Compile Include="Html/HtmlElements.fs" />
     <Compile Include="Html/HtmlAttributes.fs" />
     <Compile Include="Html/HtmlModifiers.fs" />
@@ -37,9 +49,16 @@
     <Compile Include="Html/PageCollections.fs" />
     <Compile Include="Html/Pagination.fs" />
     <Compile Include="Html/TemplateData.fs" />
+    <!-- Scripting (depends on Domain, Routing, Parsing, Template, Html) -->
     <Compile Include="Scripting/InitEngine.fs" />
     <Compile Include="Scripting/ScriptRunner.fs" />
     <Compile Include="Scripting/ScriptEvaluator.fs" />
+    <!-- Build pipeline (depends on everything above) -->
+    <Compile Include="Build/BuildHelpers.fs" />
+    <Compile Include="Build/BuildCache.fs" />
+    <Compile Include="Build/BuildData.fs" />
+    <Compile Include="Build/BuildAssets.fs" />
+    <Compile Include="Build/BuildLayout.fs" />
     <Compile Include="Build/BuildEngine.fs" />
   </ItemGroup>
 

@@ -18,7 +18,7 @@ public static class SiteConfigLoader
     /// </summary>
     public static SiteConfig Load(string? projectPath = null)
     {
-        var root = FindProjectRoot(projectPath) ?? Directory.GetCurrentDirectory();
+        var root = ProjectRootFinder.Find(projectPath) ?? Directory.GetCurrentDirectory();
         var configPath = Path.Combine(root, "_config.toml");
 
         if (!File.Exists(configPath))
@@ -31,32 +31,31 @@ public static class SiteConfigLoader
 
             var config = SiteConfigDefaults.create();
 
-            // Build a new config with overrides using F# record With method
-            var title = GetString(model, "title", config.Title);
-            var baseUrl = GetString(model, "base_url", config.BaseUrl);
-            var description = GetString(model, "description", config.Description);
-            var defaultLayout = GetString(model, "default_layout", config.DefaultLayout);
-            var permalinkFormat = GetString(model, "permalink_format", config.PermalinkFormat);
-            var siteVersion = GetString(model, "site_version", config.SiteVersion);
-            var contentDir = GetString(model, "content_dir", config.ContentDir);
-            var outputDir = GetString(model, "output_dir", config.OutputDir);
-            var layoutsDir = GetString(model, "layouts_dir", config.LayoutsDir);
-            var includesDir = GetString(model, "includes_dir", config.IncludesDir);
-            var dataDir = GetString(model, "data_dir", config.DataDir);
-            var assetsDir = GetString(model, "assets_dir", config.AssetsDir);
-            var rootDir = GetString(model, "root_dir", config.RootDir);
-            var devServerPort = GetInt(model, "dev_server_port", config.DevServerPort);
-            var liveReloadPort = GetInt(model, "live_reload_port", config.LiveReloadPort);
-            var enableMinification    = GetBool(model, "enable_minification",     config.EnableMinification);
-            var enableCacheBusting   = GetBool(model, "enable_cache_busting",    config.EnableCacheBusting);
-            var enableParallel       = GetBool(model, "enable_parallel_build",   config.EnableParallelBuild);
-            var enableIncremental    = GetBool(model, "enable_incremental_build",config.EnableIncrementalBuild);
-            var author               = GetString(model, "author",   config.Author);
-            var language             = GetString(model, "language", config.Language);
-            var logLevel             = GetString(model, "log_level", config.LogLevel);
-            var logToFile            = GetBool  (model, "log_to_file", config.LogToFile);
-            var logTimestamps        = GetBool  (model, "log_timestamps", config.LogTimestamps);
-            var templateEngine       = GetString(model, "template_engine", config.TemplateEngine);
+            var title = TomlConfigReader.GetString(model, "title", config.Title);
+            var baseUrl = TomlConfigReader.GetString(model, "base_url", config.BaseUrl);
+            var description = TomlConfigReader.GetString(model, "description", config.Description);
+            var defaultLayout = TomlConfigReader.GetString(model, "default_layout", config.DefaultLayout);
+            var permalinkFormat = TomlConfigReader.GetString(model, "permalink_format", config.PermalinkFormat);
+            var siteVersion = TomlConfigReader.GetString(model, "site_version", config.SiteVersion);
+            var contentDir = TomlConfigReader.GetString(model, "content_dir", config.ContentDir);
+            var outputDir = TomlConfigReader.GetString(model, "output_dir", config.OutputDir);
+            var layoutsDir = TomlConfigReader.GetString(model, "layouts_dir", config.LayoutsDir);
+            var includesDir = TomlConfigReader.GetString(model, "includes_dir", config.IncludesDir);
+            var dataDir = TomlConfigReader.GetString(model, "data_dir", config.DataDir);
+            var assetsDir = TomlConfigReader.GetString(model, "assets_dir", config.AssetsDir);
+            var rootDir = TomlConfigReader.GetString(model, "root_dir", config.RootDir);
+            var devServerPort = TomlConfigReader.GetInt(model, "dev_server_port", config.DevServerPort);
+            var liveReloadPort = TomlConfigReader.GetInt(model, "live_reload_port", config.LiveReloadPort);
+            var enableMinification    = TomlConfigReader.GetBool(model, "enable_minification",     config.EnableMinification);
+            var enableCacheBusting   = TomlConfigReader.GetBool(model, "enable_cache_busting",    config.EnableCacheBusting);
+            var enableParallel       = TomlConfigReader.GetBool(model, "enable_parallel_build",   config.EnableParallelBuild);
+            var enableIncremental    = TomlConfigReader.GetBool(model, "enable_incremental_build",config.EnableIncrementalBuild);
+            var author               = TomlConfigReader.GetString(model, "author",   config.Author);
+            var language             = TomlConfigReader.GetString(model, "language", config.Language);
+            var logLevel             = TomlConfigReader.GetString(model, "log_level", config.LogLevel);
+            var logToFile            = TomlConfigReader.GetBool  (model, "log_to_file", config.LogToFile);
+            var logTimestamps        = TomlConfigReader.GetBool  (model, "log_timestamps", config.LogTimestamps);
+            var templateEngine       = TomlConfigReader.GetString(model, "template_engine", config.TemplateEngine);
 
             // Parse [[taxonomies]] array
             var taxonomies = config.Taxonomies;
@@ -126,70 +125,5 @@ public static class SiteConfigLoader
             Logger.Error("Config", $"Failed to parse '{configPath}': {ex.Message}", ex);
             return SiteConfigDefaults.create();
         }
-    }
-
-    private static string? FindProjectRoot(string? hint)
-    {
-        var start = hint != null
-            ? new DirectoryInfo(hint)
-            : new DirectoryInfo(Directory.GetCurrentDirectory());
-        var dir = start;
-        while (dir != null)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "_config.toml")) ||
-                Directory.Exists(Path.Combine(dir.FullName, "content")))
-                return dir.FullName;
-            dir = dir.Parent;
-        }
-        return start.FullName;
-    }
-
-    /// <summary>
-    /// Validate the loaded configuration and log warnings for common issues.
-    /// </summary>
-    public static void Validate(SiteConfig config)
-    {
-        var contentDir = Path.GetFullPath(Path.Combine(
-            Directory.GetCurrentDirectory(), config.EffectiveContentDir.TrimStart('.', '\\', '/')));
-        if (!Directory.Exists(contentDir))
-            Logger.Warn("Config", $"Content directory not found: {contentDir}");
-
-        var layoutsDir = Path.GetFullPath(Path.Combine(
-            Directory.GetCurrentDirectory(), config.LayoutsDir.TrimStart('.', '\\', '/')));
-        if (!Directory.Exists(layoutsDir))
-            Logger.Warn("Config", $"Layouts directory not found: {layoutsDir}");
-
-        if (string.IsNullOrEmpty(config.Title))
-            Logger.Warn("Config", "Site title is empty");
-
-        if (string.IsNullOrEmpty(config.BaseUrl))
-            Logger.Warn("Config", "Base URL is empty; absolute URLs will not be generated");
-
-        if (config.DevServerPort == config.LiveReloadPort)
-            Logger.Warn("Config", "Dev server port and live reload port are the same; this may cause conflicts");
-    }
-
-    private static string GetString(IDictionary<string, object> dict, string key, string fallback)
-    {
-        if (dict.TryGetValue(key, out var val) && val is string s && !string.IsNullOrEmpty(s))
-            return s;
-        return fallback;
-    }
-
-    private static int GetInt(IDictionary<string, object> dict, string key, int fallback)
-    {
-        if (dict.TryGetValue(key, out var val))
-        {
-            if (val is int i) return i;
-            if (val is long l) return (int)l;
-        }
-        return fallback;
-    }
-
-    private static bool GetBool(IDictionary<string, object> dict, string key, bool fallback)
-    {
-        if (dict.TryGetValue(key, out var val) && val is bool b)
-            return b;
-        return fallback;
     }
 }
