@@ -1,5 +1,7 @@
 using Zest.Engine;
 
+#nullable enable
+
 namespace Zest.Infra.Services;
 
 /// <summary>

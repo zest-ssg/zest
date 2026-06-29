@@ -85,16 +85,14 @@ module DslUtilities =
         pairs |> List.tryFind (fun (k, _) -> k = key) |> Option.map snd
 
     // ---- Math helpers ----
-    let inline sum (items: ^a list) = items |> List.sum
+    let sum (items: int list) = items |> List.sum
 
-    let inline avg (items: ^a list) =
-        if items.IsEmpty then
-            LanguagePrimitives.GenericZero
-        else
-            (List.sum items) / (LanguagePrimitives.GenericOne * items.Length)
+    let avg (items: int list) =
+        if items.IsEmpty then 0
+        else (items |> List.sum) / items.Length
 
-    let inline min_val (items: ^a list) = items |> List.min
-    let inline max_val (items: ^a list) = items |> List.max
+    let min_val (items: int list) = items |> List.min
+    let max_val (items: int list) = items |> List.max
 
     // ---- Date helpers ----
     let format_date (dateStr: string) =
