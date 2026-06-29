@@ -1,4 +1,4 @@
-using System.IO;
+using Zest.Infra.Services;
 
 namespace Zest.App.Controllers;
 
@@ -14,14 +14,12 @@ public static class InitController
 
         if (targetDir == "." && Directory.GetFiles(targetDir).Length > 0)
         {
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine("Warning: Current directory is not empty.");
-            Console.Write("Continue anyway? (y/N): ");
-            Console.ResetColor();
+            Logger.WriteWarning("  Warning: Current directory is not empty.");
+            Console.Write("  Continue anyway? (y/N): ");
             var resp = Console.ReadLine()?.Trim().ToLowerInvariant();
             if (resp != "y" && resp != "yes")
             {
-                Console.WriteLine("Aborted.");
+                Logger.WriteDim("  Aborted.");
                 return 1;
             }
         }
@@ -33,28 +31,24 @@ public static class InitController
 
         if (!Directory.Exists(templateDir))
         {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.Error.WriteLine("Error: Could not locate default template directory.");
-            Console.ResetColor();
+            Logger.WriteError("  Error: Could not locate default template directory.");
             return 1;
         }
 
         CopyDirectory(templateDir, targetDir);
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"[Zest] Created new project at '{targetDir}'");
-        Console.ResetColor();
+        Logger.WriteSuccess($"  [Zest] Created new project at '{targetDir}'");
         Console.WriteLine();
-        Console.WriteLine("Next steps:");
-        Console.WriteLine("  1. cd " + targetDir);
-        Console.WriteLine("  2. zest build              # Build the site");
-        Console.WriteLine("  3. zest serve              # Start dev server");
+        Logger.WriteAccent("  Next steps:");
+        Logger.WriteInfo("    1. cd " + targetDir);
+        Logger.WriteInfo("    2. zest build              # Build the site");
+        Logger.WriteInfo("    3. zest serve              # Start dev server");
         return 0;
     }
 
     private static void CopyDirectory(string source, string target)
     {
         Directory.CreateDirectory(target);
-        foreach (var file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
+        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
             var rel = Path.GetRelativePath(source, file);
             var tgt = Path.Combine(target, rel);

@@ -10,24 +10,59 @@ namespace Zest.Infra.Configuration;
 /// Loads SiteConfig from _config.toml with full zero-config support.
 /// When _config.toml is absent, all fields use sensible defaults.
 /// Only overrides specified fields — all others remain at defaults.
+///
+/// Includes caching: the config file's last write time is tracked so that
+/// repeated calls only re-parse when the file has actually changed.
 /// </summary>
 public static class SiteConfigLoader
 {
+    private static SiteConfig? _cachedConfig;
+    private static DateTime _lastLoadTimeUtc;
+    private static string? _lastConfigPath;
+
     /// <summary>
     /// Load site configuration from the given project root, or auto-detect.
+    /// Uses cached result if the config file hasn't changed since last load.
     /// </summary>
     public static SiteConfig Load(string? projectPath = null)
     {
         var root = ProjectRootFinder.Find(projectPath) ?? Directory.GetCurrentDirectory();
         var configPath = Path.Combine(root, "_config.toml");
 
+        // Check cache: if the file hasn't changed, return cached config
+        if (_cachedConfig != null && _lastConfigPath == configPath)
+        {
+            var currentWriteTime = File.Exists(configPath)
+                ? File.GetLastWriteTimeUtc(configPath)
+                : DateTime.MinValue;
+
+            if (currentWriteTime == _lastLoadTimeUtc)
+                return _cachedConfig;
+
+            _lastLoadTimeUtc = currentWriteTime;
+        }
+        else
+        {
+            _lastConfigPath = configPath;
+            _lastLoadTimeUtc = File.Exists(configPath)
+                ? File.GetLastWriteTimeUtc(configPath)
+                : DateTime.MinValue;
+        }
+
         if (!File.Exists(configPath))
-            return SiteConfigDefaults.create();
+        {
+            _cachedConfig = SiteConfigDefaults.create();
+            return _cachedConfig;
+        }
 
         try
         {
             var model = Toml.ToModel(File.ReadAllText(configPath));
-            if (model == null) return SiteConfigDefaults.create();
+            if (model == null)
+            {
+                _cachedConfig = SiteConfigDefaults.create();
+                return _cachedConfig;
+            }
 
             var config = SiteConfigDefaults.create();
 
@@ -69,7 +104,7 @@ public static class SiteConfigLoader
                     taxonomies = Microsoft.FSharp.Collections.ListModule.OfSeq(list);
             }
 
-            // Parse [menus.*] tables → IDictionary<string, MenuItem list>
+            // Parse [menus.*] tables
             var menus = new Dictionary<string, Microsoft.FSharp.Collections.FSharpList<MenuItem>>();
             if (model.TryGetValue("menu", out var menuObj) && menuObj is Tomlyn.Model.TomlTable menuTable)
             {
@@ -90,7 +125,7 @@ public static class SiteConfigLoader
             }
             IDictionary<string, Microsoft.FSharp.Collections.FSharpList<MenuItem>> menusDict = menus;
 
-            return new SiteConfig(
+            _cachedConfig = new SiteConfig(
                 title: title,
                 baseUrl: baseUrl,
                 description: description,
@@ -119,11 +154,24 @@ public static class SiteConfigLoader
                 logTimestamps: logTimestamps,
                 templateEngine: templateEngine
             );
+            return _cachedConfig;
         }
         catch (Exception ex)
         {
             Logger.Error("Config", $"Failed to parse '{configPath}': {ex.Message}", ex);
-            return SiteConfigDefaults.create();
+            _cachedConfig = SiteConfigDefaults.create();
+            return _cachedConfig;
         }
+    }
+
+    /// <summary>
+    /// Clear the cached configuration so the next Load() call re-parses the config file.
+    /// Useful for testing or when the caller knows the file has changed externally.
+    /// </summary>
+    public static void ClearCache()
+    {
+        _cachedConfig = null;
+        _lastLoadTimeUtc = DateTime.MinValue;
+        _lastConfigPath = null;
     }
 }

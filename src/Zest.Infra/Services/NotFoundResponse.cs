@@ -28,27 +28,37 @@ internal static class NotFoundResponse
 
         var suggestions = FindSimilarPaths(outputDir, requestedPath);
         var sb = new StringBuilder();
-        sb.AppendLine("<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\">");
+        sb.AppendLine("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\">");
         sb.AppendLine("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
-        sb.AppendLine("<title>404 — Page Not Found</title>");
+        sb.AppendLine("<title>404 — Page Not Found · Zest</title>");
         sb.AppendLine("<style>");
-        sb.AppendLine("body{font-family:system-ui,sans-serif;max-width:600px;margin:80px auto;padding:0 20px;color:#333}");
-        sb.AppendLine("h1{font-size:2em;color:#e74c3c} .suggestions{margin-top:20px} .suggestions li{margin:5px 0}");
-        sb.AppendLine("a{color:#3498db;text-decoration:none} a:hover{text-decoration:underline}");
+        sb.AppendLine("*{margin:0;padding:0;box-sizing:border-box}");
+        sb.AppendLine("body{font-family:system-ui,-apple-system,sans-serif;max-width:600px;margin:80px auto;padding:0 24px;color:#1a1a2e;line-height:1.6}");
+        sb.AppendLine("h1{font-size:2.5em;font-weight:700;color:#e74c3c;margin-bottom:8px}");
+        sb.AppendLine("code{background:#f0f0f5;padding:2px 8px;border-radius:4px;font-size:.9em}");
+        sb.AppendLine(".tag{display:inline-block;margin-top:24px;padding:4px 12px;background:#1a1a2e;color:#fff;border-radius:20px;font-size:.75em;letter-spacing:.5px}");
+        sb.AppendLine(".suggestions{margin-top:24px}");
+        sb.AppendLine(".suggestions h2{font-size:1.1em;font-weight:600;margin-bottom:8px;color:#555}");
+        sb.AppendLine(".suggestions ul{list-style:none;padding:0}");
+        sb.AppendLine(".suggestions li{margin:6px 0}");
+        sb.AppendLine("a{color:#4361ee;text-decoration:none} a:hover{text-decoration:underline;color:#3a0ca3}");
+        sb.AppendLine(".back{display:inline-block;margin-top:24px;padding:8px 20px;background:#4361ee;color:#fff;border-radius:6px;font-size:.9em;font-weight:500}");
+        sb.AppendLine(".back:hover{background:#3a0ca3;text-decoration:none}");
         sb.AppendLine("</style></head><body>");
-        sb.AppendLine($"<h1>404 — Page Not Found</h1>");
+        sb.AppendLine($"<h1>404</h1>");
         sb.AppendLine($"<p>The requested path <code>{WebUtility.HtmlEncode(requestedPath ?? "/")}</code> was not found.</p>");
 
         if (suggestions.Count > 0)
         {
             sb.AppendLine("<div class=\"suggestions\">");
-            sb.AppendLine("<p>Did you mean:</p><ul>");
+            sb.AppendLine("<h2>Did you mean:</h2><ul>");
             foreach (var s in suggestions)
                 sb.AppendLine($"<li><a href=\"{s.Url}\">{WebUtility.HtmlEncode(s.Title)}</a></li>");
             sb.AppendLine("</ul></div>");
         }
 
-        sb.AppendLine($"<p><a href=\"/\">← Back to home</a></p>");
+        sb.AppendLine("<div class=\"tag\">ZEST · Zenith Efficient Static Toolkit</div>");
+        sb.AppendLine($"<a href=\"/\" class=\"back\">← Back to home</a>");
         sb.AppendLine("</body></html>");
 
         await HttpResponseHelper.WriteStringResponse(ctx, 404, sb.ToString());
