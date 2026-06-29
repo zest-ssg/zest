@@ -120,33 +120,125 @@ public static class Logger
             >= 400 and < 500 => ConsoleColor.Yellow,
             _ => ConsoleColor.Red
         };
-        var statusStr = status.ToString();
         Console.ForegroundColor = ConsoleColor.DarkGray;
-        Console.Write($"{method,-6} ");
+        Console.Write($"{_indent}{method,-6} ");
         Console.ForegroundColor = statusColor;
-        Console.Write($"{statusStr} ");
+        Console.Write($"{status} ");
         Console.ForegroundColor = ConsoleColor.Gray;
-        Console.WriteLine($"{path} ({durationMs}ms)");
+        WriteDuration(durationMs);
+        Console.Write($" {path}");
+        Console.ResetColor();
+        Console.WriteLine();
+    }
+
+    private static void WriteDuration(long ms)
+    {
+        Console.ForegroundColor = ms < 100 ? ConsoleColor.Green : ms < 500 ? ConsoleColor.Yellow : ConsoleColor.Red;
+        Console.Write($"{ms}ms");
         Console.ResetColor();
     }
 
-    /// <summary>Print a banner with server info in a clean list format.</summary>
-    public static void Banner(string title, string url, params (string label, string value)[] info)
+    // ── Color helpers ──────────────────────────────────────
+
+    private const string _indent = "  ";
+    private static readonly string _separator = new('─', 52);
+
+    /// <summary>Write a success message (green text).</summary>
+    public static void WriteSuccess(string message)
     {
-        const string indent = "  ";
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine(message);
+        Console.ResetColor();
+    }
+
+    /// <summary>Write a warning message (yellow text).</summary>
+    public static void WriteWarning(string message)
+    {
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine(message);
+        Console.ResetColor();
+    }
+
+    /// <summary>Write an error message (red text).</summary>
+    public static void WriteError(string message)
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.Error.WriteLine(message);
+        Console.ResetColor();
+    }
+
+    /// <summary>Write an info message (default gray text).</summary>
+    public static void WriteInfo(string message)
+    {
+        Console.ForegroundColor = ConsoleColor.Gray;
+        Console.WriteLine(message);
+        Console.ResetColor();
+    }
+
+    /// <summary>Write an accent message (cyan text — for headers and emphasis).</summary>
+    public static void WriteAccent(string message)
+    {
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine(message);
+        Console.ResetColor();
+    }
+
+    /// <summary>Write a dim message (dark gray — for secondary/helper text).</summary>
+    public static void WriteDim(string message)
+    {
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine(message);
+        Console.ResetColor();
+    }
+
+    /// <summary>Write a section header with underline separator.</summary>
+    public static void WriteSection(string title)
+    {
         Console.ForegroundColor = ConsoleColor.Cyan;
         Console.WriteLine();
-        Console.WriteLine($"{indent}━━━ {title} ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Console.WriteLine();
+        Console.WriteLine($"{_indent}── {title} ─{_separator}");
+        Console.ResetColor();
+    }
+
+    /// <summary>Write a label-value pair with aligned columns.</summary>
+    public static void WriteField(string label, string value, int labelWidth = 8)
+    {
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.Write($"{_indent}  {label}");
+        Console.ResetColor();
+        var pad = labelWidth - label.Length;
+        if (pad > 0) Console.Write(new string(' ', pad));
+        Console.Write(" ");
         Console.ForegroundColor = ConsoleColor.White;
-        Console.WriteLine($"{indent}  URL     {url}");
+        Console.WriteLine(value);
+        Console.ResetColor();
+    }
+
+    /// <summary>Write a compact header footer line using accent color.</summary>
+    public static void WriteRule()
+    {
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine($"{_indent}{new string('─', 52)}");
+        Console.ResetColor();
+    }
+
+    /// <summary>Print a banner with server info in a clean aligned format.</summary>
+    public static void Banner(string title, string url, params (string label, string value)[] info)
+    {
+        var titlePrefix = $"── {title} ";
+        var fillLen = _separator.Length - titlePrefix.Length;
+        if (fillLen < 0) fillLen = 0;
+
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine($"{_indent}{titlePrefix}{new string('─', fillLen)}");
+        Console.ResetColor();
+        Console.WriteLine();
+        WriteField("URL", url);
         foreach (var (label, value) in info)
         {
-            Console.WriteLine($"{indent}  {label,-7} {value}");
+            WriteField(label, value);
         }
-        Console.ForegroundColor = ConsoleColor.DarkGray;
-        Console.WriteLine($"{indent}{new string('━', 48)}");
-        Console.ResetColor();
+        WriteRule();
         Console.WriteLine();
     }
 
@@ -164,7 +256,7 @@ public static class Logger
             sb.Append(' ');
         }
         sb.Append('[');
-        sb.Append(level.ToString().ToUpperInvariant().PadRight(5));
+        sb.Append(level.ToString().ToUpperInvariant());
         sb.Append("] ");
         if (!string.IsNullOrEmpty(module))
         {
@@ -262,21 +354,15 @@ public static class Logger
     {
         if (_quiet || _minLevel > Level.Info) return;
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.Write($"  ✓ {module}");
+        Console.Write($"{_indent}✓ {module}");
         Console.ResetColor();
         Console.Write($"  {totalPages} pages");
         if (cached > 0) Console.Write($" ({processed} new, {cached} cached)");
         else Console.Write($" ({processed} processed)");
         if (assets > 0) Console.Write($", {assets} assets");
         Console.ForegroundColor = ConsoleColor.DarkGray;
-        Console.Write($"  ·  ");
-        if (durationMs < 100)
-            Console.ForegroundColor = ConsoleColor.Green;
-        else if (durationMs < 500)
-            Console.ForegroundColor = ConsoleColor.Yellow;
-        else
-            Console.ForegroundColor = ConsoleColor.Red;
-        Console.Write($"{durationMs}ms");
+        Console.Write("  ·  ");
+        WriteDuration(durationMs);
         Console.ResetColor();
         Console.WriteLine();
     }

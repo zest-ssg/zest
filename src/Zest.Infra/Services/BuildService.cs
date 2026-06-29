@@ -49,7 +49,7 @@ public class BuildService
         {
             var outputDir = Path.GetFullPath(Path.Combine(
                 Directory.GetCurrentDirectory(), config.OutputDir.TrimStart('.', '\\', '/')));
-            Logger.VerboseLog($"Output: {outputDir}");
+            Logger.VerboseLog($"  Output: {outputDir}");
         }
     }
 }

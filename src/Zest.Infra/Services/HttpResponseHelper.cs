@@ -57,6 +57,7 @@ internal static class HttpResponseHelper
 
     /// <summary>
     /// Write a file response with MIME type, ETag, and caching headers.
+    /// Uses streaming (CopyToAsync) to avoid buffering entire file in memory.
     /// Returns true if a 304 Not Modified was sent (client cache hit).
     /// </summary>
     public static async Task<bool> WriteFileResponseAsync(HttpListenerContext ctx, string filePath)
@@ -75,9 +76,11 @@ internal static class HttpResponseHelper
             return true;
         }
 
-        var bytes = await File.ReadAllBytesAsync(filePath);
-        ctx.Response.ContentLength64 = bytes.Length;
-        await ctx.Response.OutputStream.WriteAsync(bytes);
+        // Stream the file directly — no intermediate buffer for large files
+        var fileLength = new FileInfo(filePath).Length;
+        ctx.Response.ContentLength64 = fileLength;
+        await using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, useAsync: true);
+        await fs.CopyToAsync(ctx.Response.OutputStream);
         await ctx.Response.OutputStream.FlushAsync();
         return false;
     }

@@ -34,11 +34,8 @@ public static class FileWatcherService
         var contentDir = Path.GetFullPath(Path.Combine(
             Directory.GetCurrentDirectory(), config.EffectiveContentDir.TrimStart('.', '\\', '/')));
 
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine($"  Watching for changes in '{contentDir}'...");
-        Console.ForegroundColor = ConsoleColor.DarkGray;
-        Console.WriteLine("  Press Ctrl+C to stop.");
-        Console.ResetColor();
+        Logger.WriteAccent($"  Watching for changes in '{contentDir}'...");
+        Logger.WriteDim("  Press Ctrl+C to stop.");
 
         using var watcher = new FileSystemWatcher(contentDir, "*.*")
         {

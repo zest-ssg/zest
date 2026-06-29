@@ -1,3 +1,5 @@
+using Zest.Infra.Services;
+
 namespace Zest.App.CommandLine;
 
 /// <summary>
@@ -14,23 +16,13 @@ internal static class CliParser
         var opts = new BuildCommandOptions();
         for (int i = 1; i < args.Length; i++)
         {
+            if (TryApplyCommonOption(ref opts, args[i])) continue;
+
             switch (args[i].ToLowerInvariant())
             {
                 case "--watch":
                 case "-w":
                     opts = opts with { Watch = true };
-                    break;
-                case "--verbose":
-                case "-v":
-                    opts = opts with { Verbose = true };
-                    break;
-                case "--quiet":
-                case "-q":
-                    opts = opts with { Quiet = true };
-                    break;
-                case "--help":
-                case "-h":
-                    opts = opts with { ShowHelp = true };
                     break;
                 default:
                     if (opts.ProjectPath == null && !args[i].StartsWith("-"))
@@ -49,6 +41,8 @@ internal static class CliParser
         var opts = new ServeCommandOptions();
         for (int i = 1; i < args.Length; i++)
         {
+            if (TryApplyCommonOption(ref opts, args[i])) continue;
+
             switch (args[i].ToLowerInvariant())
             {
                 case "--port":
@@ -68,18 +62,6 @@ internal static class CliParser
                 case "-o":
                     opts = opts with { OpenBrowser = true };
                     break;
-                case "--verbose":
-                case "-v":
-                    opts = opts with { Verbose = true };
-                    break;
-                case "--quiet":
-                case "-q":
-                    opts = opts with { Quiet = true };
-                    break;
-                case "--help":
-                case "-h":
-                    opts = opts with { ShowHelp = true };
-                    break;
                 default:
                     throw new ArgumentException($"Unknown option: {args[i]}");
             }
@@ -95,6 +77,8 @@ internal static class CliParser
         var opts = new PreviewCommandOptions();
         for (int i = 1; i < args.Length; i++)
         {
+            if (TryApplyCommonOption(ref opts, args[i])) continue;
+
             switch (args[i].ToLowerInvariant())
             {
                 case "--port":
@@ -114,18 +98,6 @@ internal static class CliParser
                 case "-o":
                     opts = opts with { OpenBrowser = true };
                     break;
-                case "--verbose":
-                case "-v":
-                    opts = opts with { Verbose = true };
-                    break;
-                case "--quiet":
-                case "-q":
-                    opts = opts with { Quiet = true };
-                    break;
-                case "--help":
-                case "-h":
-                    opts = opts with { ShowHelp = true };
-                    break;
                 default:
                     throw new ArgumentException($"Unknown option: {args[i]}");
             }
@@ -143,19 +115,49 @@ internal static class CliParser
     }
 
     /// <summary>
+    /// Apply common options (--verbose, --quiet, --help) to any command options record.
+    /// Returns true if the argument was a recognized common option.
+    /// </summary>
+    private static bool TryApplyCommonOption<T>(ref T opts, string arg) where T : CommandOptions
+    {
+        switch (arg.ToLowerInvariant())
+        {
+            case "--verbose":
+            case "-v":
+                opts = (T)opts with { Verbose = true };
+                return true;
+            case "--quiet":
+            case "-q":
+                opts = (T)opts with { Quiet = true };
+                return true;
+            case "--help":
+            case "-h":
+                opts = (T)opts with { ShowHelp = true };
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    // ── Command-specific help pages ────────────────────────
+
+    /// <summary>
     /// Print build command help.
     /// </summary>
     public static void PrintBuildHelp()
     {
-        Console.WriteLine("Usage: zest build [path] [options]");
+        Logger.WriteSection("Usage");
+        Logger.WriteInfo("  zest build [path] [options]");
         Console.WriteLine();
-        Console.WriteLine("Arguments:");
-        Console.WriteLine("  path              Project directory (default: current directory)");
+
+        Logger.WriteSection("Arguments");
+        Logger.WriteInfo("  path              Project directory (default: current directory)");
         Console.WriteLine();
-        Console.WriteLine("Options:");
-        Console.WriteLine("  --watch, -w       Watch for changes and auto-rebuild");
-        Console.WriteLine("  --verbose, -v     Enable Debug-level logging");
-        Console.WriteLine("  --quiet, -q       Suppress Info-level logs");
+
+        Logger.WriteSection("Options");
+        Logger.WriteInfo("  --watch, -w       Watch for changes and auto-rebuild");
+        Logger.WriteInfo("  --verbose, -v     Enable Debug-level logging");
+        Logger.WriteInfo("  --quiet, -q       Suppress Info-level logs");
     }
 
     /// <summary>
@@ -163,17 +165,20 @@ internal static class CliParser
     /// </summary>
     public static void PrintServeHelp()
     {
-        Console.WriteLine("Usage: zest serve [options]");
+        Logger.WriteSection("Usage");
+        Logger.WriteInfo("  zest serve [options]");
         Console.WriteLine();
-        Console.WriteLine("Start the development server with live reload.");
+
+        Logger.WriteDim("  Start the development server with live reload.");
         Console.WriteLine();
-        Console.WriteLine("Options:");
-        Console.WriteLine("  --port, -p PORT     Dev server port (default: 8080)");
-        Console.WriteLine("  --host HOST         Bind to host (default: localhost)");
-        Console.WriteLine("  --open, -o          Open browser on start");
-        Console.WriteLine("  --verbose, -v       Show detailed FSI output");
-        Console.WriteLine("  --quiet, -q         Suppress INFO logs");
-        Console.WriteLine("  --help, -h          Show this help");
+
+        Logger.WriteSection("Options");
+        Logger.WriteInfo("  --port, -p PORT     Dev server port (default: 8080)");
+        Logger.WriteInfo("  --host HOST         Bind to host (default: localhost)");
+        Logger.WriteInfo("  --open, -o          Open browser on start");
+        Logger.WriteInfo("  --verbose, -v       Show detailed FSI output");
+        Logger.WriteInfo("  --quiet, -q         Suppress INFO logs");
+        Logger.WriteInfo("  --help, -h          Show this help");
     }
 
     /// <summary>
@@ -181,16 +186,19 @@ internal static class CliParser
     /// </summary>
     public static void PrintPreviewHelp()
     {
-        Console.WriteLine("Usage: zest preview [options]");
+        Logger.WriteSection("Usage");
+        Logger.WriteInfo("  zest preview [options]");
         Console.WriteLine();
-        Console.WriteLine("Preview the built _site/ directory (no build triggered).");
+
+        Logger.WriteDim("  Preview the built _site/ directory (no build triggered).");
         Console.WriteLine();
-        Console.WriteLine("Options:");
-        Console.WriteLine("  --port, -p PORT     Preview server port (default: 8080)");
-        Console.WriteLine("  --host HOST         Bind to host (default: localhost)");
-        Console.WriteLine("  --open, -o          Open browser on start");
-        Console.WriteLine("  --verbose, -v       Enable Debug-level logging");
-        Console.WriteLine("  --quiet, -q         Suppress Info-level logs");
-        Console.WriteLine("  --help, -h          Show this help");
+
+        Logger.WriteSection("Options");
+        Logger.WriteInfo("  --port, -p PORT     Preview server port (default: 8080)");
+        Logger.WriteInfo("  --host HOST         Bind to host (default: localhost)");
+        Logger.WriteInfo("  --open, -o          Open browser on start");
+        Logger.WriteInfo("  --verbose, -v       Enable Debug-level logging");
+        Logger.WriteInfo("  --quiet, -q         Suppress Info-level logs");
+        Logger.WriteInfo("  --help, -h          Show this help");
     }
 }

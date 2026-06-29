@@ -32,14 +32,11 @@ public record ServeCommandOptions : CommandOptions
 /// <summary>
 /// Options for `zest preview [--port PORT] [--host HOST] [--open]`
 /// </summary>
-public record PreviewCommandOptions
+public record PreviewCommandOptions : CommandOptions
 {
     public int Port { get; init; } = 8080;
     public string Host { get; init; } = "localhost";
     public bool OpenBrowser { get; init; }
-    public bool Verbose { get; init; }
-    public bool Quiet { get; init; }
-    public bool ShowHelp { get; init; }
 }
 
 /// <summary>

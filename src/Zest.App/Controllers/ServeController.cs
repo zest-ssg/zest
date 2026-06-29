@@ -24,7 +24,7 @@ public static class ServeController
         }
         catch (ArgumentException ex)
         {
-            Console.Error.WriteLine($"Error: {ex.Message}");
+            Logger.WriteError($"  Error: {ex.Message}");
             return 1;
         }
 
@@ -54,7 +54,7 @@ public static class ServeController
         Console.CancelKeyPress += (_, args) =>
         {
             Console.WriteLine();
-            Logger.Info("Shutting down...");
+            Logger.WriteSuccess("  Shutting down...");
             server.Stop();
             evt.Set();
             args.Cancel = true;
@@ -75,7 +75,7 @@ public static class ServeController
         }
         catch (ArgumentException ex)
         {
-            Console.Error.WriteLine($"Error: {ex.Message}");
+            Logger.WriteError($"  Error: {ex.Message}");
             return 1;
         }
 
@@ -96,7 +96,7 @@ public static class ServeController
         Console.CancelKeyPress += (_, args) =>
         {
             Console.WriteLine();
-            Logger.Info("Shutting down preview server...");
+            Logger.WriteSuccess("  Shutting down preview server...");
             server.Stop();
             evt.Set();
             args.Cancel = true;

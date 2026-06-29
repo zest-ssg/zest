@@ -19,7 +19,7 @@ public static class BuildController
         }
         catch (ArgumentException ex)
         {
-            Console.Error.WriteLine($"Error: {ex.Message}");
+            Logger.WriteError($"  Error: {ex.Message}");
             return 1;
         }
 
@@ -35,7 +35,7 @@ public static class BuildController
             var fullPath = Path.GetFullPath(opts.ProjectPath);
             if (!Directory.Exists(fullPath))
             {
-                Logger.Error("Build", $"Directory not found: {fullPath}");
+                Logger.WriteError($"  Directory not found: {fullPath}");
                 return 1;
             }
             Directory.SetCurrentDirectory(fullPath);

@@ -1,3 +1,4 @@
+using Zest.App.CommandLine;
 using Zest.App.Controllers;
 using Zest.Infra.Services;
 
@@ -14,8 +15,6 @@ using Zest.Infra.Services;
  */
 public static class Program
 {
-    private const string Version = "0.3.0";
-
     public static int Main(string[] args)
     {
         try
@@ -48,47 +47,46 @@ public static class Program
 
     private static int ShowVersion()
     {
-        Console.WriteLine($"Zest v{Version} — Zenith Efficient Static Toolkit");
-        Console.WriteLine("Ecosystem: .zpage.fsx + .zcss + .toml + .js");
+        Logger.WriteAccent(string.Format(HelpText.Header, HelpText.Version));
+        Logger.WriteDim(HelpText.Ecosystem);
         return 0;
     }
 
     private static int PrintHelp()
     {
-        Console.WriteLine($"Zest v{Version} — Zenith Efficient Static Toolkit");
-        Console.WriteLine("(recursive acronym: ZEST = Zenith Efficient Static Toolkit)");
+        Logger.WriteAccent(string.Format(HelpText.Header, HelpText.Version));
+        Logger.WriteDim(HelpText.Ecosystem);
         Console.WriteLine();
-        Console.WriteLine("Usage: zest <command> [options]");
+
+        Logger.WriteSection("Usage");
+        Logger.WriteInfo(HelpText.Usage);
         Console.WriteLine();
-        Console.WriteLine("Commands:");
-        Console.WriteLine("  build                       Build static site to _site/");
-        Console.WriteLine("  serve                       Build + start dev server (live reload)");
-        Console.WriteLine("  preview                     Preview built _site/ directory");
-        Console.WriteLine("  init                        Scaffold new project from template");
-        Console.WriteLine("  --version, -v               Show version info");
-        Console.WriteLine("  --help,    -h               Show this help");
+
+        Logger.WriteSection("Commands");
+        Logger.WriteInfo(HelpText.Commands);
+        Logger.WriteInfo(HelpText.CommandsServe);
+        Logger.WriteInfo(HelpText.CommandsPreview);
+        Logger.WriteInfo(HelpText.CommandsInit);
+        Logger.WriteInfo(HelpText.CommandsVersion);
+        Logger.WriteInfo(HelpText.CommandsHelp);
         Console.WriteLine();
-        Console.WriteLine("Options:");
-        Console.WriteLine("  --port, -p PORT             Server port (default: 8080)");
-        Console.WriteLine("  --watch, -w                 Watch files and auto-rebuild");
+
+        Logger.WriteSection("Options");
+        Logger.WriteInfo(HelpText.Options);
+        Logger.WriteInfo(HelpText.OptionsWatch);
         Console.WriteLine();
-        Console.WriteLine("File formats:");
-        Console.WriteLine("  .zpage.fsx  F# template scripts with HTML DSL & Markdown");
-        Console.WriteLine("  .zhtml      Lightweight HTML templates (no F#)");
-        Console.WriteLine("  .zcss       Zest Stylesheet — CSS superset with nesting/vars");
-        Console.WriteLine("  .toml       Site config & global data (zero-config by default)");
-        Console.WriteLine("  .js         Client scripts, copied as-is to output");
-        Console.WriteLine("  .md         Standard Markdown content files");
+
+        Logger.WriteSection("File Formats");
+        Logger.WriteInfo(HelpText.FileFormats);
         Console.WriteLine();
-        Console.WriteLine("Run 'zest <command> --help' for command-specific options.");
+
+        Logger.WriteDim($"  {HelpText.HelpSuffix}");
         return 0;
     }
 
     private static int UnknownCommand(string cmd)
     {
-        Console.ForegroundColor = ConsoleColor.Red;
-        Console.Error.WriteLine($"Unknown command: '{cmd}'");
-        Console.ResetColor();
+        Logger.WriteError($"  Unknown command: '{cmd}'");
         Console.WriteLine();
         PrintHelp();
         return 1;
