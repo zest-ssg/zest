@@ -255,6 +255,7 @@ module ScriptRunner =
         sb.AppendLine("Zest.Dsl.Context.current <- Some (Zest.Dsl.ZestContext(@\"" + ctxFile + "\"))") |> ignore
         sb.AppendLine("open Zest.Dsl.Dsl") |> ignore
         sb.AppendLine("open Zest.Dsl.DslComponents") |> ignore
+        sb.AppendLine("open Zest.Dsl.DslSugar") |> ignore
         sb.AppendLine("open Zest.Dsl.DslCollections") |> ignore
         sb.AppendLine("open Zest.Dsl.DslUtilities") |> ignore
         sb.AppendLine("open Zest.Dsl.DslSeo") |> ignore

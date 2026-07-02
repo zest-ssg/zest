@@ -8,7 +8,7 @@ open System.Text.RegularExpressions
 open Zest.Engine
 
 // ============================================================
-// 分页辅助 (Pagination)
+// Pagination helpers
 // ============================================================
 
 module Pagination =
@@ -23,7 +23,7 @@ module Pagination =
         PageUrl: int -> string
     }
 
-    /// 将列表分页。
+    /// Paginate a list of items.
     let paginate<'a> (items: 'a list) (pageSize: int) (pageUrlFn: int -> string) : PaginatedResult<'a> list =
         let total = items.Length
         let pages = (total + pageSize - 1) / pageSize
@@ -37,7 +37,7 @@ module Pagination =
               NextUrl = if i < pages - 1 then Some(pageUrlFn (i + 2)) else None
               PageUrl = pageUrlFn } ]
 
-    /// 渲染分页导航。
+    /// Render pagination navigation.
     let renderPagination (p: PaginatedResult<'a>) : HtmlNode =
         nav [
             if p.PreviousUrl.IsSome then

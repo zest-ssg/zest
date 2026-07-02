@@ -6,7 +6,7 @@ namespace Zest.App.CommandLine;
 /// </summary>
 internal static class HelpText
 {
-    public const string Version = "0.3.0";
+    public const string Version = "1.1.2";
 
     public const string Header = "Zest v{0} — Zenith Efficient Static Toolkit";
 
@@ -40,7 +40,8 @@ internal static class HelpText
 
     public const string FileFormats =
         "  .zpage.fsx  F# template scripts with HTML DSL & Markdown\n" +
-        "  .zhtml      Lightweight HTML templates (no F#)\n" +
+        "  .znjk       Nunjucks-compatible templates\n" +
+        "  .html       Static HTML files (copied as-is, no template syntax)\n" +
         "  .zcss       Zest Stylesheet — CSS superset with nesting/vars\n" +
         "  .toml       Site config & global data (zero-config by default)\n" +
         "  .js         Client scripts, copied as-is to output\n" +

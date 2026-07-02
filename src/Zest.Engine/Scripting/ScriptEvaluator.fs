@@ -10,19 +10,16 @@ open Zest.Engine.Routing
 open Zest.Engine.Html
 open Zest.Engine.Template
 
-/// 负责将 .zpage.fsx / .md 文件求值为 Page 记录。
+/// Evaluates .zpage.fsx / .md files into Page records.
 module ScriptEvaluator =
 
-    /// 从脚本文本中提取并渲染内容 HTML（传统 Markdown 回退模式）。
+    /// Extract and render content HTML from script text (legacy Markdown fallback mode).
     let private renderContent (ext: string) (bodyText: string) (fullText: string) : string =
         match ext with
         | ".md" | ".markdown" ->
             Markdown.toHtml bodyText
-        | ".zhtml" ->
-            // .zhtml: 纯 HTML 内容，无需任何转换
-            bodyText
         | _ ->
-            // .zpage.fsx: 剥去元数据注释和 #r / #load 指令，其余视为 Markdown 内容
+            // .zpage.fsx / .fsx: strip metadata comments and #r / #load directives, treat remainder as Markdown
             let lines =
                 fullText.Split('\n')
                 |> Array.filter (fun l ->
@@ -34,9 +31,9 @@ module ScriptEvaluator =
                 |> Array.skipWhile String.IsNullOrWhiteSpace
             Markdown.toHtml (String.concat "\n" lines)
 
-    /// 使用 ZestNjk 引擎渲染 .znjk 内容页面。
-    /// 构建嵌套上下文（site.*、page.* 等），使 {{ site.title }} 模板语法充分生效。
-    /// 同时注入 Zest 页面数据（pages、tags、collections）和注册 Zest 自定义过滤器。
+    /// Render .znjk content pages using the ZestNjk engine.
+    /// Builds a nested context (site.*, page.*, etc.) so {{ site.title }} syntax works.
+    /// Also injects Zest page data (pages, tags, collections) and registers Zest custom filters.
     let private renderNunjucksContent
         (bodyText: string)
         (config: SiteConfig)
@@ -52,7 +49,7 @@ module ScriptEvaluator =
             Filters = []
         } with
         | Some engine ->
-            // ── 注册 Zest 自定义 filters ────────────────────
+            // ── Register Zest custom filters ──────────────────
             engine.RegisterFilter "pages_by_tag" (fun value args ->
                 let tag = if args.Length > 0 then args.[0] else ""
                 let pages = ScriptRunner.getPagesForNunjucks ()
@@ -96,9 +93,9 @@ module ScriptEvaluator =
                     | _ -> false)
                 |> Array.map (fun d -> d :> obj) |> box)
 
-            // ── 构建上下文 ──────────────────────────────────
+            // ── Build context ──────────────────────────────────
             let pairs = ResizeArray<string * obj>()
-            // ── site.* ──────────────────────────────────────
+            // ── site.* ──────────────────────────────────────────
             pairs.Add("site.title",       box config.Title)
             pairs.Add("site.description", box config.Description)
             pairs.Add("site.base_url",    box config.BaseUrl)
@@ -107,12 +104,12 @@ module ScriptEvaluator =
             pairs.Add("site.language",    box config.Language)
             for kv in globalData do
                 pairs.Add("site." + kv.Key, kv.Value)
-            // ── page.* ──────────────────────────────────────
+            // ── page.* ──────────────────────────────────────────
             pairs.Add("page.title", box (meta.Title |> Option.defaultValue slug))
             meta.Description |> Option.iter (fun v -> pairs.Add("page.description", box v))
             for kv in meta.Extra do
                 pairs.Add("page." + kv.Key, box kv.Value)
-            // ── Zest 集合数据 ───────────────────────────────
+            // ── Zest collection data ────────────────────────────
             pairs.Add("pages", box (ScriptRunner.getPagesForNunjucks () |> Array.map box))
             pairs.Add("tags", box (ScriptRunner.getTagsForNunjucks ()))
             pairs.Add("collections", box (ScriptRunner.getCollectionsForNunjucks ()))
@@ -123,19 +120,19 @@ module ScriptEvaluator =
                 eprintfn "[Zest] Nunjucks error in content '%s': %O" filePath err
                 bodyText
         | None ->
-            // Nunjucks 引擎不可用时，原样返回
+            // Return raw text when Nunjucks engine is unavailable
             bodyText
 
-    /// 构建内容目录的绝对路径。
-    /// 使用 EffectiveContentDir 支持根目录管理机制：
-    /// - RootDir = "." → 项目根目录即内容目录
-    /// - RootDir = "content" → 使用 content 子目录
+    /// Build the absolute path to the content directory.
+    /// Uses EffectiveContentDir to support root directory management:
+    /// - RootDir = "." → project root is the content directory
+    /// - RootDir = "content" → use the content subdirectory
     let private resolveContentDir (config: SiteConfig) =
         Path.GetFullPath(
             Path.Combine(Directory.GetCurrentDirectory(),
                          config.EffectiveContentDir.TrimStart('.', '\\', '/')))
 
-    /// 从文件路径计算 slug。
+    /// Compute slug from file path.
     let private computeSlug (filePath: string) (contentDir: string) =
         let relPath  = Path.GetRelativePath(contentDir, filePath)
         let rawSlug  =
@@ -146,7 +143,7 @@ module ScriptEvaluator =
             if fn2.EndsWith(".zest") then fn2.[..fn2.Length - 6] else fn2
         relPath, rawSlug
 
-    /// 构造 pageData 字典（全局数据 + 元数据扩展）。
+    /// Build pageData dictionary (global data + metadata extensions).
     let private buildPageData (globalData: IDictionary<string, obj>) (meta: FrontMeta) =
         let d = Dictionary<string, obj>()
         for kv in globalData do d.[kv.Key] <- kv.Value
@@ -154,7 +151,7 @@ module ScriptEvaluator =
         meta.Description |> Option.iter (fun v -> d.["description"] <- box v)
         d :> IDictionary<string, obj>
 
-    /// 快速提取页面元数据（不执行脚本），用于 collections API 的第一遍扫描。
+    /// Fast metadata extraction (no script execution), used for the first-pass collections API scan.
     let extractMeta (filePath: string) (config: SiteConfig) : Page option =
         try
             let text       = File.ReadAllText(filePath)
@@ -191,8 +188,8 @@ module ScriptEvaluator =
             eprintfn "[Zest] WARN: extractMeta failed for '%s': %s" filePath ex.Message
             None
 
-    /// 将单个内容文件求值为 Page（失败时返回 Error）。
-    /// 自动检测文件是否使用 page { ... } CE 块并执行 F# 脚本。
+    /// Evaluate a single content file into a Page (returns Error on failure).
+    /// Auto-detects whether the file uses the page { ... } CE block and executes F# scripts accordingly.
     let evaluate
         (filePath:   string)
         (config:     SiteConfig)
@@ -208,23 +205,23 @@ module ScriptEvaluator =
             let meta, bodyText = FrontMatterParser.parse ext text
             let slug = PermalinkRouter.slugify rawSlug
 
-            // ── 判断是否为 page { ... } F# 脚本 ──────────────────
+            // ── Determine if this is a page { ... } F# script ──
             let isScript = ScriptRunner.isPageScript ext text
 
             if isScript then
-                // ── 模式 A：作为 F# 脚本求值 ──────────────────
-                // 注入全局数据，使脚本内部能调用 ScriptRunner.getData 等
+                // ── Mode A: evaluate as F# script ───────────────
+                // Inject global data so scripts can call ScriptRunner.getData etc.
                 ScriptRunner.setGlobalData globalData
 
                 match ScriptRunner.evaluatePageScript text with
                 | Ok htmlContent ->
-                    // 合并元数据
+                    // Merge metadata
                     let mergedData = Dictionary<string, obj>()
                     for kv in globalData         do mergedData.[kv.Key] <- kv.Value
                     for kv in meta.Extra         do mergedData.[kv.Key] <- box kv.Value
                     meta.Description |> Option.iter (fun v -> mergedData.["description"] <- box v)
 
-                    // 确定最终 URL / OutputPath
+                    // Determine final URL / OutputPath
                     let finalPermalink = meta.Permalink
                     let url, outputPath =
                         match finalPermalink with
@@ -244,8 +241,8 @@ module ScriptEvaluator =
                             Date         = meta.Date
                             Slug         = slug }
                 | Error evalErr ->
-                    // 脚本求值失败，回退到 Markdown
-                    eprintfn "[Zest] WARN: 脚本求值失败 '%s'：%s — 回退到 Markdown 模式" filePath evalErr
+                    // Script evaluation failed, fall back to Markdown
+                    eprintfn "[Zest] WARN: Script evaluation failed '%s': %s — falling back to Markdown mode" filePath evalErr
                     // fallback to Markdown
                     let title =
                         meta.Title
@@ -280,7 +277,7 @@ module ScriptEvaluator =
                             Slug         = slug }
 
             else
-                // ── 模式 B：传统 Markdown / 注释元数据模式 ──────
+                // ── Mode B: legacy Markdown / comment metadata mode ──
                 let title =
                     meta.Title
                     |> Option.orElse (

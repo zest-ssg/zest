@@ -4,7 +4,7 @@ open System
 open System.IO
 open System.Text.RegularExpressions
 
-/// URL slug 与路由计算。
+/// URL slug and route computation.
 module PermalinkRouter =
 
     let slugify (text: string) : string =
@@ -17,7 +17,7 @@ module PermalinkRouter =
             |> fun s -> Regex.Replace(s, @"-{2,}", "-")
             |> fun s -> s.Trim('-')
 
-    /// 将显式 permalink 字符串解析为 (url, outputPath)。
+    /// Parse an explicit permalink string into (url, outputPath).
     let computePermalink (permalink: string) : string * string =
         let normalized = permalink.Trim('/')
         if String.IsNullOrEmpty normalized then
@@ -29,7 +29,7 @@ module PermalinkRouter =
         else
             ("/" + normalized, normalized.Replace('/', Path.DirectorySeparatorChar))
 
-    /// 基于文件系统路径推导默认路由 (url, outputPath)。
+    /// Derive default route (url, outputPath) from filesystem path.
     let defaultRoute (relPath: string) (slug: string) : string * string =
         let dirName = Path.GetDirectoryName(relPath)
         let isIndex =

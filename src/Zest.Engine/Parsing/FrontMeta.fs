@@ -2,7 +2,7 @@ namespace Zest.Engine.Parsing
 
 open System
 
-/// 页面元数据，从 YAML front matter 或 // @key value 注释中解析。
+/// Page metadata, parsed from TOML front matter (+++), F# comments (// @key value), or HTML comments (<!-- @key value -->).
 type FrontMeta = {
     Layout:      string option
     Title:       string option

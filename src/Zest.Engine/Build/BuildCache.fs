@@ -4,7 +4,7 @@ open System
 open System.Collections.Concurrent
 open System.IO
 
-/// 增量构建缓存：记录源文件 mtime 和输出哈希。
+/// Incremental build cache: tracks source file mtime and output hash.
 module BuildCache =
 
     [<Struct>]

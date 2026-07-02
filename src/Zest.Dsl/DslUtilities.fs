@@ -2,7 +2,6 @@ namespace Zest.Dsl
 
 open System
 open System.Text
-open System.Text.Json
 open System.Text.RegularExpressions
 
 // ============================================================
@@ -128,10 +127,6 @@ module DslUtilities =
     let now () = DateTime.Now.ToString("yyyy-MM-dd")
     let current_year () = DateTime.Now.Year.ToString()
 
-    // ---- JSON helpers ----
-    let json_encode (obj: obj) = JsonSerializer.Serialize(obj)
-    let json_decode (json: string) = JsonDocument.Parse(json).RootElement
-
     // ---- URL helpers ----
     let url_encode (s: string) = Uri.EscapeDataString(s)
     let url_decode (s: string) = Uri.UnescapeDataString(s)
@@ -237,3 +232,94 @@ module DslUtilities =
         match Boolean.TryParse(s) with
         | true, v -> v
         | _ -> fallback
+
+    // ── Syntactic sugar: Extended helpers ─────────────────────────────────
+
+    /// Forward pipe operator (re-exported for convenience).
+    /// Usage: `value |> transform |> render`
+    let (|>) x f = f x
+
+    /// Backward pipe operator.
+    /// Usage: `render <| transform <| value`
+    let (<|) f x = f x
+
+    /// Function composition (right-to-left).
+    /// Usage: `(f >> g) x`  →  `g (f x)`
+    let (>>) f g x = g (f x)
+
+    /// Ternary conditional operator for any type.
+    /// Usage: `ternary (x > 0) "positive" "negative"`
+    let inline ternary (cond: bool) (ifTrue: 'T) (ifFalse: 'T) =
+        if cond then ifTrue else ifFalse
+
+    /// Return `Some value` if non-null/non-empty; otherwise None.
+    /// Usage: `title |> as_option`  →  `Some "Title"` or `None`
+    let as_option (s: string) =
+        if String.IsNullOrEmpty s then None else Some s
+
+    /// Apply a function to a value only when condition is true.
+    /// Usage: `title |> when_true isLong (fun t -> truncate 100 t)`
+    let apply_when (cond: bool) (f: 'T -> 'T) (value: 'T) =
+        if cond then f value else value
+
+    /// Apply a function to a value only when condition is false.
+    /// Usage: `title |> apply_unless isShort (fun t -> t.ToUpper())`
+    let apply_unless (cond: bool) (f: 'T -> 'T) (value: 'T) =
+        if cond then value else f value
+
+    /// Try with: apply a function, return fallback on exception.
+    /// Usage: `try_with (fun () -> DateTime.Parse(s).Year) 0`
+    let try_with (f: unit -> 'T) (fallback: 'T) =
+        try f () with _ -> fallback
+
+    /// Tap: execute a side-effect and return the value unchanged.
+    /// Useful for debugging/logging in pipelines.
+    /// Usage: `value |> tap (fun v -> printfn "Value: %A" v)`
+    let tap (f: 'T -> unit) (value: 'T) =
+        f value; value
+
+    /// Pair a value with a key for dict-building.
+    /// Usage: `"title" => page.Title`
+    let (=>) (key: string) (value: obj) = (key, value)
+
+    /// Create a dict from key-value pairs easily.
+    /// Usage: `dict_of ["title" => box "Hello"; "count" => box 42]`
+    let dict_of (pairs: (string * obj) list) =
+        let d = System.Collections.Generic.Dictionary<string, obj>()
+        for (k, v) in pairs do d.[k] <- v
+        d
+
+    /// Take items from a list while a predicate holds.
+    /// Usage: `take_while (fun x -> x.Length < 100) items`
+    let take_while (pred: 'a -> bool) (items: 'a list) =
+        items |> List.takeWhile pred
+
+    /// Skip items from a list while a predicate holds.
+    /// Usage: `skip_while String.IsNullOrEmpty lines`
+    let skip_while (pred: 'a -> bool) (items: 'a list) =
+        items |> List.skipWhile pred
+
+    /// Partition a list into two based on a predicate.
+    /// Usage: `partition (fun x -> x.Length > 5) items`
+    let partition (pred: 'a -> bool) (items: 'a list) =
+        items |> List.partition pred
+
+    /// Sort a list by a key projection.
+    /// Usage: `sort_by (fun s -> s.Length) items`
+    let sort_by (proj: 'a -> 'b when 'b : comparison) (items: 'a list) =
+        items |> List.sortBy proj
+
+    /// Sort a list by a key projection in descending order.
+    /// Usage: `sort_by_desc (fun s -> s.Length) items`
+    let sort_by_desc (proj: 'a -> 'b when 'b : comparison) (items: 'a list) =
+        items |> List.sortByDescending proj
+
+    /// Distinct (deduplicate) a list.
+    /// Usage: `dedup tags`
+    let dedup (items: 'a list when 'a : equality) =
+        items |> List.distinct
+
+    /// Flat-map: map each element to a list and flatten.
+    /// Usage: `flat_map (fun p -> p.tags) pages`
+    let flat_map (f: 'a -> 'b list) (items: 'a list) =
+        items |> List.collect f

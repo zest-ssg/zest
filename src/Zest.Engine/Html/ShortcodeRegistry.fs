@@ -11,32 +11,32 @@ open Zest.Engine
 // 11ty.js-style Shortcodes
 // ============================================================
 
-/// 短代码注册表：允许用户定义可复用的模板片段。
+/// Shortcode registry: allows users to define reusable template fragments.
 type ShortcodeFunc = IDictionary<string, obj> -> string -> string
 
 module ShortcodeRegistry =
 
     let private store = Dictionary<string, ShortcodeFunc>()
 
-    /// 注册一个短代码。
+    /// Register a shortcode.
     let add (name: string) (fn: ShortcodeFunc) : unit =
         store.[name] <- fn
 
-    /// 注册一个简单短代码（仅返回字符串，无上下文）。
+    /// Register a simple shortcode (returns a string only, no context).
     let addSimple (name: string) (fn: string -> string) : unit =
         store.[name] <- fun _ ctx -> fn ctx
 
-    /// 执行短代码（如果已注册）。
+    /// Execute a registered shortcode.
     let execute (name: string) (ctx: IDictionary<string, obj>) (arg: string) : string option =
         match store.TryGetValue name with
         | true, fn -> Some(fn ctx arg)
         | _       -> None
 
-    /// 内置短代码：将内联 Markdown 渲染为 HTML。
+    /// Built-in shortcode: render inline Markdown as HTML.
     let private builtinMd (ctx: IDictionary<string, obj>) (arg: string) =
         Markdown.toHtml arg
 
-    /// 内置短代码：获取全局数据值。
+    /// Built-in shortcode: get a global data value.
     let private builtinData (ctx: IDictionary<string, obj>) (key: string) =
         match ctx.TryGetValue key with
         | true, v -> string v
@@ -48,7 +48,7 @@ module ShortcodeRegistry =
         store.["date"]  <- fun _ _ -> DateTime.Now.ToString("yyyy-MM-dd")
         store.["year"]  <- fun _ _ -> DateTime.Now.Year.ToString()
 
-/// 在模板上下文中执行短代码替换（{{ key param }} 或 {% key param %}）。
+/// Perform shortcode replacement in template context ({{ key param }} or {% key param %}).
 module ShortcodeRenderer =
     let inlineShortcodes (ctx: IDictionary<string, obj>) (text: string) =
         let pattern = Regex(@"\{\{\s*(\w+)\s*(.*?)\s*\}\}", RegexOptions.Compiled)

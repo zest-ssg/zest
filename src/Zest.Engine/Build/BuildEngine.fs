@@ -17,7 +17,7 @@ open BuildData
 open BuildAssets
 open BuildLayout
 
-/// 核心构建管线：内容发现 → 求值 → 布局应用 → 资产处理 → 输出。
+/// Core build pipeline: content discovery → evaluation → layout application → asset processing → output.
 module BuildEngine =
 
     let execute (config: SiteConfig) : BuildResult =
@@ -65,7 +65,7 @@ module BuildEngine =
                 let fresh = Dictionary<string, obj>()
                 for kv in globalData do fresh.[kv.Key] <- kv.Value
                 fresh :> IDictionary<string, obj>
-            // 将站点配置注入 globalData，使脚本中 site_data "site.title" 等可用
+            // Inject site config into globalData so scripts can access site.*
             let gData = globalData :?> Dictionary<string, obj>
             gData.["site.title"]       <- box config.Title
             gData.["site.description"] <- box config.Description
@@ -84,7 +84,7 @@ module BuildEngine =
 
             ScriptRunner.setGlobalData globalData
 
-            // ── 执行 _init.zest.fsx（项目根目录下的初始化脚本）────
+            // ── Execute _init.zest.fsx (project root init script) ────
             let initResult = InitEngine.run root globalData
             if initResult.HasErrors then
                 for err in initResult.Errors do
@@ -100,7 +100,6 @@ module BuildEngine =
                     Directory.CreateDirectory(contentDir) |> ignore; [||]
                 else
                     [| yield! Directory.GetFiles(contentDir, "*.zpage.fsx", SearchOption.AllDirectories)
-                       yield! Directory.GetFiles(contentDir, "*.zhtml",    SearchOption.AllDirectories)
                        yield! Directory.GetFiles(contentDir, "*.znjk",      SearchOption.AllDirectories)
                        yield! Directory.GetFiles(contentDir, "*.fsx",      SearchOption.AllDirectories)
                        yield! Directory.GetFiles(contentDir, "*.md",       SearchOption.AllDirectories)
@@ -108,9 +107,24 @@ module BuildEngine =
                     |> Array.filter (fun f -> not (isExcluded contentDir f))
                     |> Array.distinct
 
+            // ── .html files: copy verbatim to output, no template processing ──
+            if Directory.Exists contentDir then
+                for htmlFile in Directory.GetFiles(contentDir, "*.html", SearchOption.AllDirectories) do
+                    if not (isExcluded contentDir htmlFile) then
+                        let relPath = Path.GetRelativePath(contentDir, htmlFile)
+                        let destPath = Path.Combine(outputDir, relPath)
+                        let destDir = Path.GetDirectoryName(destPath)
+                        if destDir <> null then Directory.CreateDirectory(destDir) |> ignore
+                        File.Copy(htmlFile, destPath, true)
+                        // Warn if template syntax is detected in .html files
+                        let content = File.ReadAllText(htmlFile)
+                        if content.Contains("{{") || content.Contains("{%") then
+                            eprintfn "[Zest] WARN: '%s' contains Nunjucks template syntax, .html files do not support it — use .znjk instead" htmlFile
+                        Threading.Interlocked.Increment(&processed) |> ignore
+
             let total = allFiles.Length
 
-            // ── 第一遍：快速提取所有页面元数据，填充 collections API ──
+            // ── First pass: fast metadata extraction for collections API ──
             let metaPages =
                 allFiles
                 |> Array.choose (fun f -> ScriptEvaluator.extractMeta f config)
@@ -225,7 +239,7 @@ module BuildEngine =
                                                             Slug = slug })
                                 with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
                             | Error evalErr ->
-                                eprintfn "[Zest] WARN: 脚本求值失败 '%s'：%s — 回退到 Markdown 模式" f evalErr
+                                eprintfn "[Zest] WARN: Script evaluation failed '%s': %s — falling back to Markdown mode" f evalErr
                                 try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
                                 with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
                         | None ->
@@ -269,7 +283,7 @@ module BuildEngine =
                                                         Slug = slug })
                             with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
                         | Error evalErr ->
-                            eprintfn "[Zest] WARN: 脚本求值失败 '%s'：%s — 回退到 Markdown 模式" f evalErr
+                            eprintfn "[Zest] WARN: Script evaluation failed '%s': %s — falling back to Markdown mode" f evalErr
                             try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
                             with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
                     | None ->
