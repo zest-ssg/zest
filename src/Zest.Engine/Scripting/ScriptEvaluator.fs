@@ -17,7 +17,7 @@ module ScriptEvaluator =
     let private renderContent (ext: string) (bodyText: string) (fullText: string) : string =
         match ext with
         | ".md" | ".markdown" ->
-            Markdown.toHtml bodyText
+            MarkdownEngine.toHtml bodyText
         | _ ->
             // .zpage.fsx / .fsx: strip metadata comments and #r / #load directives, treat remainder as Markdown
             let lines =
@@ -29,7 +29,7 @@ module ScriptEvaluator =
                     && not (t.StartsWith("#r "))
                     && not (t.StartsWith("#load ")))
                 |> Array.skipWhile String.IsNullOrWhiteSpace
-            Markdown.toHtml (String.concat "\n" lines)
+            MarkdownEngine.toHtml (String.concat "\n" lines)
 
     /// Render .znjk content pages using the ZestNjk engine.
     /// Builds a nested context (site.*, page.*, etc.) so {{ site.title }} syntax works.
@@ -38,7 +38,7 @@ module ScriptEvaluator =
         (bodyText: string)
         (config: SiteConfig)
         (globalData: IDictionary<string, obj>)
-        (meta: FrontMeta)
+        (meta: ContentMeta)
         (slug: string)
         (filePath: string)
         : string =
@@ -50,48 +50,7 @@ module ScriptEvaluator =
         } with
         | Some engine ->
             // ── Register Zest custom filters ──────────────────
-            engine.RegisterFilter "pages_by_tag" (fun value args ->
-                let tag = if args.Length > 0 then args.[0] else ""
-                let pages = ScriptRunner.getPagesForNunjucks ()
-                pages |> Array.filter (fun p ->
-                    match p.TryGetValue "tags" with
-                    | true, (:? (string[]) as tags) -> tags |> Array.exists (fun t -> t.Equals(tag, StringComparison.OrdinalIgnoreCase))
-                    | _ -> false)
-                |> Array.map (fun d -> d :> obj) |> box)
-
-            engine.RegisterFilter "recent" (fun value args ->
-                let n = if args.Length > 0 then (try int args.[0] with _ -> 5) else 5
-                ScriptRunner.getPagesForNunjucks ()
-                |> Array.filter (fun p ->
-                    match p.TryGetValue "date" with
-                    | true, (:? string as d) -> d <> ""
-                    | _ -> false)
-                |> Array.sortByDescending (fun p ->
-                    match p.TryGetValue "date" with
-                    | true, (:? string as d) -> d
-                    | _ -> "")
-                |> Array.truncate n
-                |> Array.map (fun d -> d :> obj) |> box)
-
-            engine.RegisterFilter "by_collection" (fun value args ->
-                let col = if args.Length > 0 then args.[0] else ""
-                let pages = ScriptRunner.getPagesForNunjucks ()
-                pages |> Array.filter (fun p ->
-                    match p.TryGetValue "url" with
-                    | true, (:? string as u) ->
-                        let parts = u.Trim('/').Split('/')
-                        parts.Length > 0 && parts.[0].Equals(col, StringComparison.OrdinalIgnoreCase)
-                    | _ -> false)
-                |> Array.map (fun d -> d :> obj) |> box)
-
-            engine.RegisterFilter "search" (fun value args ->
-                let q = if args.Length > 0 then args.[0] else ""
-                ScriptRunner.getPagesForNunjucks ()
-                |> Array.filter (fun p ->
-                    match p.TryGetValue "title" with
-                    | true, (:? string as t) -> t.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0
-                    | _ -> false)
-                |> Array.map (fun d -> d :> obj) |> box)
+            FilterRegistry.registerAllFilters engine
 
             // ── Build context ──────────────────────────────────
             let pairs = ResizeArray<string * obj>()
@@ -110,9 +69,9 @@ module ScriptEvaluator =
             for kv in meta.Extra do
                 pairs.Add("page." + kv.Key, box kv.Value)
             // ── Zest collection data ────────────────────────────
-            pairs.Add("pages", box (ScriptRunner.getPagesForNunjucks () |> Array.map box))
-            pairs.Add("tags", box (ScriptRunner.getTagsForNunjucks ()))
-            pairs.Add("collections", box (ScriptRunner.getCollectionsForNunjucks ()))
+            pairs.Add("pages", box (PageQuery.getPagesForNunjucks () |> Array.map box))
+            pairs.Add("tags", box (PageQuery.getTagsForNunjucks ()))
+            pairs.Add("collections", box (PageQuery.getCollectionsForNunjucks ()))
             let ctx = TemplateManager.buildNestedContext pairs
             match engine.Render bodyText ctx with
             | Ok html -> html
@@ -144,7 +103,7 @@ module ScriptEvaluator =
         relPath, rawSlug
 
     /// Build pageData dictionary (global data + metadata extensions).
-    let private buildPageData (globalData: IDictionary<string, obj>) (meta: FrontMeta) =
+    let private buildPageData (globalData: IDictionary<string, obj>) (meta: ContentMeta) =
         let d = Dictionary<string, obj>()
         for kv in globalData do d.[kv.Key] <- kv.Value
         for kv in meta.Extra   do d.[kv.Key] <- box kv.Value
@@ -152,13 +111,13 @@ module ScriptEvaluator =
         d :> IDictionary<string, obj>
 
     /// Fast metadata extraction (no script execution), used for the first-pass collections API scan.
-    let extractMeta (filePath: string) (config: SiteConfig) : Page option =
+    let extractMeta (filePath: string) (config: SiteConfig) : ContentPage option =
         try
             let text       = File.ReadAllText(filePath)
             let ext        = Path.GetExtension(filePath).ToLowerInvariant()
             let contentDir = resolveContentDir config
             let relPath, rawSlug = computeSlug filePath contentDir
-            let meta, bodyText = FrontMatterParser.parse ext text
+            let meta, bodyText = MetaParser.parse ext text
             let slug = PermalinkRouter.slugify rawSlug
             let title =
                 meta.Title
@@ -175,7 +134,7 @@ module ScriptEvaluator =
             let d = Dictionary<string, obj>()
             meta.Description |> Option.iter (fun v -> d.["description"] <- box v)
             for kv in meta.Extra do d.[kv.Key] <- box kv.Value
-            Some { Page.empty with
+            Some { ContentPage.empty with
                     SourcePath = filePath
                     Url        = url
                     OutputPath = outputPath
@@ -194,7 +153,7 @@ module ScriptEvaluator =
         (filePath:   string)
         (config:     SiteConfig)
         (globalData: IDictionary<string, obj>)
-        : Result<Page, string> =
+        : Result<ContentPage, string> =
 
         try
             let text       = File.ReadAllText(filePath)
@@ -202,7 +161,7 @@ module ScriptEvaluator =
             let contentDir = resolveContentDir config
 
             let relPath, rawSlug = computeSlug filePath contentDir
-            let meta, bodyText = FrontMatterParser.parse ext text
+            let meta, bodyText = MetaParser.parse ext text
             let slug = PermalinkRouter.slugify rawSlug
 
             // ── Determine if this is a page { ... } F# script ──
@@ -210,8 +169,8 @@ module ScriptEvaluator =
 
             if isScript then
                 // ── Mode A: evaluate as F# script ───────────────
-                // Inject global data so scripts can call ScriptRunner.getData etc.
-                ScriptRunner.setGlobalData globalData
+                // Inject global data so scripts can call PageQuery.getData etc.
+                PageQuery.setGlobalData globalData
 
                 match ScriptRunner.evaluatePageScript text with
                 | Ok htmlContent ->
@@ -228,7 +187,7 @@ module ScriptEvaluator =
                         | Some p when p.Length > 0 -> PermalinkRouter.computePermalink p
                         | _                         -> PermalinkRouter.defaultRoute relPath slug
 
-                    Ok { Page.empty with
+                    Ok { ContentPage.empty with
                             SourcePath   = filePath
                             Url          = url
                             OutputPath   = outputPath
@@ -263,7 +222,7 @@ module ScriptEvaluator =
                         | _ ->
                             renderContent ext bodyText text
 
-                    Ok { Page.empty with
+                    Ok { ContentPage.empty with
                             SourcePath   = filePath
                             Url          = url
                             OutputPath   = outputPath
@@ -300,7 +259,7 @@ module ScriptEvaluator =
                     | _ ->
                         renderContent ext bodyText text
 
-                Ok { Page.empty with
+                Ok { ContentPage.empty with
                         SourcePath   = filePath
                         Url          = url
                         OutputPath   = outputPath

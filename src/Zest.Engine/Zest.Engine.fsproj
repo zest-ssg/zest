@@ -10,56 +10,72 @@
   <ItemGroup>
     <!-- Domain types (ordered by dependency) -->
     <Compile Include="Domain/HtmlNodes.fs" />
-    <Compile Include="Domain/Page.fs" />
-    <Compile Include="Domain/Collections.fs" />
+    <Compile Include="Domain/ContentPage.fs" />
+    <Compile Include="Domain/PageGroup.fs" />
     <Compile Include="Domain/SiteConfig.fs" />
     <Compile Include="Domain/BuildResult.fs" />
-    <Compile Include="Domain/ScriptGlobals.fs" />
+    <Compile Include="Domain/ScriptContext.fs" />
+    <Compile Include="Domain/ContentMeta.fs" />
+
     <!-- ZCSS pipeline -->
     <Compile Include="Zcss/ZcssAst.fs" />
+    <Compile Include="Zcss/BuiltinFunctions.fs" />
+    <Compile Include="Zcss/ColorPipeline.fs" />
+    <Compile Include="Zcss/MathEvaluator.fs" />
+    <Compile Include="Zcss/ParserCore.fs" />
     <Compile Include="Zcss/ZcssEvaluator.fs" />
-    <Compile Include="Zcss/ZcssParserCore.fs" />
-    <Compile Include="Zcss/ZcssParserBrace.fs" />
-    <Compile Include="Zcss/ZcssParserIndent.fs" />
+    <Compile Include="Zcss/ParserBrace.fs" />
+    <Compile Include="Zcss/ParserIndent.fs" />
     <Compile Include="Zcss/ZcssParser.fs" />
+    <Compile Include="Zcss/BuiltinStyles.fs" />
     <Compile Include="Zcss/ZcssUtilities.fs" />
     <Compile Include="Zcss/ZcssCompiler.fs" />
     <Compile Include="Zcss/ZcssProcessor.fs" />
     <Compile Include="Zcss/ZcssCompletions.fs" />
-    <Compile Include="Zcss/ZcssTypeChecker.fs" />
+    <Compile Include="Zcss/TypeChecker.fs" />
+
     <!-- Routing -->
     <Compile Include="Routing/PermalinkRouter.fs" />
+
     <!-- Parsing -->
-    <Compile Include="Parsing/FrontMeta.fs" />
-    <Compile Include="Parsing/FrontMatterParser.fs" />
+    <Compile Include="Parsing/MetaParser.fs" />
+
     <!-- Template engines -->
     <Compile Include="Template/ITemplateEngine.fs" />
     <Compile Include="Template/ZestNjkEngine.fs" />
     <Compile Include="Template/TemplateManager.fs" />
+
     <!-- HTML components -->
     <Compile Include="Html/HtmlElements.fs" />
     <Compile Include="Html/HtmlAttributes.fs" />
     <Compile Include="Html/HtmlModifiers.fs" />
     <Compile Include="Html/HtmlComponents.fs" />
     <Compile Include="Html/HtmlRenderer.fs" />
-    <Compile Include="Html/PageDsl.fs" />
-    <Compile Include="Html/DslSugar.fs" />
-    <Compile Include="Html/Markdown.fs" />
-    <Compile Include="Html/HtmlUtilities.fs" />
+    <Compile Include="Html/PageBuilder.fs" />
+    <Compile Include="Html/TemplateDsl.fs" />
+    <Compile Include="Html/MarkdownEngine.fs" />
+    <Compile Include="Html/HtmlHelpers.fs" />
     <Compile Include="Html/ShortcodeRegistry.fs" />
     <Compile Include="Html/PageCollections.fs" />
-    <Compile Include="Html/Pagination.fs" />
+    <Compile Include="Html/PagedResult.fs" />
     <Compile Include="Html/TemplateData.fs" />
+
     <!-- Scripting (depends on Domain, Routing, Parsing, Template, Html) -->
     <Compile Include="Scripting/InitEngine.fs" />
+    <Compile Include="Scripting/PageQuery.fs" />
+    <Compile Include="Scripting/FilterRegistry.fs" />
+    <Compile Include="Scripting/ScriptDiscovery.fs" />
     <Compile Include="Scripting/ScriptRunner.fs" />
     <Compile Include="Scripting/ScriptEvaluator.fs" />
+
     <!-- Build pipeline (depends on everything above) -->
-    <Compile Include="Build/BuildHelpers.fs" />
+    <Compile Include="Build/PathResolver.fs" />
     <Compile Include="Build/BuildCache.fs" />
     <Compile Include="Build/BuildData.fs" />
     <Compile Include="Build/BuildAssets.fs" />
+    <Compile Include="Build/LayoutEngine.fs" />
     <Compile Include="Build/BuildLayout.fs" />
+    <Compile Include="Build/ContentPipeline.fs" />
     <Compile Include="Build/BuildEngine.fs" />
   </ItemGroup>
 

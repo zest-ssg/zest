@@ -5,10 +5,10 @@ open System.Collections.Generic
 /// <summary>
 /// Globals injected into the F# script evaluation context.
 /// </summary>
-type ScriptGlobals = {
+type ScriptContext = {
     Site: IDictionary<string, obj>
     Collections: IDictionary<string, obj>
     Data: IDictionary<string, obj>
-    Page: Page option
+    Page: ContentPage option
     Content: string option
 }

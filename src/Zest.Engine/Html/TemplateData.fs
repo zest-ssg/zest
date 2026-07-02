@@ -29,7 +29,7 @@ module TemplateData =
         d :> _
 
     /// Get current page data.
-    let pageData (page: Page) (key: string) : string =
+    let pageData (page: ContentPage) (key: string) : string =
         match page.Data.TryGetValue key with
         | true, v -> string v
         | _       -> ""

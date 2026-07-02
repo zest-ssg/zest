@@ -11,7 +11,7 @@ open Zest.Engine
 // Markdown → HTML
 // ============================================================
 
-module Markdown =
+module MarkdownEngine =
     let private codeBlockPat    = Regex(@"(?s)```(\w*)\r?\n(.*?)```",       RegexOptions.Compiled)
     let private inlineCodePat   = Regex(@"(?<!`)`([^`]+)`(?!`)",         RegexOptions.Compiled)
     let private boldPat         = Regex(@"\*\*(.+?)\*\*",                RegexOptions.Compiled)

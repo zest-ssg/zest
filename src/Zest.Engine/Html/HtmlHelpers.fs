@@ -9,14 +9,14 @@ open Zest.Engine
 open Zest.Engine.Zcss
 
 // ============================================================
-// HtmlUtilities — helpers for use inside .zpage.fsx templates
+// HtmlHelpers — helpers for use inside .zpage.fsx templates
 // ============================================================
 
-module HtmlUtilities =
+module HtmlHelpers =
 
     /// Inline Markdown string as an HtmlNode.
     let md (markdownText: string) : HtmlNode =
-        Raw(Markdown.toHtml markdownText)
+        Raw(MarkdownEngine.toHtml markdownText)
 
     /// Compile a ZSS snippet inline as a `<style>` node.
     let styleBlock (zssSource: string) : HtmlNode =

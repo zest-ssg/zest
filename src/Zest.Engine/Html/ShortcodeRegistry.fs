@@ -34,7 +34,7 @@ module ShortcodeRegistry =
 
     /// Built-in shortcode: render inline Markdown as HTML.
     let private builtinMd (ctx: IDictionary<string, obj>) (arg: string) =
-        Markdown.toHtml arg
+        MarkdownEngine.toHtml arg
 
     /// Built-in shortcode: get a global data value.
     let private builtinData (ctx: IDictionary<string, obj>) (key: string) =

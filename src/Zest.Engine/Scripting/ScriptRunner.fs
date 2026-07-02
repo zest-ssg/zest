@@ -8,6 +8,8 @@ open System.Security.Cryptography
 open System.Text
 open System.Text.Json
 open Zest.Engine
+open PageQuery
+open ScriptDiscovery
 
 /// Evaluates .zpage.fsx / .fsx scripts by spawning `dotnet fsi` as a subprocess.
 /// Context data (pages, site config) is passed via a temp JSON file.
@@ -39,213 +41,29 @@ module ScriptRunner =
         let hash = sha.ComputeHash(bytes)
         BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant()
 
-    // ── Global state ──────────────────────────────────────────────────────
-
-    let private globalDataRef : IDictionary<string, obj> ref =
-        ref (dict [] :> IDictionary<string, obj>)
-
-    let setGlobalData (data: IDictionary<string, obj>) =
-        System.Threading.Interlocked.Exchange(globalDataRef, data) |> ignore
-
-    let getDataString (key: string) : string =
-        let mutable v : obj = null
-        if (!globalDataRef).TryGetValue(key, &v) then (if isNull v then "" else v.ToString())
-        else ""
-
-    let getDataSection (prefix: string) : IDictionary<string, obj> =
-        let d = Dictionary<string, obj>()
-        for kv in !globalDataRef do
-            if kv.Key.StartsWith(prefix + ".") then
-                d.[kv.Key.Substring(prefix.Length + 1)] <- kv.Value
-        d :> _
-
-    let mutable private allPagesRef : Page list = []
-    let mutable private includesRef : IDictionary<string, string> = dict []
-    let mutable private verboseRef   = false
-
-    let setAllPages (pages: Page list) = allPagesRef <- pages
-    let setIncludes (includes: IDictionary<string, string>) = includesRef <- includes
-    let setVerbose (v: bool) = verboseRef <- v
-
-    let getPages () = allPagesRef
-    let getPagesByTag (tag: string) =
-        allPagesRef |> List.filter (fun p -> p.Tags |> List.exists (fun t -> t.Equals(tag, StringComparison.OrdinalIgnoreCase)))
-    let getPagesByDir (dirName: string) =
-        allPagesRef |> List.filter (fun p ->
-            p.SourcePath.Contains(Path.DirectorySeparatorChar.ToString() + dirName + Path.DirectorySeparatorChar.ToString())
-            || p.SourcePath.Contains("/" + dirName + "/"))
-    let getRecentPages (n: int) =
-        allPagesRef |> List.filter (fun p -> p.Date.IsSome) |> List.sortByDescending (fun p -> p.Date.Value) |> List.truncate n
-    let includePartial (name: string) =
-        match includesRef.TryGetValue(name) with true, c -> c | _ -> sprintf "<!-- include '%s' not found -->" name
-
-    // ── Extended Collections API ──────────────────────────────────────────
-
-    /// Get pages sorted by date (newest first).
-    let getPagesByDate () =
-        allPagesRef |> List.filter (fun p -> p.Date.IsSome) |> List.sortByDescending (fun p -> p.Date.Value)
-
-    /// Get pages by collection (first URL segment).
-    let getPagesByCollection (collection: string) =
-        allPagesRef |> List.filter (fun p ->
-            let parts = p.Url.Trim('/').Split('/')
-            parts.Length > 0 && parts.[0].Equals(collection, StringComparison.OrdinalIgnoreCase))
-
-    /// Get all unique tags from all pages.
-    let getAllTags () =
-        allPagesRef |> List.collect (fun p -> p.Tags) |> List.distinct |> List.sort
-
-    /// Get all unique collections (first URL segment).
-    let getAllCollections () =
-        allPagesRef
-        |> List.map (fun p ->
-            let parts = p.Url.Trim('/').Split('/')
-            if parts.Length > 0 && parts.[0] <> "" then parts.[0] else "root")
-        |> List.distinct |> List.sort
-
-    /// Search pages by title (case-insensitive).
-    let searchPages (query: string) =
-        allPagesRef |> List.filter (fun p -> p.Title.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
-
-    /// Get page count.
-    let getPageCount () = allPagesRef.Length
-
-    /// Get pages within a date range.
-    let getPagesByDateRange (fromDate: string) (toDate: string) =
-        let fromDt = DateTime.Parse(fromDate)
-        let toDt   = DateTime.Parse(toDate)
-        allPagesRef
-        |> List.filter (fun p ->
-            p.Date.IsSome &&
-            p.Date.Value >= fromDt &&
-            p.Date.Value <= toDt)
-
-    // ── Nunjucks data helpers ────────────────────────────────────────────
-
-    /// Convert a Page record to a plain dict for Nunjucks template context.
-    let pageToNunjucksDict (p: Page) : IDictionary<string, obj> =
-        let d = Dictionary<string, obj>()
-        d.["url"]    <- box p.Url
-        d.["title"]  <- box p.Title
-        d.["slug"]   <- box p.Slug
-        d.["date"]   <- box (p.Date |> Option.map (fun d -> d.ToString("yyyy-MM-dd")) |> Option.defaultValue "")
-        d.["tags"]   <- box (p.Tags |> Array.ofList)
-        match p.Data.TryGetValue "description" with
-        | true, v -> d.["description"] <- box v
-        | _ -> ()
-        d :> IDictionary<string, obj>
-
-    /// Get all pages as plain dict arrays for Nunjucks template injection.
-    let getPagesForNunjucks () : IDictionary<string, obj>[] =
-        allPagesRef |> List.map pageToNunjucksDict |> Array.ofList
-
-    /// Get all unique tags as string array.
-    let getTagsForNunjucks () : string[] =
-        allPagesRef
-        |> List.collect (fun p -> p.Tags)
-        |> List.distinct
-        |> List.sort
-        |> Array.ofList
-
-    /// Get all collections (first URL segment) as string array.
-    let getCollectionsForNunjucks () : string[] =
-        allPagesRef
-        |> List.map (fun p ->
-            let parts = p.Url.Trim('/').Split('/')
-            if parts.Length > 0 && parts.[0] <> "" then parts.[0] else "root")
-        |> List.distinct
-        |> List.sort
-        |> Array.ofList
-
     // ── Context serialisation ─────────────────────────────────────────────
 
     /// Serialise all context to a JSON file that the subprocess preamble reads.
     let private writeContextFile (path: string) =
-        let pageToObj (p: Page) =
+        let pageToObj (p: ContentPage) =
             let date = p.Date |> Option.map (fun d -> d.ToString("yyyy-MM-dd")) |> Option.defaultValue ""
             let desc = match p.Data.TryGetValue("description") with true, v -> v.ToString() | _ -> ""
             {| url=p.Url; title=p.Title; date=date; slug=p.Slug; description=desc; tags=p.Tags |}
         let siteData =
-            !globalDataRef
+            !PageQuery.globalDataRef
             |> Seq.map (fun kv -> kv.Key, kv.Value |> Option.ofObj |> Option.map (fun v -> v.ToString()) |> Option.defaultValue "")
             |> dict
         let payload = {|
-            pages   = allPagesRef |> List.map pageToObj
-            includes = includesRef |> Seq.map (fun kv -> kv.Key, kv.Value) |> dict
+            pages   = !PageQuery.allPagesRef |> List.map pageToObj
+            includes = !PageQuery.includesRef |> Seq.map (fun kv -> kv.Key, kv.Value) |> dict
             siteData = siteData
         |}
         File.WriteAllText(path, JsonSerializer.Serialize(payload), Encoding.UTF8)
 
     // ── DSL preamble ──────────────────────────────────────────────────────
 
-    /// Preamble injected at the top of every script before evaluation.
-    /// Reads context JSON and exposes DSL helpers + collections API.
-
-    /// Find the Zest.Dsl.dll path — looks in several common locations.
-    /// Copies the DLL to a temp directory to avoid FSharp.Core version
-    /// conflicts (FSI uses SDK's FSharp.Core 10.0.0.0, but publish folder
-    /// has NuGet's 10.1.0.0).
-    let mutable private dslDllPath = ""
-    let private findDslDll () : string =
-        if not (String.IsNullOrEmpty dslDllPath) && File.Exists dslDllPath then dslDllPath
-        else
-            let engineDir =
-                let loc = System.Reflection.Assembly.GetExecutingAssembly().Location
-                if not (String.IsNullOrEmpty loc) && File.Exists loc then
-                    Path.GetDirectoryName loc
-                else
-                    AppContext.BaseDirectory
-            let candidates = [
-                Path.Combine(engineDir, "Zest.Dsl.dll")
-                Path.Combine(engineDir, "..", "..", "..", "..", "..", "Zest.Dsl", "bin", "Release", "net10.0", "Zest.Dsl.dll")
-                Path.Combine(engineDir, "..", "..", "..", "..", "..", "Zest.Dsl", "bin", "Debug", "net10.0", "Zest.Dsl.dll")
-            ]
-            let result =
-                match candidates |> List.tryFind File.Exists with
-                | Some p -> p
-                | None ->
-                    let rec searchUp (dir: string) =
-                        let c1 = Path.Combine(dir, "Zest.Dsl.dll")
-                        if File.Exists c1 then Some c1
-                        else
-                            let c2 = Path.Combine(dir, "src", "Zest.Dsl", "bin", "Release", "net10.0", "Zest.Dsl.dll")
-                            if File.Exists c2 then Some c2
-                            else
-                                let c3 = Path.Combine(dir, "src", "Zest.Dsl", "bin", "Debug", "net10.0", "Zest.Dsl.dll")
-                                if File.Exists c3 then Some c3
-                                else
-                                    let parent = Path.GetDirectoryName(dir)
-                                    if String.IsNullOrEmpty parent || parent = dir then None
-                                    else searchUp parent
-                    match searchUp (Directory.GetCurrentDirectory()) with
-                    | Some p -> p
-                    | None -> failwithf "Zest.Dsl.dll not found. Engine dir: %s" engineDir
-            dslDllPath <- result
-            result
-
-    /// Copy Zest.Dsl.dll to an isolated temp directory (without FSharp.Core.dll)
-    /// so FSI uses its own FSharp.Core instead of the publish folder's version.
-    let private dslDllCache = Dictionary<string, string>()
-    let private getIsolatedDslDll () : string =
-        let srcPath = findDslDll ()
-        let srcHash =
-            use md5 = System.Security.Cryptography.MD5.Create()
-            use stream = File.OpenRead(srcPath)
-            let hash = md5.ComputeHash(stream)
-            Convert.ToHexString(hash)
-        match dslDllCache.TryGetValue(srcHash) with
-        | true, cachedPath -> cachedPath
-        | false, _ ->
-            let tempDir = Path.Combine(Path.GetTempPath(), "zest-dsl-" + srcHash)
-            Directory.CreateDirectory(tempDir) |> ignore
-            let destPath = Path.Combine(tempDir, "Zest.Dsl.dll")
-            if not (File.Exists destPath) then
-                File.Copy(srcPath, destPath, true)
-            dslDllCache.[srcHash] <- destPath
-            destPath
-
     let private buildPreamble (ctxFile: string) =
-        let dllPath = getIsolatedDslDll ()
+        let dllPath = ScriptDiscovery.getIsolatedDslDll ()
         let sb = Text.StringBuilder()
         sb.AppendLine("#r @\"" + dllPath + "\"") |> ignore
         sb.AppendLine("open System") |> ignore
@@ -292,7 +110,7 @@ module ScriptRunner =
             let stdout = stdoutTask.Result
             let stderr = stderrTask.Result
             // Verbose mode: print FSI stderr to console for debugging
-            if verboseRef && not (String.IsNullOrEmpty stderr) then
+            if !PageQuery.verboseRef && not (String.IsNullOrEmpty stderr) then
                 Console.ForegroundColor <- ConsoleColor.DarkGray
                 Console.Error.WriteLine("[FSI] ---- stderr ----")
                 Console.Error.WriteLine(stderr)
@@ -316,7 +134,7 @@ module ScriptRunner =
                         else
                             sprintf "    %s" (line.Trim()))
                     |> String.concat "\n"
-                if verboseRef && errLines.Length > 0 then
+                if !PageQuery.verboseRef && errLines.Length > 0 then
                     Console.ForegroundColor <- ConsoleColor.Red
                     Console.Error.WriteLine(sprintf "[FSI] Evaluation failed — %d error(s)" errLines.Length)
                     Console.Error.WriteLine(formattedErrors)
@@ -450,7 +268,7 @@ module ScriptRunner =
                         results |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
                     | Error msg ->
                         // Batch failed — fall back to individual evaluation
-                        if verboseRef then
+                        if !PageQuery.verboseRef then
                             Console.Error.WriteLine(sprintf "[FSI] Batch failed, falling back to individual: %s" msg)
                         scripts |> List.map (fun (id, scriptText) ->
                             id, evaluatePageScript scriptText) |> Map.ofList
