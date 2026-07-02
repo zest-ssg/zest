@@ -5,7 +5,7 @@ open System.Collections.Concurrent
 open System.Collections.Generic
 open System.IO
 
-/// 全局数据（_data/*.toml）的加载与缓存。
+/// Global data (_data/*.toml) loading and caching.
 module BuildData =
 
     let private globalDataCache = ConcurrentDictionary<string, struct(DateTime * IDictionary<string, obj>)>()

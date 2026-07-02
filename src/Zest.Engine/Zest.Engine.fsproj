@@ -43,6 +43,7 @@
     <Compile Include="Html/HtmlComponents.fs" />
     <Compile Include="Html/HtmlRenderer.fs" />
     <Compile Include="Html/PageDsl.fs" />
+    <Compile Include="Html/DslSugar.fs" />
     <Compile Include="Html/Markdown.fs" />
     <Compile Include="Html/HtmlUtilities.fs" />
     <Compile Include="Html/ShortcodeRegistry.fs" />

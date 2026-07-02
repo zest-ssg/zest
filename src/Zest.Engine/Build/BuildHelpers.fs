@@ -2,7 +2,7 @@ namespace Zest.Engine
 
 open System.IO
 
-/// 构建辅助函数：路径解析、排除规则检测。
+/// Build helpers: path resolution and exclusion rule detection.
 module BuildHelpers =
 
     let internal resolvePath root dir =

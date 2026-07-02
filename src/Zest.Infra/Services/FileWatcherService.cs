@@ -11,9 +11,8 @@ public static class WatchConstants
 {
     public static readonly HashSet<string> Extensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".fsx", ".zpage.fsx", ".zhtml", ".md", ".markdown",
+        ".fsx", ".zpage.fsx", ".md", ".markdown",
         ".html", ".css", ".zcss", ".js", ".toml",
-        ".json", ".yaml", ".yml",
         ".png", ".jpg", ".jpeg", ".svg", ".gif", ".webp"
     };
 

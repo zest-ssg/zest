@@ -8,7 +8,7 @@ open System.Text.RegularExpressions
 open Zest.Engine.Scripting
 open Zest.Engine.Template
 
-/// 布局加载、Include 处理、占位符替换和布局递归应用。
+/// Layout loading, include processing, placeholder replacement, and recursive layout application.
 module BuildLayout =
 
     let private layoutCache2 = ConcurrentDictionary<string, struct(DateTime * Map<string, string * string>)>()
@@ -27,7 +27,7 @@ module BuildLayout =
                     Directory.GetFiles(layoutsDir, "*.*", SearchOption.AllDirectories)
                     |> Array.filter (fun f ->
                         let ext = Path.GetExtension(f).ToLowerInvariant()
-                        List.contains ext [".html"; ".htm"; ".znjk"; ".zpage.fsx"; ".zhtml"; ".fsx"])
+                        List.contains ext [".html"; ".htm"; ".znjk"; ".zpage.fsx"; ".fsx"])
                     |> Array.map (fun f ->
                         let rec stripExts (name: string) =
                             let e = Path.GetExtension(name)
@@ -218,16 +218,23 @@ module BuildLayout =
                     replacePlaceholders withIncludes ctx
 
             let nestedLayout =
-                if layoutText.StartsWith "---" then
-                    let endIdx = layoutText.IndexOf("---", 3)
+                // Try TOML front matter (+++) first
+                if layoutText.TrimStart().StartsWith("+++") then
+                    let endIdx = layoutText.IndexOf("+++", 3)
                     if endIdx > 0 then
-                        layoutText.Substring(3, endIdx - 3).Split('\n')
-                        |> Array.tryFind (fun l -> l.Trim().StartsWith("layout"))
-                        |> Option.bind (fun l ->
-                            let p = l.Split(':')
-                            if p.Length >= 2 then Some (p.[1].Trim().Trim('"', ' ')) else None)
+                        let tomlBlock = layoutText.Substring(3, endIdx - 3)
+                        try
+                            let table = Tomlyn.Toml.ToModel(tomlBlock)
+                            if table <> null && fst (table.TryGetValue("layout")) then
+                                Some (table.["layout"].ToString())
+                            else None
+                        with _ -> None
                     else None
-                else None
+                else
+                    // Then try HTML comment metadata
+                    let m = Regex.Match(layoutText, @"^<!--\s*@layout\s+(.+?)\s*-->", RegexOptions.Multiline)
+                    if m.Success then Some (m.Groups.[1].Value.Trim())
+                    else None
             match nestedLayout with
             | Some nl when nl <> name -> applyLayout nl rendered layouts replacements includes
             | _ -> rendered

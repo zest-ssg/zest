@@ -4,7 +4,7 @@ open System.Collections.Generic
 open System.IO
 open Zest.Engine.Zcss
 
-/// 资产（assets/）复制与 ZCSS 编译。
+/// Asset (assets/) copying and ZCSS compilation.
 module BuildAssets =
 
     let internal copyAssets (projectRoot: string) (outputDir: string) =
