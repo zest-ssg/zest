@@ -8,7 +8,12 @@
     <Compile Include="ZestContext.fs" />
     <Compile Include="DslHtml.fs" />
     <Compile Include="DslComponents.fs" />
+    <Compile Include="StringHelper.fs" />
+    <Compile Include="DateHelper.fs" />
+    <Compile Include="SequenceHelper.fs" />
     <Compile Include="DslSugar.fs" />
+    <Compile Include="CompoundBuilder.fs" />
+    <Compile Include="ContentGuard.fs" />
     <Compile Include="DslCollections.fs" />
     <Compile Include="DslUtilities.fs" />
     <Compile Include="DslSeo.fs" />

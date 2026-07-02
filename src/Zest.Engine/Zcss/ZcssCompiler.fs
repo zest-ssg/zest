@@ -79,7 +79,7 @@ module Compiler =
         let private classCache = Dictionary<string, Declaration list>()
 
         let private parseUtilities () =
-            let source = Utilities.builtinUtilities
+            let source = BuiltinStyles.builtinUtilities
             let nodes = Parser.parse source
             for node in nodes do
                 match node with
@@ -148,12 +148,9 @@ module Compiler =
                     | other -> yield other ]
             applySubst body
 
-    /// Evaluate @if condition (simple truthiness)
+    /// Evaluate @if condition — delegates to Evaluator.evalBool for full F# comparison/logic support.
     let private evalCondition (cond: string) (vars: IDictionary<string, string>) : bool =
-        let resolved = Regex.Replace(cond, @"\$([\w-]+)", fun m ->
-            match vars.TryGetValue(m.Groups.[1].Value) with true, v -> v | _ -> m.Value)
-        let t = resolved.Trim().Trim('"', '\'').ToLowerInvariant()
-        t <> "" && t <> "false" && t <> "0" && t <> "null" && t <> "none"
+        Evaluator.evalBool cond vars
 
     let compile (nodes: ZssNode list) (vars: IDictionary<string, string>) : string =
         let sb = StringBuilder()
@@ -259,7 +256,8 @@ module Compiler =
                         sb.AppendLine(sprintf "  %s {" parent) |> ignore
                         for d in inlineDecls do
                             let imp = if d.Important then " !important" else ""
-                            for (p, v) in AutoPrefixer.prefix d.Property d.Value do
+                            let rv = Evaluator.resolveValue d.Value vars
+                            for (p, v) in AutoPrefixer.prefix d.Property rv do
                                 sb.AppendLine(sprintf "    %s: %s%s;" p v imp) |> ignore
                         sb.AppendLine("  }") |> ignore
                     emitNodes nestedRules parent
@@ -286,7 +284,8 @@ module Compiler =
                         sb.AppendLine(sprintf "%s {" parent) |> ignore
                         for d in extDecls do
                             let imp = if d.Important then " !important" else ""
-                            sb.AppendLine(sprintf "  %s: %s%s;" d.Property d.Value imp) |> ignore
+                            let rv = Evaluator.resolveValue d.Value vars
+                            sb.AppendLine(sprintf "  %s: %s%s;" d.Property rv imp) |> ignore
                         sb.AppendLine("}") |> ignore
 
                 | Apply(classes, _) ->
@@ -300,7 +299,8 @@ module Compiler =
                         let utilDecls = UtilityRegistry.getDecls className
                         for d in utilDecls do
                             let imp = if d.Important then " !important" else ""
-                            let v = Evaluator.normalizePropertyValue d.Property d.Value
+                            let rv = Evaluator.resolveValue d.Value vars
+                            let v = Evaluator.normalizePropertyValue d.Property rv
                             for (p, v2) in AutoPrefixer.prefix d.Property v do
                                 sb.AppendLine(sprintf "  %s: %s%s;" p v2 imp) |> ignore
 
@@ -368,7 +368,8 @@ module Compiler =
                             sb.AppendLine(sprintf "%s {" sel) |> ignore
                             for d in ds do
                                 let imp = if d.Important then " !important" else ""
-                                let v = Evaluator.normalizePropertyValue d.Property d.Value
+                                let rv = Evaluator.resolveValue d.Value vars
+                                let v = Evaluator.normalizePropertyValue d.Property rv
                                 for (p, v2) in AutoPrefixer.prefix d.Property v do
                                     sb.AppendLine(sprintf "  %s: %s%s;" p v2 imp) |> ignore
                             sb.AppendLine("}") |> ignore
@@ -380,14 +381,16 @@ module Compiler =
                         else
                             for d in allDecls do
                                 let imp = if d.Important then " !important" else ""
-                                let v = Evaluator.normalizePropertyValue d.Property d.Value
+                                let rv = Evaluator.resolveValue d.Value vars
+                                let v = Evaluator.normalizePropertyValue d.Property rv
                                 for (p, v2) in AutoPrefixer.prefix d.Property v do
                                     sb.AppendLine(sprintf "  %s: %s%s;" p v2 imp) |> ignore
                     elif fullSel.StartsWith("@") then
                         sb.AppendLine(sprintf "%s {" fullSel) |> ignore
                         for d in allDecls do
                             let imp = if d.Important then " !important" else ""
-                            let v = Evaluator.normalizePropertyValue d.Property d.Value
+                            let rv = Evaluator.resolveValue d.Value vars
+                            let v = Evaluator.normalizePropertyValue d.Property rv
                             for (p, v2) in AutoPrefixer.prefix d.Property v do
                                 sb.AppendLine(sprintf "    %s: %s%s;" p v2 imp) |> ignore
                         emitNodes nestedRules ""

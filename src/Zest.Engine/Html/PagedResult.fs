@@ -8,10 +8,10 @@ open System.Text.RegularExpressions
 open Zest.Engine
 
 // ============================================================
-// Pagination helpers
+// PagedResult helpers
 // ============================================================
 
-module Pagination =
+module PagedResult =
 
     type PaginatedResult<'a> = {
         Items: 'a list

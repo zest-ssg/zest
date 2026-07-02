@@ -39,7 +39,7 @@ public static class ServeController
 
         // Enable FSI verbose output
         if (opts.Verbose)
-            ScriptRunner.setVerbose(true);
+            PageQuery.setVerbose(true);
 
         var config = SiteConfigLoader.Load();
         if (opts.PortOverride.HasValue)

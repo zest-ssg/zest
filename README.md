@@ -73,10 +73,10 @@ let primary-light = primary |> lighten(45%)
 
 // Two-letter property shorthands
 .tag
-  c: $primary
-  bgc: $primary-light
-  py: $space4
-  bdr: 9999px
+  color: $primary
+  background-color: $primary-light
+  padding-block: $space4
+  border-radius: 9999px
 ```
 
 Compiles to:
@@ -139,7 +139,7 @@ my-site/
 ## Build from Source
 
 ```bash
-git clone https://github.com/YOUR_USER/zest
+git clone https://github.com/zest-ssg/zest
 cd zest
 dotnet build Zest.sln
 
@@ -156,7 +156,6 @@ dotnet publish src/Zest.App/Zest.App.csproj -c Release -r win-x64 --self-contain
 | Extension | Purpose | Processing |
 |-----------|---------|------------|
 | `.zpage.fsx` | F# script templates (F# + Markdown + HTML DSL) | Compiled via `dotnet fsi` |
-| `.zhtml` | Pure HTML pages | Copied as-is (optional ZestNjk) |
 | `.znjk` | Zest Nunjucks templates (Nunjucks-compatible syntax with Zest API integration) | Rendered via ZestNjkEngine — supports filters, expressions, `{% if %}`, `{% for %}`, macros, template inheritance |
 | `.zcss` | ZCSS stylesheets (CSS superset) | Compiled to `.css` |
 | `.md` | Standard Markdown | Rendered to HTML |

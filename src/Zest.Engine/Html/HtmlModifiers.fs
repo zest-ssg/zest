@@ -185,3 +185,165 @@ module HtmlModifiers =
     /// Add a CSS class only when the condition is false.
     let unlessClass (c: string) (cond: bool) (node: HtmlNode) =
         if not cond then withClass c node else node
+
+    // ══════════════════════════════════════════════════════════════
+    // ── Shorthand node builders (from DslSugar) ──────────────────
+    // ══════════════════════════════════════════════════════════════
+
+    /// Create a Text node: `t "Hello"`
+    let t (s: string) = Text s
+
+    /// Create a Raw HTML node: `r "<br>"`
+    let r (s: string) = Raw s
+
+    /// Create an Element node with attributes and children.
+    /// Usage: `e "div" ["class", "hero"] [t "Hello"]`
+    let e (tag: string) (attrs: (string * string) list) (children: HtmlNode list) =
+        Element(tag, attrs, children)
+
+    /// Create a void Element (no children).
+    /// Usage: `ve "br" []`
+    let ve (tag: string) (attrs: (string * string) list) =
+        Element(tag, attrs, [])
+
+    /// Element with just a class attribute.
+    /// Usage: `ec "div" "hero" [t "Hello"]`
+    let ec (tag: string) (cls: string) (children: HtmlNode list) =
+        Element(tag, ["class", cls], children)
+
+    /// Element with just text content.
+    /// Usage: `et "h1" "Hello World"`
+    let et (tag: string) (textContent: string) =
+        Element(tag, [], [Text textContent])
+
+    /// Element with class and text content.
+    /// Usage: `ect "p" "lead" "Hello"`
+    let ect (tag: string) (cls: string) (textContent: string) =
+        Element(tag, ["class", cls], [Text textContent])
+
+    /// Fragment (list of nodes rendered sequentially).
+    /// Usage: `f [t "A"; br; t "B"]`
+    let f (nodes: HtmlNode list) = Fragment nodes
+
+    /// Conditional node: rendered only if condition is true.
+    /// Usage: `cnd (x > 0) (t "positive")`
+    let cnd (condition: bool) (node: HtmlNode) =
+        Conditional(condition, node)
+
+    /// Conditional with else: choose between two nodes.
+    /// Usage: `cnd_else (x > 0) (t "positive") (t "non-positive")`
+    let cnd_else (condition: bool) (ifTrue: HtmlNode) (ifFalse: HtmlNode) =
+        if condition then ifTrue else ifFalse
+
+    /// Repeated nodes from a list.
+    /// Usage: `rep (items |> List.map (fun i -> li [t i]))`
+    let rep (nodes: HtmlNode list) = Repeat nodes
+
+    // ══════════════════════════════════════════════════════════════
+    // ── Common HTML element shortcuts (from DslSugar) ────────────
+    // ══════════════════════════════════════════════════════════════
+
+    /// `<br>` void element.
+    let br = Element("br", [], [])
+
+    /// `<hr>` void element.
+    let hr = Element("hr", [], [])
+
+    /// `<img>` void element.
+    let img (src: string) (alt: string) =
+        Element("img", ["src", src; "alt", alt], [])
+
+    /// `<img>` with class.
+    let img_c (cls: string) (src: string) (alt: string) =
+        Element("img", ["src", src; "alt", alt; "class", cls], [])
+
+    /// `<a>` with href and text.
+    let a_href (url: string) (textContent: string) =
+        Element("a", ["href", url], [Text textContent])
+
+    /// `<a>` with target="_blank".
+    let a_blank (url: string) (textContent: string) =
+        Element("a", ["href", url; "target", "_blank"; "rel", "noopener noreferrer"], [Text textContent])
+
+    /// `<h1>`-`<h6>` with text.
+    let h (level: int) (textContent: string) =
+        let tag = sprintf "h%d" level
+        Element(tag, [], [Text textContent])
+
+    /// `<p>` with text content.
+    let p_text (content: string) =
+        Element("p", [], [Text content])
+
+    /// `<li>` with text.
+    let li_text (content: string) =
+        Element("li", [], [Text content])
+
+    /// `<style>` block.
+    let style_block (css: string) =
+        Element("style", [], [Raw css])
+
+    /// `<script>` block.
+    let script_block (js: string) =
+        Element("script", [], [Raw js])
+
+    // ══════════════════════════════════════════════════════════════
+    // ── Pipeline / chaining operators (from DslSugar) ────────────
+    // ══════════════════════════════════════════════════════════════
+
+    /// Wrap nodes in an element tag.
+    /// Usage: `nodes |> wrap_in "div"`
+    let wrap_in (tag: string) (nodes: HtmlNode list) : HtmlNode =
+        Element(tag, [], nodes)
+
+    /// Wrap nodes in an element with a class.
+    /// Usage: `nodes |> wrap_in_c "div" "container"`
+    let wrap_in_c (tag: string) (cls: string) (nodes: HtmlNode list) : HtmlNode =
+        Element(tag, ["class", cls], nodes)
+
+    /// Add a CSS class to an element node (replaces existing class).
+    /// Usage: `elem |> with_class "active"`
+    let with_class (cls: string) (node: HtmlNode) : HtmlNode =
+        match node with
+        | Element(tag, attrs, children) ->
+            let cleaned = attrs |> List.filter (fun (k, _) -> k <> "class")
+            Element(tag, ("class", cls) :: cleaned, children)
+        | other -> other
+
+    /// Add an attribute to an element node (replaces existing if same key).
+    /// Usage: `elem |> with_attr "data-id" "42"`
+    let with_attr (key: string) (value: string) (node: HtmlNode) : HtmlNode =
+        match node with
+        | Element(tag, attrs, children) ->
+            let cleaned = attrs |> List.filter (fun (k, _) -> k <> key)
+            Element(tag, (key, value) :: cleaned, children)
+        | other -> other
+
+    // ══════════════════════════════════════════════════════════════
+    // ── Validation / error-reporting helpers (from DslSugar) ─────
+    // ══════════════════════════════════════════════════════════════
+
+    /// Validate a condition and emit an HTML comment with the error
+    /// message if the condition is not met.
+    /// Usage: `validate_cond (not (String.IsNullOrEmpty title)) "Title is required" renderedTitle`
+    let validate_cond (condition: bool) (message: string) (node: HtmlNode) : HtmlNode =
+        if condition then node
+        else Fragment [Raw (sprintf "<!-- VALIDATION ERROR: %s -->" message); node]
+
+    /// Guard: render only if the string value is non-empty.
+    /// Usage: `guard_str title (fun t -> h 1 t)`
+    let guard_str (value: string) (render: string -> HtmlNode) : HtmlNode =
+        if String.IsNullOrEmpty value then Fragment []
+        else render value
+
+    /// Guard for optional values.
+    /// Usage: `guard_opt maybeTitle (fun t -> h 1 t) (p_text "Untitled")`
+    let guard_opt (value: string option) (render: string -> HtmlNode) (fallback: HtmlNode) : HtmlNode =
+        match value with
+        | Some v when not (String.IsNullOrEmpty v) -> render v
+        | _ -> fallback
+
+    /// Guard a list: render only if non-empty.
+    /// Usage: `guard_list items (fun items -> ul (items |> List.map li_text)) (p_text "No items")`
+    let guard_list (items: 'a list) (render: 'a list -> HtmlNode) (fallback: HtmlNode) : HtmlNode =
+        if List.isEmpty items then fallback
+        else render items

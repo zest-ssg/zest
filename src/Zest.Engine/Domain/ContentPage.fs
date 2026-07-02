@@ -5,7 +5,7 @@ open System.Collections.Generic
 /// <summary>
 /// A page produced by a .zpage.fsx template, ready for layout wrapping and output.
 /// </summary>
-type Page = {
+type ContentPage = {
     /// URL path, e.g. "/" or "/posts/hello-world/"
     Url: string
 
@@ -46,7 +46,7 @@ type Page = {
 /// <summary>
 /// Default page constructor.
 /// </summary>
-module Page =
+module ContentPage =
     let empty =
         { Url = ""
           OutputPath = ""

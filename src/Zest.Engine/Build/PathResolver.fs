@@ -2,8 +2,8 @@ namespace Zest.Engine
 
 open System.IO
 
-/// Build helpers: path resolution and exclusion rule detection.
-module BuildHelpers =
+/// Path resolution and exclusion rule detection.
+module PathResolver =
 
     let internal resolvePath root dir =
         Path.GetFullPath(Path.Combine(root, dir.ToString().TrimStart('.', '\\', '/')))

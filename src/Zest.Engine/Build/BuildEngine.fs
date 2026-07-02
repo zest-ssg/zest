@@ -5,19 +5,15 @@ open System.Collections.Concurrent
 open System.Collections.Generic
 open System.IO
 open System.Diagnostics
-open System.Threading
-open System.Threading.Tasks
-open Zest.Engine.Parsing
-open Zest.Engine.Routing
 open Zest.Engine.Scripting
-open Zest.Engine.Zcss
-open BuildHelpers
+open Zest.Engine.Build
+open PathResolver
 open BuildCache
 open BuildData
 open BuildAssets
 open BuildLayout
 
-/// Core build pipeline: content discovery → evaluation → layout application → asset processing → output.
+/// Core build pipeline: path resolution → cache → layouts → init → content processing → assets → output.
 module BuildEngine =
 
     let execute (config: SiteConfig) : BuildResult =
@@ -58,7 +54,7 @@ module BuildEngine =
                     |> Seq.append [Directory.GetLastWriteTimeUtc(includesDir).Ticks]
                     |> Seq.max |> DateTime
             setIncludesMtime includesMtime
-            ScriptRunner.setIncludes includes
+            PageQuery.setIncludes includes
 
             // If globalData came from cache we must clone it before mutation
             let globalData =
@@ -82,7 +78,7 @@ module BuildEngine =
                     |> String.concat ","
                 gData.["menu." + kv.Key] <- box ("[" + json + "]")
 
-            ScriptRunner.setGlobalData globalData
+            PageQuery.setGlobalData globalData
 
             // ── Execute _init.zest.fsx (project root init script) ────
             let initResult = InitEngine.run root globalData
@@ -93,220 +89,20 @@ module BuildEngine =
             for kv in initResult.GlobalData do
                 if not (gData.ContainsKey kv.Key) then
                     gData.[kv.Key] <- kv.Value
-            ScriptRunner.setGlobalData globalData
+            PageQuery.setGlobalData globalData
 
-            let allFiles =
-                if not (Directory.Exists contentDir) then
-                    Directory.CreateDirectory(contentDir) |> ignore; [||]
-                else
-                    [| yield! Directory.GetFiles(contentDir, "*.zpage.fsx", SearchOption.AllDirectories)
-                       yield! Directory.GetFiles(contentDir, "*.znjk",      SearchOption.AllDirectories)
-                       yield! Directory.GetFiles(contentDir, "*.fsx",      SearchOption.AllDirectories)
-                       yield! Directory.GetFiles(contentDir, "*.md",       SearchOption.AllDirectories)
-                       yield! Directory.GetFiles(contentDir, "*.markdown", SearchOption.AllDirectories) |]
-                    |> Array.filter (fun f -> not (isExcluded contentDir f))
-                    |> Array.distinct
+            // ── Content pipeline: discover → evaluate → write output ──
+            let struct(total, contentProcessed, contentCached, evalResults) =
+                ContentPipeline.processContent contentDir outputDir config globalData layouts includes
 
-            // ── .html files: copy verbatim to output, no template processing ──
-            if Directory.Exists contentDir then
-                for htmlFile in Directory.GetFiles(contentDir, "*.html", SearchOption.AllDirectories) do
-                    if not (isExcluded contentDir htmlFile) then
-                        let relPath = Path.GetRelativePath(contentDir, htmlFile)
-                        let destPath = Path.Combine(outputDir, relPath)
-                        let destDir = Path.GetDirectoryName(destPath)
-                        if destDir <> null then Directory.CreateDirectory(destDir) |> ignore
-                        File.Copy(htmlFile, destPath, true)
-                        // Warn if template syntax is detected in .html files
-                        let content = File.ReadAllText(htmlFile)
-                        if content.Contains("{{") || content.Contains("{%") then
-                            eprintfn "[Zest] WARN: '%s' contains Nunjucks template syntax, .html files do not support it — use .znjk instead" htmlFile
-                        Threading.Interlocked.Increment(&processed) |> ignore
+            processed <- contentProcessed
+            cached    <- contentCached
 
-            let total = allFiles.Length
-
-            // ── First pass: fast metadata extraction for collections API ──
-            let metaPages =
-                allFiles
-                |> Array.choose (fun f -> ScriptEvaluator.extractMeta f config)
-                |> Array.toList
-            ScriptRunner.setAllPages metaPages
-            ScriptRunner.resetSession ()
-
-            let mdFiles  = allFiles |> Array.filter (fun f -> let e = Path.GetExtension(f).ToLowerInvariant() in e = ".md" || e = ".markdown")
-            let fsxFiles = allFiles |> Array.filter (fun f -> let e = Path.GetExtension(f).ToLowerInvariant() in e <> ".md" && e <> ".markdown")
-
-            let evalResults = ConcurrentBag<Result<Page, string>>()
-
-            // Markdown pages — skip cached in incremental mode
-            let mdToEval =
-                if config.EnableIncrementalBuild then
-                    mdFiles |> Array.filter (fun f ->
-                        let mtime = File.GetLastWriteTimeUtc(f)
-                        match buildCache.TryGetValue(f) with
-                        | true, e when e.Mtime = mtime ->
-                            Threading.Interlocked.Increment(&cached) |> ignore
-                            false
-                        | _ -> true)
-                else mdFiles
-            if config.EnableParallelBuild && mdToEval.Length > 0 then
-                Parallel.ForEach(mdToEval, fun f ->
-                    try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
-                    with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)) |> ignore
-            else
-                for f in mdToEval do
-                    try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
-                    with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
-
-            // FSI scripts: batch evaluate in a single FSI process for performance
-            let fsxResults =
-                if fsxFiles.Length > 0 then
-                    let scriptsToEval =
-                        fsxFiles
-                        |> Array.choose (fun f ->
-                            if config.EnableIncrementalBuild then
-                                let mtime = File.GetLastWriteTimeUtc(f)
-                                match buildCache.TryGetValue(f) with
-                                | true, e when e.Mtime = mtime -> None
-                                | _ ->
-                                    try
-                                        let text = File.ReadAllText(f)
-                                        if ScriptRunner.isPageScript (Path.GetExtension(f).ToLowerInvariant()) text then
-                                            Some (f, text)
-                                        else None
-                                    with _ -> None
-                            else
-                                try
-                                    let text = File.ReadAllText(f)
-                                    if ScriptRunner.isPageScript (Path.GetExtension(f).ToLowerInvariant()) text then
-                                        Some (f, text)
-                                    else None
-                                with _ -> None)
-                        |> Array.toList
-
-                    if scriptsToEval.IsEmpty then
-                        if not config.EnableIncrementalBuild then
-                            for f in fsxFiles do
-                                try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
-                                with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
-                        Map.empty
-                    else
-                        let batchResults = ScriptRunner.evaluatePageScriptsBatch scriptsToEval
-                        batchResults
-                else Map.empty
-
-            // Process batch results and evaluate non-page scripts individually
-            for f in fsxFiles do
-                if config.EnableIncrementalBuild then
-                    let mtime = File.GetLastWriteTimeUtc(f)
-                    match buildCache.TryGetValue(f) with
-                    | true, e when e.Mtime = mtime ->
-                        Threading.Interlocked.Increment(&cached) |> ignore
-                    | _ ->
-                        match Map.tryFind f fsxResults with
-                        | Some batchResult ->
-                            match batchResult with
-                            | Ok htmlContent ->
-                                try
-                                    let text = File.ReadAllText(f)
-                                    let ext = Path.GetExtension(f).ToLowerInvariant()
-                                    let relPath, rawSlug =
-                                        let rel = Path.GetRelativePath(contentDir, f)
-                                        let fn = Path.GetFileNameWithoutExtension(f)
-                                        let fn2 = if fn.EndsWith(".zpage") then fn.[..fn.Length - 7] else fn
-                                        let raw = if fn2.EndsWith(".zest") then fn2.[..fn2.Length - 6] else fn2
-                                        rel, raw
-                                    let slug = PermalinkRouter.slugify rawSlug
-                                    let meta, _ = FrontMatterParser.parse ext text
-                                    let mergedData = Dictionary<string, obj>()
-                                    for kv in globalData do mergedData.[kv.Key] <- kv.Value
-                                    for kv in meta.Extra do mergedData.[kv.Key] <- box kv.Value
-                                    meta.Description |> Option.iter (fun v -> mergedData.["description"] <- box v)
-                                    let url, outputPath =
-                                        match meta.Permalink with
-                                        | Some p when p.Length > 0 -> PermalinkRouter.computePermalink p
-                                        | _ -> PermalinkRouter.defaultRoute relPath slug
-                                    evalResults.Add(Ok { Page.empty with
-                                                            SourcePath = f
-                                                            Url = url
-                                                            OutputPath = outputPath
-                                                            Layout = Some (meta.Layout |> Option.defaultValue config.DefaultLayout)
-                                                            Title = meta.Title |> Option.defaultValue rawSlug
-                                                            Content = htmlContent
-                                                            Data = mergedData
-                                                            Permalink = meta.Permalink
-                                                            Tags = meta.Tags
-                                                            Date = meta.Date
-                                                            Slug = slug })
-                                with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
-                            | Error evalErr ->
-                                eprintfn "[Zest] WARN: Script evaluation failed '%s': %s — falling back to Markdown mode" f evalErr
-                                try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
-                                with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
-                        | None ->
-                            try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
-                            with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
-                else
-                    match Map.tryFind f fsxResults with
-                    | Some batchResult ->
-                        match batchResult with
-                        | Ok htmlContent ->
-                            try
-                                let text = File.ReadAllText(f)
-                                let ext = Path.GetExtension(f).ToLowerInvariant()
-                                let relPath, rawSlug =
-                                    let rel = Path.GetRelativePath(contentDir, f)
-                                    let fn = Path.GetFileNameWithoutExtension(f)
-                                    let fn2 = if fn.EndsWith(".zpage") then fn.[..fn.Length - 7] else fn
-                                    let raw = if fn2.EndsWith(".zest") then fn2.[..fn2.Length - 6] else fn2
-                                    rel, raw
-                                let slug = PermalinkRouter.slugify rawSlug
-                                let meta, _ = FrontMatterParser.parse ext text
-                                let mergedData = Dictionary<string, obj>()
-                                for kv in globalData do mergedData.[kv.Key] <- kv.Value
-                                for kv in meta.Extra do mergedData.[kv.Key] <- box kv.Value
-                                meta.Description |> Option.iter (fun v -> mergedData.["description"] <- box v)
-                                let url, outputPath =
-                                    match meta.Permalink with
-                                    | Some p when p.Length > 0 -> PermalinkRouter.computePermalink p
-                                    | _ -> PermalinkRouter.defaultRoute relPath slug
-                                evalResults.Add(Ok { Page.empty with
-                                                        SourcePath = f
-                                                        Url = url
-                                                        OutputPath = outputPath
-                                                        Layout = Some (meta.Layout |> Option.defaultValue config.DefaultLayout)
-                                                        Title = meta.Title |> Option.defaultValue rawSlug
-                                                        Content = htmlContent
-                                                        Data = mergedData
-                                                        Permalink = meta.Permalink
-                                                        Tags = meta.Tags
-                                                        Date = meta.Date
-                                                        Slug = slug })
-                            with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
-                        | Error evalErr ->
-                            eprintfn "[Zest] WARN: Script evaluation failed '%s': %s — falling back to Markdown mode" f evalErr
-                            try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
-                            with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
-                    | None ->
-                        try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
-                        with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
-
-            // Write output
+            // Collect any errors from evaluation results
             for r in evalResults do
                 match r with
                 | Error e -> errors.Add(e)
-                | Ok page ->
-                    let outPath = Path.Combine(outputDir, page.OutputPath)
-                    if config.EnableIncrementalBuild && not (needsRebuild page.SourcePath outPath) then
-                        Threading.Interlocked.Increment(&cached) |> ignore
-                    else
-                        let replacements = buildReplacements page config globalData
-                        let layoutName   = page.Layout |> Option.defaultValue config.DefaultLayout
-                        let finalHtml    = applyLayout layoutName page.Content layouts replacements includes
-                        let dir = Path.GetDirectoryName(outPath)
-                        if dir <> null then Directory.CreateDirectory(dir) |> ignore
-                        File.WriteAllText(outPath, finalHtml, System.Text.Encoding.UTF8)
-                        updateCache page.SourcePath finalHtml
-                        Threading.Interlocked.Increment(&processed) |> ignore
+                | _ -> ()
 
             assets <- copyAssets root outputDir
             if config.EnableIncrementalBuild then saveCache outputDir

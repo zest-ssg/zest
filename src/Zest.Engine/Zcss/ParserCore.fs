@@ -47,6 +47,14 @@ module ParserCore =
     let letPattern     = Regex(@"^\s*let\s+([\w-]+)\s*(?::\s*\w+)?\s*=\s*(.+?)\s*;?\s*$", RegexOptions.Compiled)
     // F#-style: let name = value in expression  (inline let)
     let letInPattern   = Regex(@"^\s*let\s+([\w-]+)\s*=\s*(.+?)\s+in\s+(.+)$", RegexOptions.Compiled)
+    // F#-style: if condition then value else value  (inline if expression)
+    let ifExprPattern  = Regex(@"^if\s+(.+?)\s+then\s+(.+?)\s+else\s+(.+)$", RegexOptions.Compiled)
+    // Comparison operators for @if conditions
+    let compOpPattern  = Regex(@"^(.*?)\s*(==|!=|<>|>=|<=|>|<)\s*(.*)$", RegexOptions.Compiled)
+    // Logical operators pattern (&&, ||)
+    let logicOpPattern = Regex(@"\s+(&&|\|\|)\s+", RegexOptions.Compiled)
+    // not / ! operator
+    let notOpPattern   = Regex(@"^\s*(not|!)\s+(.+)$", RegexOptions.Compiled)
     let mixinDefPat   = Regex(@"^@mixin\s+([\w-]+)\s*(?:\(([^)]*)\))?\s*\{?\s*$", RegexOptions.Compiled)
     let includePat    = Regex(@"^@include\s+([\w-]+)\s*(?:\(([^)]*)\))?\s*;?\s*$", RegexOptions.Compiled)
     let extendPat     = Regex(@"^@extend\s+(.+?)\s*;?\s*$", RegexOptions.Compiled)
@@ -160,17 +168,15 @@ module ParserCore =
             if m.Success then
                 let isDefault = m.Groups.[3].Success
                 let rawVal = m.Groups.[2].Value.Trim()
-                let v = Evaluator.resolveValue rawVal d
                 if isDefault then
                     if not (d.ContainsKey(m.Groups.[1].Value)) then
-                        d.[m.Groups.[1].Value] <- v
+                        d.[m.Groups.[1].Value] <- rawVal
                 else
-                    d.[m.Groups.[1].Value] <- v
+                    d.[m.Groups.[1].Value] <- rawVal
             elif lm.Success then
                 let name = lm.Groups.[1].Value
                 let rawVal = lm.Groups.[2].Value.Trim()
-                let v = Evaluator.resolveValue rawVal d
-                d.[name] <- v
+                d.[name] <- rawVal
         d
 
     let resolveVars (value: string) (vars: IDictionary<string, string>) =
@@ -221,11 +227,9 @@ module ParserCore =
                 let rest = t.Substring(sepIdx + 1).Trim()
                 let important = rest.EndsWith("!important")
                 let rawVal = (if important then rest.Substring(0, rest.Length - 10) else rest).Trim()
-                // Pre-resolve $name references first to ensure they're replaced
-                // (in case the caller passed a vars dict that doesn't contain them)
-                let preResolved = resolveVars rawVal vars
-                // Let resolveValue handle the rest (pipes, math, color functions, builtins, shorthands)
-                let value = Evaluator.resolveValue preResolved vars
+                // Defer value resolution to the Compiler — ParserCore is a pure parser.
+                // Pre-resolve $name references to ensure they aren't lost.
+                let value = resolveVars rawVal vars
                 // Handle nested property shorthand: margin.top → margin-top
                 let resolvedProp =
                     if prop.Contains(".") then

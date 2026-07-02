@@ -207,3 +207,34 @@ module HtmlComponents =
 
     // ---- Comment (HTML comment) ----
     let comment (text: string) = Raw (sprintf "<!-- %s -->" text)
+
+    // ══════════════════════════════════════════════════════════════
+    // ── Common UI component shortcuts (from DslSugar) ────────────
+    // ══════════════════════════════════════════════════════════════
+
+    /// A media object (image + text side-by-side).
+    /// Usage: `media "/img.jpg" "Alt text" "Title" "Description"`
+    let media (src: string) (alt: string) (title: string) (desc: string) =
+        divC "media" [
+            img_c "media-img" src alt
+            divC "media-body" [
+                h 4 title
+                p_text desc
+            ]
+        ]
+
+    /// A hero section.
+    /// Usage: `hero "Welcome" "Subtitle" "/cta" "Get Started"`
+    let hero (title: string) (subtitle: string) (ctaUrl: string) (ctaText: string) =
+        sectionC "hero" [
+            divC "hero-content" [
+                h 1 title
+                p_text subtitle
+                aC "btn btn-lg btn-primary" ctaUrl [t ctaText]
+            ]
+        ]
+
+    /// A button component.
+    /// Usage: `btn "primary" "Click me"`
+    let btn (variant: string) (textContent: string) =
+        Element("button", ["class", sprintf "btn btn-%s" variant], [t textContent])
