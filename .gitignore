@@ -25,8 +25,7 @@ obj/
 Thumbs.db
 
 # Zest site output
-docs/_site/
-blog/_site/
+docs/
 
 # NuGet packages
 packages/
