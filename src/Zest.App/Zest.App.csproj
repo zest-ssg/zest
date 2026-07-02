@@ -2,7 +2,6 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
 
@@ -13,19 +12,12 @@
     <AssemblyName>zest</AssemblyName>
     <DebugType>embedded</DebugType>
 
-    <!-- Strip satellite resource assemblies and debug symbols from publish output -->
-    <SatelliteResourceLanguages>none</SatelliteResourceLanguages>
-    <DebugSymbols>false</DebugSymbols>
-    <GenerateDocumentationFile>false</GenerateDocumentationFile>
-
     <!-- Publish trimming: exclude unused files -->
     <PublishReadyToRun>false</PublishReadyToRun>
     <PublishTrimmed>false</PublishTrimmed>
     <TrimMode>partial</TrimMode>
 
-    <!-- App info -->
-    <Copyright>Apache 2.0 License</Copyright>
-    <Description>Zest SSG — Zenith Efficient Static Toolkit</Description>
+    <!-- App icon -->
     <ApplicationIcon>..\..\Zest.ico</ApplicationIcon>
   </PropertyGroup>
 

@@ -1,15 +1,59 @@
 <Project>
+  <!-- ============================================================
+       Directory.Build.props — Solution-wide shared build settings
+       Applies to all projects under this directory tree.
+       Project-specific overrides: define in individual .csproj/.fsproj.
+       ============================================================ -->
+
   <PropertyGroup>
-    <FSharpCoreImplicitPackageVersion>10.1.204</FSharpCoreImplicitPackageVersion>
-    <!-- Strip satellite resource dirs and symbols from publish -->
+    <!-- Framework & language -->
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+
+    <!-- Code quality -->
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!-- Debug & publish: strip symbols and XML docs by default -->
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>none</DebugType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <!-- Strip satellite resource assemblies -->
     <SatelliteResourceLanguages>none</SatelliteResourceLanguages>
+
+    <!-- App metadata -->
+    <Copyright>Apache 2.0 License</Copyright>
+    <Description>Zest SSG — Zenith Efficient Static Toolkit</Description>
   </PropertyGroup>
 
-  <!-- Remove language satellite dirs from publish output -->
+  <!-- Shared NuGet package versions (use PackageReference Version="..." in csproj/fsproj to consume) -->
+  <ItemGroup>
+    <PackageReference Update="Tomlyn" Version="0.17.0" />
+  </ItemGroup>
+
+  <!-- ============================================================
+       F#-specific defaults — suppress noise-level warnings
+       ============================================================ -->
+  <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.fsproj'">
+    <!-- 0025: value in pattern match is incomplete (normal in scripting DSLs) -->
+    <!-- 0026: this rule will never be matched -->
+    <!-- 0064: this construct causes code to be less generic -->
+    <!-- 3218: file not written to during the publish process -->
+    <NoWarn>$(NoWarn);0025;0026;0064;3218</NoWarn>
+
+    <!-- FSharp.Core is transitively resolved; explicit version for consistency -->
+    <FSharpCoreImplicitPackageVersion>10.1.204</FSharpCoreImplicitPackageVersion>
+  </PropertyGroup>
+
+  <!-- ============================================================
+       Publish clean-up — remove satellite resource DLLs from output
+       Uses Path.DirectorySeparatorChar for cross-platform correctness.
+       ============================================================ -->
   <Target Name="RemoveSatelliteDirs" AfterTargets="ComputeFilesToPublish">
     <ItemGroup>
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
-        Condition="$([System.String]::new('%(ResolvedFileToPublish.RelativePath)').Contains('\')) And
+        Condition="$([System.String]::new('%(ResolvedFileToPublish.RelativePath)').Contains($([System.IO.Path]::DirectorySeparatorChar.ToString()))) And
                    $([System.String]::new('%(ResolvedFileToPublish.RelativePath)').EndsWith('.resources.dll'))" />
     </ItemGroup>
   </Target>
