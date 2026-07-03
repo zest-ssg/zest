@@ -12,7 +12,7 @@ namespace Zest.Infra.Services;
 /// WebSocket server for live-reload broadcasting.
 /// Accepts WebSocket clients, maintains connection pool, and broadcasts "reload" frames.
 /// </summary>
-public class WebSocketServer : IDisposable
+public class SocketHub : IDisposable
 {
     private readonly int _port;
     private TcpListener? _wsListener;
@@ -20,7 +20,7 @@ public class WebSocketServer : IDisposable
     private readonly object _wsLock = new();
     private CancellationTokenSource? _cts;
 
-    public WebSocketServer(int port)
+    public SocketHub(int port)
     {
         _port = port;
     }
@@ -43,7 +43,11 @@ public class WebSocketServer : IDisposable
         }
     }
 
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        Stop();
+        GC.SuppressFinalize(this);
+    }
 
     public void BroadcastReload()
     {
@@ -62,7 +66,7 @@ public class WebSocketServer : IDisposable
                 catch { dead.Add(c); }
             }
             foreach (var c in dead) _wsClients.Remove(c);
-            Logger.VerboseLog($"Broadcast reload to {_wsClients.Count} clients");
+            LogWriter.VerboseLog($"Broadcast reload to {_wsClients.Count} clients");
         }
     }
 
@@ -72,8 +76,10 @@ public class WebSocketServer : IDisposable
         {
             try
             {
+#pragma warning disable CA2016 // WaitAsync handles cancellation; AcceptTcpClientAsync has no CT overload returning Task
                 var client = await _wsListener!.AcceptTcpClientAsync().WaitAsync(ct);
-                _ = Task.Run(() => HandleClient(client));
+#pragma warning restore CA2016
+                _ = Task.Run(() => HandleClient(client), CancellationToken.None);
             }
             catch { break; }
         }
@@ -85,7 +91,7 @@ public class WebSocketServer : IDisposable
         {
             using var stream = tcpClient.GetStream();
             var buf = new byte[4096];
-            var read = await stream.ReadAsync(buf, 0, buf.Length);
+            var read = await stream.ReadAsync(buf.AsMemory(0, buf.Length));
             var req = Encoding.UTF8.GetString(buf, 0, read);
             var keyMatch = Regex.Match(req, @"Sec-WebSocket-Key:\s*(.+)");
             if (!keyMatch.Success) return;
@@ -98,14 +104,14 @@ public class WebSocketServer : IDisposable
             await stream.WriteAsync(Encoding.UTF8.GetBytes(response));
 
             lock (_wsLock) _wsClients.Add(tcpClient);
-            Logger.VerboseLog($"WebSocket client connected (total: {_wsClients.Count})");
+            LogWriter.VerboseLog($"WebSocket client connected (total: {_wsClients.Count})");
 
             try
             {
                 while (_cts is { IsCancellationRequested: false })
                 {
                     var frame = new byte[2];
-                    var n = await stream.ReadAsync(frame, 0, 2, _cts.Token);
+                    var n = await stream.ReadAsync(frame.AsMemory(0, 2), _cts.Token);
                     if (n < 2 || (frame[0] & 0x0F) == 0x08) break;
                 }
             }
@@ -150,8 +156,9 @@ public class WebSocketServer : IDisposable
     private static string ComputeAcceptKey(string key)
     {
         const string magic = "258EAFA5-E914-47DA-95CA-C5AB5E0285C2";
-        using var sha1 = SHA1.Create();
-        return Convert.ToBase64String(sha1.ComputeHash(Encoding.UTF8.GetBytes(key + magic)));
+#pragma warning disable CA5350 // SHA1 is required by RFC 6455 for WebSocket handshake
+        return Convert.ToBase64String(SHA1.HashData(Encoding.UTF8.GetBytes(key + magic)));
+#pragma warning restore CA5350
     }
 
     /// <summary>

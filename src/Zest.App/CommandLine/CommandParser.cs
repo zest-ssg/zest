@@ -6,7 +6,7 @@ namespace Zest.App.CommandLine;
 /// Unified CLI argument parser for Zest commands.
 /// Eliminates duplicate inline parsing across controllers.
 /// </summary>
-internal static class CliParser
+internal static class CommandParser
 {
     /// <summary>
     /// Parse `zest build` arguments.
@@ -25,7 +25,7 @@ internal static class CliParser
                     opts = opts with { Watch = true };
                     break;
                 default:
-                    if (opts.ProjectPath == null && !args[i].StartsWith("-"))
+                    if (opts.ProjectPath == null && !args[i].StartsWith('-'))
                         opts = opts with { ProjectPath = args[i] };
                     break;
             }
@@ -146,18 +146,18 @@ internal static class CliParser
     /// </summary>
     public static void PrintBuildHelp()
     {
-        Logger.WriteSection("Usage");
-        Logger.WriteInfo("  zest build [path] [options]");
+        LogWriter.WriteSection("Usage");
+        LogWriter.WriteInfo("  zest build [path] [options]");
         Console.WriteLine();
 
-        Logger.WriteSection("Arguments");
-        Logger.WriteInfo("  path              Project directory (default: current directory)");
+        LogWriter.WriteSection("Arguments");
+        LogWriter.WriteInfo("  path              Project directory (default: current directory)");
         Console.WriteLine();
 
-        Logger.WriteSection("Options");
-        Logger.WriteInfo("  --watch, -w       Watch for changes and auto-rebuild");
-        Logger.WriteInfo("  --verbose, -v     Enable Debug-level logging");
-        Logger.WriteInfo("  --quiet, -q       Suppress Info-level logs");
+        LogWriter.WriteSection("Options");
+        LogWriter.WriteInfo("  --watch, -w       Watch for changes and auto-rebuild");
+        LogWriter.WriteInfo("  --verbose, -v     Enable Debug-level logging");
+        LogWriter.WriteInfo("  --quiet, -q       Suppress Info-level logs");
     }
 
     /// <summary>
@@ -165,20 +165,20 @@ internal static class CliParser
     /// </summary>
     public static void PrintServeHelp()
     {
-        Logger.WriteSection("Usage");
-        Logger.WriteInfo("  zest serve [options]");
+        LogWriter.WriteSection("Usage");
+        LogWriter.WriteInfo("  zest serve [options]");
         Console.WriteLine();
 
-        Logger.WriteDim("  Start the development server with live reload.");
+        LogWriter.WriteDim("  Start the development server with live reload.");
         Console.WriteLine();
 
-        Logger.WriteSection("Options");
-        Logger.WriteInfo("  --port, -p PORT     Dev server port (default: 8080)");
-        Logger.WriteInfo("  --host HOST         Bind to host (default: localhost)");
-        Logger.WriteInfo("  --open, -o          Open browser on start");
-        Logger.WriteInfo("  --verbose, -v       Show detailed FSI output");
-        Logger.WriteInfo("  --quiet, -q         Suppress INFO logs");
-        Logger.WriteInfo("  --help, -h          Show this help");
+        LogWriter.WriteSection("Options");
+        LogWriter.WriteInfo("  --port, -p PORT     Dev server port (default: 8080)");
+        LogWriter.WriteInfo("  --host HOST         Bind to host (default: localhost)");
+        LogWriter.WriteInfo("  --open, -o          Open browser on start");
+        LogWriter.WriteInfo("  --verbose, -v       Show detailed FSI output");
+        LogWriter.WriteInfo("  --quiet, -q         Suppress INFO logs");
+        LogWriter.WriteInfo("  --help, -h          Show this help");
     }
 
     /// <summary>
@@ -186,19 +186,19 @@ internal static class CliParser
     /// </summary>
     public static void PrintPreviewHelp()
     {
-        Logger.WriteSection("Usage");
-        Logger.WriteInfo("  zest preview [options]");
+        LogWriter.WriteSection("Usage");
+        LogWriter.WriteInfo("  zest preview [options]");
         Console.WriteLine();
 
-        Logger.WriteDim("  Preview the built _site/ directory (no build triggered).");
+        LogWriter.WriteDim("  Preview the built _site/ directory (no build triggered).");
         Console.WriteLine();
 
-        Logger.WriteSection("Options");
-        Logger.WriteInfo("  --port, -p PORT     Preview server port (default: 8080)");
-        Logger.WriteInfo("  --host HOST         Bind to host (default: localhost)");
-        Logger.WriteInfo("  --open, -o          Open browser on start");
-        Logger.WriteInfo("  --verbose, -v       Enable Debug-level logging");
-        Logger.WriteInfo("  --quiet, -q         Suppress Info-level logs");
-        Logger.WriteInfo("  --help, -h          Show this help");
+        LogWriter.WriteSection("Options");
+        LogWriter.WriteInfo("  --port, -p PORT     Preview server port (default: 8080)");
+        LogWriter.WriteInfo("  --host HOST         Bind to host (default: localhost)");
+        LogWriter.WriteInfo("  --open, -o          Open browser on start");
+        LogWriter.WriteInfo("  --verbose, -v       Enable Debug-level logging");
+        LogWriter.WriteInfo("  --quiet, -q         Suppress Info-level logs");
+        LogWriter.WriteInfo("  --help, -h          Show this help");
     }
 }

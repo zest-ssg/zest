@@ -9,7 +9,7 @@ namespace Zest.Infra.Services;
 /// <summary>
 /// HTTP response helpers: CORS, ETag, string/file response writers.
 /// </summary>
-internal static class HttpResponseHelper
+internal static class HttpHelper
 {
     /// <summary>
     /// Add CORS headers for local development.
@@ -28,7 +28,7 @@ internal static class HttpResponseHelper
     {
         var info = new FileInfo(filePath);
         var raw = $"{filePath}:{info.Length}:{info.LastWriteTimeUtc.Ticks}";
-        var hash = SHA1.HashData(Encoding.UTF8.GetBytes(raw));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         return "\"" + Convert.ToHexString(hash) + "\"";
     }
 
@@ -63,7 +63,7 @@ internal static class HttpResponseHelper
     public static async Task<bool> WriteFileResponseAsync(HttpListenerContext ctx, string filePath)
     {
         AddCorsHeaders(ctx.Response);
-        ctx.Response.ContentType = MimeTypeMap.GetMimeType(filePath);
+        ctx.Response.ContentType = MimeMapper.GetMimeType(filePath);
 
         var etag = ComputeETag(filePath);
         ctx.Response.Headers["ETag"] = etag;

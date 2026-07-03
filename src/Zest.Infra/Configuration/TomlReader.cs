@@ -6,7 +6,7 @@ namespace Zest.Infra.Configuration;
 /// TOML config value extraction helpers.
 /// Provides typed accessors for string/int/bool with fallback defaults.
 /// </summary>
-internal static class TomlConfigReader
+internal static class TomlReader
 {
     public static string GetString(IDictionary<string, object> dict, string key, string fallback)
     {

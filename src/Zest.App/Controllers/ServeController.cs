@@ -20,42 +20,42 @@ public static class ServeController
         ServeCommandOptions opts;
         try
         {
-            opts = CliParser.ParseServe(args);
+            opts = CommandParser.ParseServe(args);
         }
         catch (ArgumentException ex)
         {
-            Logger.WriteError($"  Error: {ex.Message}");
+            LogWriter.WriteError($"  Error: {ex.Message}");
             return 1;
         }
 
         if (opts.ShowHelp)
         {
-            CliParser.PrintServeHelp();
+            CommandParser.PrintServeHelp();
             return 0;
         }
 
-        Logger.SetVerbose(opts.Verbose);
-        Logger.SetQuiet(opts.Quiet);
+        LogWriter.SetVerbose(opts.Verbose);
+        LogWriter.SetQuiet(opts.Quiet);
 
         // Enable FSI verbose output
         if (opts.Verbose)
             PageQuery.setVerbose(true);
 
-        var config = SiteConfigLoader.Load();
+        var config = ConfigLoader.Load();
         if (opts.PortOverride.HasValue)
         {
             config = config.WithDevServerPort(opts.PortOverride.Value);
         }
 
-        using var server = new DevServerService(config, opts.Host, opts.OpenBrowser);
+        using var server = new DevServer(config, opts.Host, opts.OpenBrowser);
         server.Start();
 
         var evt = new ManualResetEventSlim(false);
         Console.CancelKeyPress += (_, args) =>
         {
             Console.WriteLine();
-            Logger.WriteSuccess("  Shutting down...");
-            server.Stop();
+            LogWriter.WriteSuccess("  Shutting down...");
+            server.Shutdown();
             evt.Set();
             args.Cancel = true;
         };
@@ -71,24 +71,24 @@ public static class ServeController
         PreviewCommandOptions opts;
         try
         {
-            opts = CliParser.ParsePreview(args);
+            opts = CommandParser.ParsePreview(args);
         }
         catch (ArgumentException ex)
         {
-            Logger.WriteError($"  Error: {ex.Message}");
+            LogWriter.WriteError($"  Error: {ex.Message}");
             return 1;
         }
 
         if (opts.ShowHelp)
         {
-            CliParser.PrintPreviewHelp();
+            CommandParser.PrintPreviewHelp();
             return 0;
         }
 
-        Logger.SetVerbose(opts.Verbose);
-        Logger.SetQuiet(opts.Quiet);
+        LogWriter.SetVerbose(opts.Verbose);
+        LogWriter.SetQuiet(opts.Quiet);
 
-        var config = SiteConfigLoader.Load();
+        var config = ConfigLoader.Load();
         using var server = new PreviewService(config, opts.Port, opts.Host, opts.OpenBrowser);
         server.Start();
 
@@ -96,8 +96,8 @@ public static class ServeController
         Console.CancelKeyPress += (_, args) =>
         {
             Console.WriteLine();
-            Logger.WriteSuccess("  Shutting down preview server...");
-            server.Stop();
+            LogWriter.WriteSuccess("  Shutting down preview server...");
+            server.Shutdown();
             evt.Set();
             args.Cancel = true;
         };

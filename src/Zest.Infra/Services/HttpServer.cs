@@ -11,20 +11,23 @@ namespace Zest.Infra.Services;
 /// Encapsulates common HTTP handling: listener lifecycle, CORS, 404/500, request logging,
 /// path traversal protection, ETag caching, and statistics tracking.
 /// </summary>
-public abstract class HttpServerBase : IDisposable
+public abstract class HttpServer : IDisposable
 {
-    protected readonly string _host;
-    protected readonly bool _openBrowser;
-    protected HttpListener? _listener;
-    protected CancellationTokenSource? _cts;
-    protected long _totalRequests;
-    protected long _cacheHits;
-    protected long _totalBytesServed;
+    protected string Host { get; }
+    protected bool OpenBrowser { get; }
+    protected HttpListener? Listener { get; set; }
+    protected CancellationTokenSource? Cts { get; set; }
+    private long _totalRequests;
+    private long _cacheHits;
+    private long _totalBytesServed;
+    protected long TotalRequests => _totalRequests;
+    protected long CacheHits => _cacheHits;
+    protected long TotalBytesServed => _totalBytesServed;
 
-    protected HttpServerBase(string host = "localhost", bool openBrowser = false)
+    protected HttpServer(string host = "localhost", bool openBrowser = false)
     {
-        _host = host;
-        _openBrowser = openBrowser;
+        Host = host;
+        OpenBrowser = openBrowser;
     }
 
     /// <summary>Display name for the server (used in logs and banner).</summary>
@@ -52,51 +55,55 @@ public abstract class HttpServerBase : IDisposable
 
     public void Start()
     {
-        _cts = new CancellationTokenSource();
-        _listener = new HttpListener();
-        _listener.Prefixes.Add($"http://{_host}:{Port}/");
-        _listener.Start();
-        _ = Task.Run(() => ServeHttp(_cts.Token));
+        Cts = new CancellationTokenSource();
+        Listener = new HttpListener();
+        Listener.Prefixes.Add($"http://{Host}:{Port}/");
+        Listener.Start();
+        _ = Task.Run(() => ServeHttp(Cts.Token));
 
         OnStarted();
 
         var outputDir = GetOutputDir();
 
-        Logger.Banner(
+        LogWriter.Banner(
             $"Zest {ServerName} Server",
-            $"http://{_host}:{Port}/",
-            ("Host", _host),
-            ("Port", Port.ToString()),
+            $"http://{Host}:{Port}/",
+            ("Host", Host),
+            ("Port", Port.ToString(System.Globalization.CultureInfo.InvariantCulture)),
             ("Root", outputDir),
-            ("Verbose", Logger.Verbose ? "ON" : "off")
+            ("Verbose", LogWriter.Verbose ? "ON" : "off")
         );
 
         TryOpenBrowser();
 
-        Logger.WriteDim("  Press Ctrl+C to stop.");
+        LogWriter.WriteDim("  Press Ctrl+C to stop.");
     }
 
     /// <summary>Called after the HTTP listener starts. Override for additional setup (build, file watching, etc.).</summary>
     protected virtual void OnStarted() { }
 
-    public virtual void Stop()
+    public virtual void Shutdown()
     {
-        _cts?.Cancel();
-        _listener?.Stop();
+        Cts?.Cancel();
+        Listener?.Stop();
 
-        Logger.Info($"Total requests: {_totalRequests}, cache hits: {_cacheHits}, bytes served: {_totalBytesServed:N0}");
+        LogWriter.Info($"Total requests: {TotalRequests}, cache hits: {CacheHits}, bytes served: {TotalBytesServed:N0}");
     }
 
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        Shutdown();
+        GC.SuppressFinalize(this);
+    }
 
     private async Task ServeHttp(CancellationToken ct)
     {
-        while (!ct.IsCancellationRequested && _listener!.IsListening)
+        while (!ct.IsCancellationRequested && Listener!.IsListening)
         {
             try
             {
-                var ctx = await _listener.GetContextAsync().WaitAsync(ct);
-                _ = Task.Run(() => HandleRequest(ctx));
+                var ctx = await Listener.GetContextAsync().WaitAsync(ct);
+                _ = Task.Run(() => HandleRequest(ctx), CancellationToken.None);
             }
             catch { break; }
         }
@@ -114,20 +121,20 @@ public abstract class HttpServerBase : IDisposable
             if (method == "OPTIONS")
             {
                 ctx.Response.StatusCode = 204;
-                HttpResponseHelper.AddCorsHeaders(ctx.Response);
+                HttpHelper.AddCorsHeaders(ctx.Response);
                 ctx.Response.OutputStream.Close();
                 sw.Stop();
-                Logger.Request(method, urlPath, 204, sw.ElapsedMilliseconds);
+                LogWriter.Request(method, urlPath, 204, sw.ElapsedMilliseconds);
                 return;
             }
 
             // Only allow GET and HEAD
             if (method != "GET" && method != "HEAD")
             {
-                await HttpResponseHelper.WriteStringResponse(ctx, 405, "<h1>405 — Method Not Allowed</h1>");
+                await HttpHelper.WriteStringResponse(ctx, 405, "<h1>405 — Method Not Allowed</h1>");
                 ctx.Response.Headers["Allow"] = "GET, HEAD, OPTIONS";
                 sw.Stop();
-                Logger.Request(method, urlPath, 405, sw.ElapsedMilliseconds);
+                LogWriter.Request(method, urlPath, 405, sw.ElapsedMilliseconds);
                 return;
             }
 
@@ -136,22 +143,22 @@ public abstract class HttpServerBase : IDisposable
             string filePath;
             try
             {
-                filePath = FilePathResolver.ResolveFilePath(outputDir, urlPath);
+                filePath = PathMapper.ResolveFilePath(outputDir, urlPath);
             }
             catch (UnauthorizedAccessException)
             {
-                await HttpResponseHelper.WriteStringResponse(ctx, 403, "<h1>403 — Forbidden</h1>");
+                await HttpHelper.WriteStringResponse(ctx, 403, "<h1>403 — Forbidden</h1>");
                 sw.Stop();
-                Logger.Request(method, urlPath, 403, sw.ElapsedMilliseconds);
-                Logger.Warn("Security", $"Path traversal blocked: {urlPath}");
+                LogWriter.Request(method, urlPath, 403, sw.ElapsedMilliseconds);
+                LogWriter.Warn("Security", $"Path traversal blocked: {urlPath}");
                 return;
             }
 
             if (!File.Exists(filePath))
             {
-                await NotFoundResponse.WriteNotFound(ctx, outputDir, urlPath);
+                await ErrorPage.WriteNotFound(ctx, outputDir, urlPath);
                 sw.Stop();
-                Logger.Request(method, urlPath, 404, sw.ElapsedMilliseconds);
+                LogWriter.Request(method, urlPath, 404, sw.ElapsedMilliseconds);
                 return;
             }
 
@@ -161,7 +168,7 @@ public abstract class HttpServerBase : IDisposable
             if (await TryHandleSpecialFile(ctx, filePath, ext))
             {
                 sw.Stop();
-                Logger.Request(method, urlPath, 200, sw.ElapsedMilliseconds);
+                LogWriter.Request(method, urlPath, 200, sw.ElapsedMilliseconds);
                 return;
             }
 
@@ -176,19 +183,19 @@ public abstract class HttpServerBase : IDisposable
             Interlocked.Increment(ref _totalRequests);
             sw.Stop();
             var status = ctx.Response.StatusCode;
-            Logger.Request(method, urlPath, status, sw.ElapsedMilliseconds);
+            LogWriter.Request(method, urlPath, status, sw.ElapsedMilliseconds);
         }
         catch (Exception ex)
         {
             try
             {
-                await HttpResponseHelper.WriteStringResponse(ctx, 500,
+                await HttpHelper.WriteStringResponse(ctx, 500,
                     $"<h1>500 — Internal Server Error</h1><p>{WebUtility.HtmlEncode(ex.Message)}</p>");
             }
             catch { }
             sw.Stop();
-            Logger.Request(method, urlPath, 500, sw.ElapsedMilliseconds);
-            Logger.Error("Server", ex.Message);
+            LogWriter.Request(method, urlPath, 500, sw.ElapsedMilliseconds);
+            LogWriter.Error("Server", ex.Message);
         }
         finally
         {
@@ -202,14 +209,14 @@ public abstract class HttpServerBase : IDisposable
     /// </summary>
     private async Task WriteFileResponse(HttpListenerContext ctx, string filePath, string ext)
     {
-        HttpResponseHelper.AddCorsHeaders(ctx.Response);
-        ctx.Response.ContentType = MimeTypeMap.GetMimeType(filePath);
+        HttpHelper.AddCorsHeaders(ctx.Response);
+        ctx.Response.ContentType = MimeMapper.GetMimeType(filePath);
 
-        var etag = HttpResponseHelper.ComputeETag(filePath);
+        var etag = HttpHelper.ComputeETag(filePath);
         ctx.Response.Headers["ETag"] = etag;
         ctx.Response.Headers["Last-Modified"] = new FileInfo(filePath).LastWriteTimeUtc.ToString("R");
 
-        if (HttpResponseHelper.IsETagMatch(ctx.Request, etag))
+        if (HttpHelper.IsETagMatch(ctx.Request, etag))
         {
             ctx.Response.StatusCode = 304;
             ctx.Response.ContentLength64 = 0;
@@ -244,20 +251,20 @@ public abstract class HttpServerBase : IDisposable
 
     private void TryOpenBrowser()
     {
-        if (!_openBrowser) return;
+        if (!OpenBrowser) return;
 
         try
         {
             Process.Start(new ProcessStartInfo
             {
-                FileName = $"http://{_host}:{Port}/",
+                FileName = $"http://{Host}:{Port}/",
                 UseShellExecute = true
             });
-            Logger.Info("Browser", "Opened in default browser");
+            LogWriter.Info("Browser", "Opened in default browser");
         }
         catch (Exception ex)
         {
-            Logger.Warn("Browser", $"Could not open browser: {ex.Message}");
+            LogWriter.Warn("Browser", $"Could not open browser: {ex.Message}");
         }
     }
 }

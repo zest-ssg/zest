@@ -27,7 +27,7 @@ public class BuildService
     public BuildResult? LastResult => _lastResult;
 
     /// <summary>
-    /// Print build result to console using the Logger.
+    /// Print build result to console using the LogWriter.
     /// </summary>
     public static void PrintResult(BuildResult result, SiteConfig config)
     {
@@ -35,7 +35,7 @@ public class BuildService
 
         if (errorsList.Length == 0)
         {
-            Logger.BuildSummary("Build", result.TotalPages, result.ProcessedPages, result.CachedPages, result.AssetsCopied, result.DurationMs);
+            LogWriter.BuildSummary("Build", result.TotalPages, result.ProcessedPages, result.CachedPages, result.AssetsCopied, result.DurationMs);
         }
         else
         {
@@ -45,13 +45,13 @@ public class BuildService
         }
 
         foreach (var err in errorsList)
-            Logger.Error("Build", err);
+            LogWriter.Error("Build", err);
 
-        if (Logger.Verbose)
+        if (LogWriter.Verbose)
         {
             var outputDir = Path.GetFullPath(Path.Combine(
                 Directory.GetCurrentDirectory(), config.OutputDir.TrimStart('.', '\\', '/')));
-            Logger.VerboseLog($"  Output: {outputDir}");
+            LogWriter.VerboseLog($"  Output: {outputDir}");
         }
     }
 }
