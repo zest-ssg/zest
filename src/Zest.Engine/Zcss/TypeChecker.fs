@@ -5,7 +5,7 @@ open System.Collections.Generic
 open System.Text.RegularExpressions
 
 // ============================================================
-// ZSS Type Checker — CSS value type safety and validation
+// ZCSS Type Checker — CSS value type safety and validation
 // ============================================================
 
 /// Represents the expected CSS type for a property value.
@@ -335,8 +335,8 @@ module TypeChecker =
                 Line = line
             }
 
-    /// Validate an entire ZSS AST node list.
-    let rec validate (nodes: ZssNode list) : TypeError list =
+    /// Validate an entire ZCSS AST node list.
+    let rec validate (nodes: ZcssNode list) : TypeError list =
         nodes |> List.collect (fun node ->
             match node with
             | RuleSet(_, decls, children, _) ->
@@ -359,7 +359,7 @@ module TypeChecker =
 
     /// Format a type error for display.
     let formatError (err: TypeError) : string =
-        sprintf "[ZSS TYPE] %s: property '%s' expects %s but got '%s' (value: '%s')"
+        sprintf "[ZCSS TYPE] %s: property '%s' expects %s but got '%s' (value: '%s')"
             (if err.Line > 0 then sprintf "line %d" err.Line else "unknown")
             err.Property err.ExpectedType err.ActualType err.Value
 

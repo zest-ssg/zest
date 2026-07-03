@@ -6,7 +6,7 @@ open System.Text
 open System.Text.RegularExpressions
 
 // ============================================================
-// ZSS Compiler — CSS generation with minification & auto-prefix
+// ZCSS Compiler — CSS generation with minification & auto-prefix
 // ============================================================
 
 module Compiler =
@@ -96,7 +96,7 @@ module Compiler =
             | _ -> []
 
     /// Collect all declarations from matching rules (for @extend)
-    let private collectExtendDecls (selector: string) (allNodes: ZssNode list) : Declaration list =
+    let private collectExtendDecls (selector: string) (allNodes: ZcssNode list) : Declaration list =
         let rec collect nodes =
             [ for n in nodes do
                 match n with
@@ -111,10 +111,10 @@ module Compiler =
     let private expandMixin
         (name: string)
         (args: string list)
-        (content: ZssNode list)
-        (mixins: IDictionary<string, (string * string option) list * ZssNode list>)
+        (content: ZcssNode list)
+        (mixins: IDictionary<string, (string * string option) list * ZcssNode list>)
         (vars: IDictionary<string, string>)
-        : ZssNode list =
+        : ZcssNode list =
 
         match mixins.TryGetValue name with
         | false, _ -> []
@@ -152,12 +152,12 @@ module Compiler =
     let private evalCondition (cond: string) (vars: IDictionary<string, string>) : bool =
         Evaluator.evalBool cond vars
 
-    let compile (nodes: ZssNode list) (vars: IDictionary<string, string>) : string =
+    let compile (nodes: ZcssNode list) (vars: IDictionary<string, string>) : string =
         let sb = StringBuilder()
         let minify = ref false
 
         // First pass: collect all mixins
-        let mixins = Dictionary<string, (string * string option) list * ZssNode list>()
+        let mixins = Dictionary<string, (string * string option) list * ZcssNode list>()
         let rec collectMixins ns =
             for n in ns do
                 match n with
@@ -174,7 +174,7 @@ module Compiler =
         let resolveBareVarsInCompile (value: string) : string =
             Evaluator.resolveValue value vars
 
-        let rec emitNodes (nodes: ZssNode list) (parent: string) =
+        let rec emitNodes (nodes: ZcssNode list) (parent: string) =
             for node in nodes do
                 match node with
 
@@ -184,10 +184,10 @@ module Compiler =
                     if key = "minify" && value = "true" then minify := true
 
                 | Warn(msg, _) ->
-                    eprintfn "[ZSS WARN] %s" msg
+                    eprintfn "[ZCSS WARN] %s" msg
 
                 | Debug(msg, _) ->
-                    eprintfn "[ZSS DEBUG] %s" msg
+                    eprintfn "[ZCSS DEBUG] %s" msg
 
                 | CssVarExport(name, value, _) ->
                     sb.AppendLine(sprintf ":root { --%s: %s; }" name value) |> ignore

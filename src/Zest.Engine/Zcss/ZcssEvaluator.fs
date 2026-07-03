@@ -5,7 +5,7 @@ open System.Collections.Generic
 open System.Text.RegularExpressions
 
 // ============================================================
-// ZSS Evaluator — Value resolution pipeline
+// ZCSS Evaluator — Value resolution pipeline
 // ============================================================
 
 module Evaluator =

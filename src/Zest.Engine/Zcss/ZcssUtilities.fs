@@ -5,7 +5,7 @@ open System.Collections.Generic
 open System.Text
 
 // ============================================================
-// ZSS Utilities — Built-in utility classes and functions
+// ZCSS Utilities — Built-in utility classes and functions
 // ============================================================
 
 module Utilities =

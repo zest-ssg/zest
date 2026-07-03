@@ -5,7 +5,7 @@ open System.Collections.Generic
 open System.Text.RegularExpressions
 
 // ============================================================
-// ZSS Parser Core — Shared types, patterns, and helpers
+// ZCSS Parser Core — Shared types, patterns, and helpers
 // ============================================================
 
 module ParserCore =
@@ -14,7 +14,7 @@ module ParserCore =
         | BraceMode
         | IndentMode
 
-    type ZssError = {
+    type ZcssError = {
         Message: string
         Line: int
         Col:  int
@@ -29,9 +29,9 @@ module ParserCore =
                     let marker = String(' ', this.Col - 1) + "^"
                     sprintf "  %d | %s\n     | %s" this.Line line marker
                 else ""
-            sprintf "[ZSS ERROR] %d:%d\n  %s\n%s" this.Line this.Col this.Message ctx
+            sprintf "[ZCSS ERROR] %d:%d\n  %s\n%s" this.Line this.Col this.Message ctx
 
-    let errors = ResizeArray<ZssError>()
+    let errors = ResizeArray<ZcssError>()
     let getErrors() = List.ofSeq errors
     let clearErrors() = errors.Clear()
 
