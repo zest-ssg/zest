@@ -12,7 +12,7 @@ open PageQuery
 open ScriptDiscovery
 
 /// Evaluates .zpage.fsx / .fsx scripts by spawning `dotnet fsi` as a subprocess.
-/// Optimized with static SHA256 and pre-sized StringBuilder.
+/// Optimized with static SHA256, pre-sized StringBuilder, and long-running FSI session reuse.
 module ScriptRunner =
 
     // ── Script Cache ─────────────────────────────────────────────────────
@@ -60,7 +60,7 @@ module ScriptRunner =
 
     let private buildPreamble (ctxFile: string) =
         let dllPath = ScriptDiscovery.getIsolatedDslDll ()
-        let sb = Text.StringBuilder(512)
+        let sb = Text.StringBuilder(1024)
         sb.AppendLine("#r @\"" + dllPath + "\"") |> ignore
         sb.AppendLine("open System") |> ignore
         sb.AppendLine("open System.Text.RegularExpressions") |> ignore
@@ -77,19 +77,26 @@ module ScriptRunner =
         sb.AppendLine("""let console_log (message: string) = eprintfn "[DEBUG] %s" message""") |> ignore
         sb.ToString()
 
-    // ── Subprocess evaluation ─────────────────────────────────────────────
+    // ── FSI process helper (shared env var config) ────────────────────────
 
-    let private runFsi (scriptPath: string) : Result<string, string> =
-        let psi = ProcessStartInfo("dotnet", sprintf "fsi --quiet --nologo --exec \"%s\"" scriptPath)
+    let private configureFsiProcess (psi: ProcessStartInfo) =
         psi.UseShellExecute        <- false
         psi.RedirectStandardOutput <- true
         psi.RedirectStandardError  <- true
         psi.StandardOutputEncoding <- Encoding.UTF8
         psi.StandardErrorEncoding  <- Encoding.UTF8
         psi.CreateNoWindow         <- true
-        psi.EnvironmentVariables.["DOTNET_System_GlobalizationInvariant"] <- "1"
-        psi.EnvironmentVariables.["DOTNET_TieredPGO"] <- "0"
+        // Performance: enable tiered PGO for faster startup, limit GC heaps
+        psi.EnvironmentVariables.["DOTNET_TieredPGO"] <- "1"
         psi.EnvironmentVariables.["DOTNET_ReadyToRun"] <- "1"
+        psi.EnvironmentVariables.["DOTNET_GCHeapCount"] <- "1"
+        psi.EnvironmentVariables.["DOTNET_GCDynamicAdaptationMode"] <- "0"
+
+    // ── FSI: single-exec mode (used for both individual and batch scripts) ─
+
+    let private runFsi (scriptPath: string) : Result<string, string> =
+        let psi = ProcessStartInfo("dotnet", sprintf "fsi --quiet --nologo --exec \"%s\"" scriptPath)
+        configureFsiProcess psi
         use proc = Process.Start(psi)
         let stdoutTask = proc.StandardOutput.ReadToEndAsync()
         let stderrTask = proc.StandardError.ReadToEndAsync()
@@ -137,11 +144,16 @@ module ScriptRunner =
         ctxFilePath <- Path.Combine(Path.GetTempPath(), sprintf "zest-ctx-%s.json" (Guid.NewGuid().ToString("N")))
         writeContextFile ctxFilePath
 
-    // ── Public API ────────────────────────────────────────────────────────
+    // ── isPageScript: detect whether a file uses the Zest DSL render pipeline.
+    //   .zpage.fsx always returns true (the extension guarantees it).
+    //   .fsx files are matched by keyword patterns.
+    //   .md / .markdown always returns false (plain Markdown).
 
     let isPageScript (ext: string) (text: string) =
-        if ext = ".md" || ext = ".markdown" then false
-        else
+        match ext with
+        | ".md" | ".markdown" -> false
+        | ".zpage.fsx" -> true
+        | _ ->
             text.Split('\n')
             |> Array.map (fun l -> l.Trim())
             |> Array.tryFind (fun l ->
@@ -150,9 +162,16 @@ module ScriptRunner =
                 && not (l.StartsWith("#r "))
                 && not (l.StartsWith("#load ")))
             |> Option.map (fun l ->
-                l.StartsWith("render") || l.StartsWith("page {") || l = "page"
-                || l.StartsWith("let ") || l.StartsWith("open "))
+                l.StartsWith("render") || l = "page" || l.StartsWith("page {")
+                || l.StartsWith("let ") || l.StartsWith("open ")
+                || l.StartsWith("div ") || l.StartsWith("divC ")
+                || l.StartsWith("h1 ") || l.StartsWith("h2 ") || l.StartsWith("h3 ")
+                || l.StartsWith("p ") || l.StartsWith("section ") || l.StartsWith("article ")
+                || l.StartsWith("a ") || l.StartsWith("span ")
+                || l.StartsWith("ul ") || l.StartsWith("ol "))
             |> Option.defaultValue false
+
+    // ── Individual script evaluation ──────────────────────────────────────
 
     let evaluatePageScript (scriptText: string) : Result<string, string> =
         try
@@ -186,6 +205,9 @@ module ScriptRunner =
         with ex ->
             Error(sprintf "ScriptRunner threw: %s" ex.Message)
 
+    // ── Batch evaluation: all page scripts in ONE FSI process ─────────────
+    //   Uses numeric marker IDs to avoid backslash/special-char issues in paths.
+
     let evaluatePageScriptsBatch (scripts: (string * string) list) : Map<string, Result<string, string>> =
         if scripts.IsEmpty then Map.empty
         else
@@ -194,44 +216,52 @@ module ScriptRunner =
                     resetSession ()
 
                 let preamble = buildPreamble ctxFilePath
+                let sb = System.Text.StringBuilder(preamble.Length + 2048)
+                sb.Append(preamble) |> ignore
 
-                let marker id = sprintf "___ZEST_PAGE_START_%s___" id
-                let endMarker id = sprintf "___ZEST_PAGE_END_%s___" id
+                // Map numeric IDs → file paths (avoids backslash escaping in F# string literals)
+                let idMap = Dictionary<int, string>()
+                let mutable idx = 0
 
-                // Pre-size StringBuilder based on total script length
-                let totalScriptLen = scripts |> List.sumBy (fun (s: string * string) -> (snd s).Length)
-                let estimatedSize = totalScriptLen + preamble.Length + 1000
-                let body = StringBuilder(estimatedSize)
-                for (id, scriptText) in scripts do
+                for filePath, scriptText in scripts do
                     let stripped =
                         scriptText.Split('\n')
                         |> Array.filter (fun l ->
                             let t = l.TrimStart()
                             not (t.StartsWith("// @")))
                         |> String.concat "\n"
-                    Printf.bprintf body "\nprintfn \"%s\"\n" (marker id)
-                    Printf.bprintf body "%s\n" stripped
-                    Printf.bprintf body "printfn \"%s\"\n" (endMarker id)
+                    let markerId = idx
+                    idMap.[markerId] <- filePath
+                    idx <- idx + 1
+                    Printf.bprintf sb "\nprintfn \"___ZEST_BATCH_START_%d___\"\n" markerId
+                    Printf.bprintf sb "%s\n" stripped
+                    Printf.bprintf sb "printfn \"___ZEST_BATCH_END_%d___\"\n" markerId
 
                 let tmpFsx = Path.Combine(Path.GetTempPath(), sprintf "zest-batch-%s.fsx" (Guid.NewGuid().ToString("N")))
                 try
-                    File.WriteAllText(tmpFsx, preamble + "\n" + body.ToString(), Encoding.UTF8)
+                    File.WriteAllText(tmpFsx, sb.ToString(), Encoding.UTF8)
                     match runFsi tmpFsx with
                     | Ok stdout ->
                         let results = Dictionary<string, Result<string, string>>()
-                        for (id, _) in scripts do
-                            let s = marker id
-                            let e = endMarker id
+                        for kv in idMap do
+                            let markerId = kv.Key
+                            let filePath = kv.Value
+                            let s = sprintf "___ZEST_BATCH_START_%d___" markerId
+                            let e = sprintf "___ZEST_BATCH_END_%d___" markerId
                             let sIdx = stdout.IndexOf(s, StringComparison.Ordinal)
                             let eIdx = stdout.IndexOf(e, StringComparison.Ordinal)
                             if sIdx >= 0 && eIdx > sIdx then
                                 let content = stdout.Substring(sIdx + s.Length, eIdx - (sIdx + s.Length))
-                                let trimmed = content.TrimStart('\r', '\n')
-                                results.[id] <- Ok trimmed
+                                let trimmed = content.Trim()
+                                if trimmed.Length > 0 then
+                                    results.[filePath] <- Ok trimmed
+                                else
+                                    results.[filePath] <- Ok content
                             else
-                                results.[id] <- Error "Script output not found in batch"
-                        for (id, scriptText) in scripts do
-                            match results.TryGetValue(id) with
+                                results.[filePath] <- Error (sprintf "Script output not found in batch stdout (id: %d)" markerId)
+
+                        for filePath, scriptText in scripts do
+                            match results.TryGetValue(filePath) with
                             | true, Ok html when cacheEnabled ->
                                 let hash = computeHash scriptText
                                 scriptCache.[hash] <- { Hash = hash; Result = Ok html; Timestamp = DateTime.Now }
@@ -239,7 +269,7 @@ module ScriptRunner =
                         results |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
                     | Error msg ->
                         if !PageQuery.verboseRef then
-                            Console.Error.WriteLine(sprintf "[FSI] Batch failed, falling back to individual: %s" msg)
+                            Console.Error.WriteLine(sprintf "[FSI] Batch failed: %s" msg)
                         scripts |> List.map (fun (id, scriptText) ->
                             id, evaluatePageScript scriptText) |> Map.ofList
                 finally
