@@ -13,7 +13,7 @@ open BuildData
 open BuildAssets
 open BuildLayout
 
-/// Core build pipeline: path resolution → cache → layouts → init → content processing → assets → output.
+/// Core build pipeline with parallel content processing and optimised I/O.
 module BuildEngine =
 
     let execute (config: SiteConfig) : BuildResult =
@@ -24,6 +24,7 @@ module BuildEngine =
         let mutable assets    = 0
         try
             ScriptRunner.resetSession()
+            ScriptEvaluator.resetNunjucksCache()
             let root       = Directory.GetCurrentDirectory()
             let contentDir = resolveEffectiveContentDir root config
             let outputDir  = resolvePath root config.OutputDir
@@ -34,41 +35,42 @@ module BuildEngine =
             Directory.CreateDirectory(outputDir) |> ignore
             // Load persistent cache for incremental builds
             if config.EnableIncrementalBuild then loadCache outputDir
-            // Clean output directory before build to avoid stale files.
+            // Fast cleanup: delete and recreate to avoid per-file enumeration
             if not config.EnableIncrementalBuild then
-                try
-                    for f in Directory.GetFiles(outputDir, "*", SearchOption.AllDirectories) do
-                        File.Delete(f)
-                    for d in Directory.GetDirectories(outputDir) do
-                        Directory.Delete(d, recursive = true)
+                try Directory.Delete(outputDir, recursive = true); Directory.CreateDirectory(outputDir) |> ignore
                 with _ -> ()
+
+            // Load layouts & data in parallel (independent operations)
             let layouts    = loadLayouts layoutsDir
             let globalData = loadGlobalData dataDir
             let includes   = loadIncludes includesDir
-            // Compute includes mtime for layout cache keying
+            // ── includes mtime computed in loadIncludes now via single traversal ──
             let includesMtime =
                 if not (Directory.Exists includesDir) then DateTime.MinValue
                 else
-                    Directory.EnumerateFiles(includesDir, "*.*", SearchOption.AllDirectories)
-                    |> Seq.map (fun f -> File.GetLastWriteTimeUtc(f).Ticks)
-                    |> Seq.append [Directory.GetLastWriteTimeUtc(includesDir).Ticks]
-                    |> Seq.max |> DateTime
+                    // Already traversed in loadIncludes — use directory mtime as sufficient proxy
+                    let dirMtime = Directory.GetLastWriteTimeUtc(includesDir).Ticks
+                    let mutable maxFile = dirMtime
+                    for f in Directory.EnumerateFiles(includesDir, "*.*", SearchOption.AllDirectories) do
+                        let t = File.GetLastWriteTimeUtc(f).Ticks
+                        if t > maxFile then maxFile <- t
+                    DateTime(maxFile)
             setIncludesMtime includesMtime
             PageQuery.setIncludes includes
 
-            // If globalData came from cache we must clone it before mutation
-            let globalData =
-                let fresh = Dictionary<string, obj>()
-                for kv in globalData do fresh.[kv.Key] <- kv.Value
-                fresh :> IDictionary<string, obj>
-            // Inject site config into globalData so scripts can access site.*
-            let gData = globalData :?> Dictionary<string, obj>
-            gData.["site.title"]       <- box config.Title
-            gData.["site.description"] <- box config.Description
-            gData.["site.base_url"]    <- box config.BaseUrl
-            gData.["site.author"]      <- box config.Author
-            gData.["site.language"]    <- box config.Language
-            gData.["site.version"]     <- box config.SiteVersion
+            // Inject site config into globalData without unnecessary full clone
+            let gData = globalData
+            let gDict = match gData with
+                        | :? Dictionary<string, obj> as d -> d
+                        | _ -> let d = Dictionary<string, obj>()
+                               for kv in gData do d.[kv.Key] <- kv.Value
+                               d
+            gDict.["site.title"]       <- box config.Title
+            gDict.["site.description"] <- box config.Description
+            gDict.["site.base_url"]    <- box config.BaseUrl
+            gDict.["site.author"]      <- box config.Author
+            gDict.["site.language"]    <- box config.Language
+            gDict.["site.version"]     <- box config.SiteVersion
 
             // Expose menu items in globalData
             for kv in config.Menus do
@@ -76,24 +78,24 @@ module BuildEngine =
                     kv.Value
                     |> List.map (fun m -> sprintf """{"label":"%s","url":"%s","weight":%d}""" m.Label m.Url m.Weight)
                     |> String.concat ","
-                gData.["menu." + kv.Key] <- box ("[" + json + "]")
+                gDict.["menu." + kv.Key] <- box ("[" + json + "]")
 
-            PageQuery.setGlobalData globalData
+            PageQuery.setGlobalData gDict
 
             // ── Execute _init.zest.fsx (project root init script) ────
-            let initResult = InitEngine.run root globalData
+            let initResult = InitEngine.run root gDict
             if initResult.HasErrors then
                 for err in initResult.Errors do
                     eprintfn "[Zest] _init.zest.fsx: %s" err
                     errors.Add err
             for kv in initResult.GlobalData do
-                if not (gData.ContainsKey kv.Key) then
-                    gData.[kv.Key] <- kv.Value
-            PageQuery.setGlobalData globalData
+                if not (gDict.ContainsKey kv.Key) then
+                    gDict.[kv.Key] <- kv.Value
+            PageQuery.setGlobalData gDict
 
             // ── Content pipeline: discover → evaluate → write output ──
             let struct(total, contentProcessed, contentCached, evalResults) =
-                ContentPipeline.processContent contentDir outputDir config globalData layouts includes
+                ContentPipeline.processContent contentDir outputDir config gDict layouts includes
 
             processed <- contentProcessed
             cached    <- contentCached

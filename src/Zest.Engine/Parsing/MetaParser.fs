@@ -23,18 +23,12 @@ open Zest.Engine
 /// </summary>
 module MetaParser =
 
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    //  Shared key-value helpers (used by all three parsers)
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    /// Recognised metadata keys and how they map to ContentMeta fields.
     let private knownKeys =
         set [ "layout"; "title"; "permalink"; "description"
               "date"; "tags"; "tag"; "categories"; "draft"
               "author"; "updated"; "weight"; "order"
               "template"; "collection" ]
 
-    /// Parse a single key-value string pair and merge into the accumulator.
     let private applyPair (m: ContentMeta) (key: string) (rawVal: string) =
         let v = rawVal.Trim('"', '\'')
         match key with
@@ -42,17 +36,14 @@ module MetaParser =
         | "title"       -> { m with Title       = Some v }
         | "permalink"   -> { m with Permalink   = Some v }
         | "description" -> { m with Description = Some v }
-
         | "date" ->
             match DateTime.TryParse v with
             | true, dt -> { m with Date = Some dt }
             | _ -> m
-
         | "updated" ->
             match DateTime.TryParse v with
             | true, dt -> { m with Updated = Some dt }
             | _ -> m
-
         | "tags" | "tag" | "categories" ->
             let tags =
                 v.Trim('[', ']').Split(',')
@@ -60,26 +51,22 @@ module MetaParser =
                 |> Array.filter (fun t -> t.Length > 0)
                 |> Array.toList
             { m with Tags = m.Tags @ tags }
-
         | "draft" ->
             let isDraft =
                 match v.ToLowerInvariant() with
                 | "true" | "yes" | "1" -> true
                 | _ -> false
             { m with Draft = isDraft }
-
         | "author"      -> { m with Author      = Some v }
         | "template"    -> { m with Template    = Some v }
         | "collection"  -> { m with Collection  = Some v }
-
         | "weight" | "order" ->
             match Int32.TryParse v with
             | true, n -> { m with Weight = Some n }
             | _ -> m
-
         | _ -> { m with Extra = m.Extra |> Map.add key v }
 
-    /// Parse a sequence of "key: value" lines into ContentMeta (used by F# comment + HTML comment parsers).
+    /// Parse a sequence of "key: value" lines into ContentMeta.
     let private parsePairs (lines: string seq) (seed: ContentMeta) =
         let mutable m = seed
         for line in lines do
@@ -95,10 +82,9 @@ module MetaParser =
     //  TOML front matter parser (primary format)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    /// Find the line indices [start; end] of a +++ delimited TOML block.
-    /// Returns None when no valid TOML block is found.
-    let private findTomlBlock (text: string) : (int * int * string) option =
-        let lines = text.Replace("\r\n", "\n").Split('\n')
+    /// Find the line indices of a +++ delimited TOML block within pre-split lines.
+    /// Returns (openIdx, closeIdx, tomlBlock, bodyText).
+    let private findTomlBlock (lines: string[]) : (int * int * string * string) option =
         match lines |> Array.tryFindIndex (fun l -> l.Trim() = "+++") with
         | Some openIdx ->
             let after = lines |> Array.skip (openIdx + 1)
@@ -111,22 +97,19 @@ module MetaParser =
                     if closeIdx + 1 < lines.Length then
                         String.Join("\n", lines.[closeIdx + 1 ..]).TrimStart('\n', '\r')
                     else ""
-                Some (openIdx, closeIdx, tomlBlock)
+                Some (openIdx, closeIdx, tomlBlock, body)
             | None -> None
         | None -> None
 
-    /// Parse known fields from a TomlTable, falling back to Extra for unknowns.
     let private metaFromTomlTable (table: TomlTable) : ContentMeta =
         let mutable m = ContentMeta.empty
 
-        // Helper: walk a candidate key through all recognised forms
         let tryGetAny (keys: string list) =
             keys |> List.tryPick (fun k ->
                 match table.TryGetValue(k) with
                 | true, v -> Some v
                 | _ -> None)
 
-        // ── string fields ────────────────────────────
         let applyStr key setter =
             match table.TryGetValue(key) with
             | true, v -> m <- setter m (Some (v.ToString()))
@@ -140,7 +123,6 @@ module MetaParser =
         applyStr "template"    (fun m' v -> { m' with Template    = v })
         applyStr "collection"  (fun m' v -> { m' with Collection  = v })
 
-        // ── date fields ──────────────────────────────
         let tryParseDate (value: obj) =
             match value with
             | :? DateTimeOffset as dto -> Some dto.UtcDateTime
@@ -150,7 +132,6 @@ module MetaParser =
                 | true, dt -> Some dt
                 | _ -> None
             | other ->
-                // Fallback: try .ToString() → DateTime.Parse for TOML local date types
                 match DateTime.TryParse (other.ToString()) with
                 | true, dt -> Some dt
                 | _ -> None
@@ -169,7 +150,6 @@ module MetaParser =
             | _ -> ()
         | _ -> ()
 
-        // ── tags / categories ────────────────────────
         match tryGetAny ["tags"; "tag"; "categories"] with
         | Some v ->
             match v with
@@ -182,14 +162,12 @@ module MetaParser =
             | _ -> ()
         | _ -> ()
 
-        // ── draft (boolean) ───────────────────────────
         match table.TryGetValue("draft") with
         | true, (:? bool as b)  -> m <- { m with Draft = b }
         | true, (:? string as s) ->
             m <- { m with Draft = s.ToLowerInvariant() = "true" || s = "1" || s = "yes" }
         | _ -> ()
 
-        // ── weight / order (integer) ──────────────────
         match tryGetAny ["weight"; "order"] with
         | Some (:? int64 as n)  -> m <- { m with Weight = Some (int n) }
         | Some (:? int as n)    -> m <- { m with Weight = Some n }
@@ -199,7 +177,6 @@ module MetaParser =
             | _ -> ()
         | _ -> ()
 
-        // ── extra: capture all unknown keys ───────────
         for kv in table do
             let k = kv.Key.ToLowerInvariant()
             if not (knownKeys.Contains k) then
@@ -207,37 +184,37 @@ module MetaParser =
 
         m
 
-    /// Parse TOML front matter delimited by +++ on their own lines.
-    /// Returns (meta, body).  Falls back to empty meta on parse failure.
-    let parseToml (text: string) : ContentMeta * string =
-        match findTomlBlock text with
-        | Some (_openIdx, closeIdx, tomlBlock) when tomlBlock.Length > 0 ->
+    /// Normalize text: \r\n → \n, split to lines. Call once at entry, reuse lines everywhere.
+    let private normalizeLines (text: string) : string[] =
+        text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n')
+
+    /// Parse TOML front matter using pre-normalized lines. Returns (meta, body).
+    let private parseTomlWithLines (lines: string[]) : ContentMeta * string =
+        match findTomlBlock lines with
+        | Some (_openIdx, _closeIdx, tomlBlock, body) when tomlBlock.Length > 0 ->
             try
                 let table = Toml.ToModel(tomlBlock)
                 if table <> null && table.Count > 0 then
-                    let lines = text.Replace("\r\n", "\n").Split('\n')
-                    let body =
-                        if closeIdx + 1 < lines.Length then
-                            String.Join("\n", lines.[closeIdx + 1 ..]).TrimStart('\n', '\r')
-                        else ""
                     (metaFromTomlTable table, body)
                 else
-                    (ContentMeta.empty, text)
+                    (ContentMeta.empty, String.Join("\n", lines))
             with _ ->
-                (ContentMeta.empty, text)
-        | _ -> (ContentMeta.empty, text)
+                (ContentMeta.empty, String.Join("\n", lines))
+        | _ -> (ContentMeta.empty, String.Join("\n", lines))
+
+    let parseToml (text: string) : ContentMeta * string =
+        parseTomlWithLines (normalizeLines text)
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     //  F# comment header parser
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    /// Returns true if a line looks like a metadata comment:  // @key value
-    let private isMetadataLine (line: string) =
-        Regex.IsMatch(line.Trim(), @"^//\s*@\w+")
+    let private isMetaLinePat = Regex(@"^//\s*@\w+", RegexOptions.Compiled)
+    let private fsxMetaPat    = Regex(@"^//\s*@(\w+)\s*(.*)$", RegexOptions.Compiled)
 
-    /// Parse // @key value  F# comment metadata from the leading contiguous block.
-    let parseFsxComments (text: string) : ContentMeta =
-        let lines = text.Replace("\r\n", "\n").Split('\n')
+    let private isMetadataLine (line: string) = isMetaLinePat.IsMatch(line.Trim())
+
+    let private parseFsxCommentsWithLines (lines: string[]) : ContentMeta =
         let pairs = ResizeArray<string>()
         let mutable inHeader = true
         let mutable pendingKey : string option = None
@@ -246,7 +223,7 @@ module MetaParser =
             let t = line.Trim()
             if inHeader then
                 if isMetadataLine t then
-                    let m = Regex.Match(t, @"^//\s*@(\w+)\s*(.*)$")
+                    let m = fsxMetaPat.Match(t)
                     if m.Success then
                         let k = m.Groups.[1].Value.ToLowerInvariant()
                         let v = m.Groups.[2].Value.Trim().Trim('"', '\'')
@@ -254,39 +231,29 @@ module MetaParser =
                             pairs.Add(k + ": " + v)
                             pendingKey <- None
                         else
-                            // Empty value = continuation hint; next non-meta line is the value
                             pendingKey <- Some k
                 elif pendingKey.IsSome && t <> "" && not (t.StartsWith("//")) then
-                    // Consume the continuation value
                     pairs.Add(pendingKey.Value + ": " + t)
                     pendingKey <- None
                 elif pendingKey.IsSome && t.StartsWith("//") && not (isMetadataLine t) then
-                    // Plain comment after pending key → consume as value
                     let plain = t.TrimStart('/').Trim()
                     pairs.Add(pendingKey.Value + ": " + plain)
                     pendingKey <- None
-                elif t = "" then
-                    // Blank lines are allowed within the header
-                    ()
+                elif t = "" then ()
                 elif not (t.StartsWith("//")) then
                     inHeader <- false
-                // else: non-metadata comments are ignored
-            else
-                ()
-
         parsePairs pairs ContentMeta.empty
+
+    let parseFsxComments (text: string) : ContentMeta =
+        parseFsxCommentsWithLines (normalizeLines text)
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     //  HTML comment header parser
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    /// Matches: <!-- @key value -->
     let private htmlMetaRegex = Regex(@"^<!--\s*@(\w+)\s*(.*?)\s*-->$", RegexOptions.Compiled)
 
-    /// Parse <!-- @key value --> metadata from the leading contiguous comment block.
-    /// Metadata comments are removed from the body; non-metadata HTML comments are preserved.
-    let parseHtmlComments (text: string) : ContentMeta * string =
-        let lines = text.Replace("\r\n", "\n").Split('\n')
+    let private parseHtmlCommentsWithLines (lines: string[]) : ContentMeta * string =
         let metaPairs = ResizeArray<string>()
         let cleanedLines = ResizeArray<string>()
         let mutable inHeader = true
@@ -300,16 +267,12 @@ module MetaParser =
                     let v = m.Groups.[2].Value.Trim().Trim('"', '\'')
                     if v.Length > 0 then
                         metaPairs.Add(k + ": " + v)
-                    // Metadata comments are NOT added to cleanedLines
                 elif t = "" then
-                    // Preserve blank lines in body
                     cleanedLines.Add(lines.[i])
                 elif t.StartsWith("<!--") then
-                    // Non-metadata HTML comment → end header, keep in body
                     cleanedLines.Add(lines.[i])
                     inHeader <- false
                 elif not (t.StartsWith("<!--")) then
-                    // Non-comment, non-blank line → end header
                     cleanedLines.Add(lines.[i])
                     inHeader <- false
                 else
@@ -321,24 +284,25 @@ module MetaParser =
         let body = String.Join("\n", cleanedLines)
         (meta, body)
 
+    let parseHtmlComments (text: string) : ContentMeta * string =
+        parseHtmlCommentsWithLines (normalizeLines text)
+
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     //  Unified entry point
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     /// Unified entry point. Returns (meta, body).
-    ///
-    /// Priority for all file types: TOML front matter (+++) first,
-    /// then falls back to the comment-based parser appropriate for the extension.
+    /// Text is normalized once (\r\n → \n, split to lines) and reused across all parsers.
     let parse (ext: string) (text: string) : ContentMeta * string =
+        let lines = normalizeLines text
         // Always try TOML first — it's the canonical format
-        let tomlMeta, tomlBody = parseToml text
+        let tomlMeta, tomlBody = parseTomlWithLines lines
         if tomlMeta <> ContentMeta.empty then
             (tomlMeta, tomlBody)
         else
             match ext with
             | ".znjk" ->
-                parseHtmlComments text
+                parseHtmlCommentsWithLines lines
             | _ ->
-                // .zpage.fsx / .fsx / .md without +++ headers
-                let meta = parseFsxComments text
-                (meta, text)
+                let meta = parseFsxCommentsWithLines lines
+                (meta, String.Join("\n", lines))

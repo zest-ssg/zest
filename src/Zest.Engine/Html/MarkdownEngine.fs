@@ -12,14 +12,22 @@ open Zest.Engine
 // ============================================================
 
 module MarkdownEngine =
-    let private codeBlockPat    = Regex(@"(?s)```(\w*)\r?\n(.*?)```",       RegexOptions.Compiled)
-    let private inlineCodePat   = Regex(@"(?<!`)`([^`]+)`(?!`)",         RegexOptions.Compiled)
-    let private boldPat         = Regex(@"\*\*(.+?)\*\*",                RegexOptions.Compiled)
-    let private italicPat       = Regex(@"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", RegexOptions.Compiled)
-    let private strikePat       = Regex(@"~~(.+?)~~",                    RegexOptions.Compiled)
-    let private linkPat         = Regex(@"\[([^\]]+)\]\(([^)]+)\)",      RegexOptions.Compiled)
-    let private imagePat        = Regex(@"!\[([^\]]*)\]\(([^)]+)\)",     RegexOptions.Compiled)
-    let private hrPat           = Regex(@"^(---|\*\*\*|___)\s*$",        RegexOptions.Multiline ||| RegexOptions.Compiled)
+    // All Regex lifted to module-level compiled static — zero runtime construction
+    let private codeBlockPat  = Regex(@"(?s)```(\w*)\r?\n(.*?)```",         RegexOptions.Compiled)
+    let private inlineCodePat = Regex(@"(?<!`)`([^`]+)`(?!`)",               RegexOptions.Compiled)
+    let private boldPat       = Regex(@"\*\*(.+?)\*\*",                      RegexOptions.Compiled)
+    let private italicPat     = Regex(@"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", RegexOptions.Compiled)
+    let private strikePat     = Regex(@"~~(.+?)~~",                          RegexOptions.Compiled)
+    let private linkPat       = Regex(@"\[([^\]]+)\]\(([^)]+)\)",            RegexOptions.Compiled)
+    let private imagePat      = Regex(@"!\[([^\]]*)\]\(([^)]+)\)",           RegexOptions.Compiled)
+    let private hrPat         = Regex(@"^(---|\*\*\*|___)\s*$",              RegexOptions.Multiline ||| RegexOptions.Compiled)
+    let private headingPat    = Regex(@"^#{1,6}\s",                          RegexOptions.Compiled)
+    let private headingExtractPat = Regex(@"^(#{1,6})\s+(.+)$",              RegexOptions.Compiled)
+    let private codeBlockMarkerPat = Regex(@"^```ZEST_CB_(\d+)```$",         RegexOptions.Compiled)
+    let private orderedListPat = Regex(@"^\d+\.\s",                          RegexOptions.Compiled)
+    let private orderedListStripPat = Regex(@"^\d+\.\s+",                    RegexOptions.Compiled)
+    let private tableSepPat    = Regex(@"^\|?[\s\-|:]+\|?$",                 RegexOptions.Compiled)
+    let private anchorPat      = Regex(@"[^\w]+",                            RegexOptions.Compiled)
 
     let private processInline (text: string) =
         let enc = WebUtility.HtmlEncode
@@ -31,11 +39,12 @@ module MarkdownEngine =
         |> fun s -> inlineCodePat.Replace(s, fun m -> sprintf "<code>%s</code>" (enc m.Groups.[1].Value))
 
     let private parseTableRow (line: string) =
-        line.Trim().Trim('|').Split('|')
+        // Single Trim + Split with RemoveEmptyEntries avoids Trim('|')+Split intermediate
+        line.Trim().Split('|', StringSplitOptions.RemoveEmptyEntries)
         |> Array.map (fun c -> c.Trim())
 
     let private isTableSep (line: string) =
-        Regex.IsMatch(line.Trim(), @"^\|?[\s\-|:]+\|?$")
+        tableSepPat.IsMatch(line.Trim())
 
     let toHtml (markdown: string) : string =
         if String.IsNullOrEmpty markdown then ""
@@ -56,8 +65,8 @@ module MarkdownEngine =
             let lines = afterCode.Split([| "\r\n"; "\n"; "\r" |], StringSplitOptions.None)
             let html  = ResizeArray<string>()
             let para  = ResizeArray<string>()
-            let listU = ResizeArray<string>()   // unordered
-            let listO = ResizeArray<string>()   // ordered
+            let listU = ResizeArray<string>()
+            let listO = ResizeArray<string>()
             let mutable inP = false
             let mutable inU = false
             let mutable inO = false
@@ -81,48 +90,44 @@ module MarkdownEngine =
             let mutable i = 0
             while i < lines.Length do
                 let line = lines.[i].TrimEnd()
-                let cbMatch = Regex.Match(line, @"^```ZEST_CB_(\d+)```$")
+                let cbMatch = codeBlockMarkerPat.Match(line)
                 if cbMatch.Success then
                     flushAll()
                     html.Add(codeBlocks.[int cbMatch.Groups.[1].Value])
                 elif hrPat.IsMatch line then flushAll(); html.Add("<hr />")
-                elif Regex.IsMatch(line, @"^#{1,6}\s") then
+                elif headingPat.IsMatch line then
                     flushAll()
-                    let m = Regex.Match(line, @"^(#{1,6})\s+(.+)$")
+                    let m = headingExtractPat.Match(line)
                     let lvl = m.Groups.[1].Value.Length
                     let cnt = processInline m.Groups.[2].Value
-                    // anchor id from slug
-                    let anchorId = Regex.Replace(cnt.ToLowerInvariant(), @"[^\w]+", "-").Trim('-')
+                    let anchorId = anchorPat.Replace(cnt.ToLowerInvariant(), "-").Trim('-')
                     html.Add(sprintf "<h%d id=\"%s\">%s</h%d>" lvl anchorId cnt lvl)
                 elif line.StartsWith "> " then
                     flushAll()
                     html.Add(sprintf "<blockquote><p>%s</p></blockquote>" (processInline line.[2..]))
-                // Table: look ahead for separator row
                 elif line.Contains("|") && i + 1 < lines.Length && isTableSep lines.[i + 1] then
                     flushAll()
                     let headers = parseTableRow line
                     html.Add("<table><thead><tr>")
                     for h in headers do html.Add(sprintf "<th>%s</th>" (processInline h))
                     html.Add("</tr></thead><tbody>")
-                    i <- i + 2  // skip separator row
+                    i <- i + 2
                     while i < lines.Length && lines.[i].Contains("|") do
                         html.Add("<tr>")
                         for c in parseTableRow lines.[i] do html.Add(sprintf "<td>%s</td>" (processInline c))
                         html.Add("</tr>")
                         i <- i + 1
                     html.Add("</tbody></table>")
-                    i <- i - 1  // outer i <- i+1 will correct
-                // Unordered list
+                    i <- i - 1
                 elif (let t = line.TrimStart() in t.StartsWith("- ") || t.StartsWith("* ")) then
                     flushP(); flushO()
                     if not inU then inU <- true; listU.Clear()
                     let t = line.TrimStart()
                     listU.Add(t.[2..].Trim())
-                // Ordered list
-                elif Regex.IsMatch(line.TrimStart(), @"^\d+\.\s") then
+                elif orderedListPat.IsMatch(line.TrimStart()) then
                     flushP(); flushU()
                     if not inO then inO <- true; listO.Clear()
-                    listO.Add(Regex.Replace(line.TrimStart(), @"^\d+\.\s+", ""))
+                    listO.Add(orderedListStripPat.Replace(line.TrimStart(), ""))
                 elif String.IsNullOrWhiteSpace line then flushAll()
                 else
                     flushU(); flushO()

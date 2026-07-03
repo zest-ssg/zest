@@ -7,15 +7,13 @@ open System.Text.RegularExpressions
 /// URL slug and route computation.
 module PermalinkRouter =
 
+    let private invalidCharsPat  = Regex(@"[^\w\-]",     RegexOptions.Compiled)
+    let private multiDashPat     = Regex(@"-{2,}",       RegexOptions.Compiled)
+
     let slugify (text: string) : string =
         if String.IsNullOrEmpty text then ""
         else
-            text.ToLowerInvariant()
-                .Replace(" ", "-")
-                .Replace("_", "-")
-            |> fun s -> Regex.Replace(s, @"[^\w\-]", "")
-            |> fun s -> Regex.Replace(s, @"-{2,}", "-")
-            |> fun s -> s.Trim('-')
+            invalidCharsPat.Replace(multiDashPat.Replace(text.ToLowerInvariant().Replace(" ", "-").Replace("_", "-"), "-"), "").Trim('-')
 
     /// Parse an explicit permalink string into (url, outputPath).
     let computePermalink (permalink: string) : string * string =
