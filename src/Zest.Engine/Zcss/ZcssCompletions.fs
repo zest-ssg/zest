@@ -4,7 +4,7 @@ open System
 open System.Collections.Generic
 
 // ============================================================
-// ZSS Auto-Completion — LSP-compatible completion data
+// ZCSS Auto-Completion — LSP-compatible completion data
 // ============================================================
 
 /// A single completion item for IDE integration.
@@ -193,7 +193,7 @@ module Completions =
         { Label = "@mixin"; Kind = CssAtRule; Detail = "mixin definition"; InsertText = "@mixin $0"; Documentation = Some "Defines a reusable mixin" }
         { Label = "@include"; Kind = CssAtRule; Detail = "include mixin"; InsertText = "@include $0"; Documentation = Some "Includes a mixin" }
         { Label = "@apply"; Kind = CssAtRule; Detail = "apply utility class"; InsertText = "@apply $0"; Documentation = Some "Applies utility class declarations" }
-        { Label = "@use"; Kind = CssAtRule; Detail = "use module"; InsertText = "@use \"$0\""; Documentation = Some "Imports a ZSS module" }
+        { Label = "@use"; Kind = CssAtRule; Detail = "use module"; InsertText = "@use \"$0\""; Documentation = Some "Imports a ZCSS module" }
         { Label = "@export"; Kind = CssAtRule; Detail = "export CSS variable"; InsertText = "@export $$0"; Documentation = Some "Exports a variable as CSS custom property" }
     ]
 

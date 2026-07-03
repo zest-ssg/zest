@@ -44,6 +44,7 @@
     <Compile Include="Html/HtmlModifiers.fs" />
     <Compile Include="Html/HtmlComponents.fs" />
     <Compile Include="Html/HtmlRenderer.fs" />
+    <Compile Include="Html/HtmlFormatter.fs" />
     <Compile Include="Html/PageBuilder.fs" />
     <Compile Include="Html/TemplateDsl.fs" />
     <Compile Include="Html/MarkdownEngine.fs" />

@@ -7,7 +7,7 @@ open System.Text
 open System.Text.RegularExpressions
 
 // ============================================================
-// ZSS 2.0 — Public API
+// ZCSS — Public API
 // ============================================================
 // Backward-compatible entry point. Delegates to the new modular
 // pipeline: Parser → Compiler, with @use module resolution.
@@ -37,7 +37,7 @@ module Processor =
                 eprintfn "[ZCSS WARN] @use import '%s' skipped — no source file context" path
                 None
 
-    /// Process ZSS source text with a known base directory for @use resolution.
+    /// Process ZCSS source text with a known base directory for @use resolution.
     let private processTextWithBaseDir (baseDir: string option) (source: string) : string =
 
         // Step 1: Extract and remove @use lines, collect imported contents
@@ -53,7 +53,7 @@ module Processor =
 
         // Step 2: Parse imported modules with mode-detected parser and collect their AST + variables
         let importedNodes, importedVars =
-            let allNodes = ResizeArray<ZssNode>()
+            let allNodes = ResizeArray<ZcssNode>()
             let allVars = new Dictionary<string, string>()
             for content in importedContents do
                 let cleaned = ParserCore.stripComments content
@@ -88,7 +88,7 @@ module Processor =
         // merged variable dictionary. This makes user-defined variables
         // (e.g. `$primary: #6c63ff`) visible inside utility classes
         // (e.g. `.text-primary { color: $primary }`).
-        let rec resolveNodeValues (n: ZssNode) : ZssNode =
+        let rec resolveNodeValues (n: ZcssNode) : ZcssNode =
             let resolveDeclValue (d: Declaration) : Declaration =
                 { d with Value = Evaluator.resolveValue d.Value mergedVars }
             match n with
@@ -135,18 +135,18 @@ module Processor =
 
         css
 
-    /// Process ZSS source text → CSS string
+    /// Process ZCSS source text → CSS string
     /// Uses AST-level merge: built-in modules parsed with brace parser,
     /// user content parsed with mode-detected parser, then ASTs merged.
     let processText (source: string) : string =
         processTextWithBaseDir None source
 
-    /// Process a ZSS file → CSS string
+    /// Process a ZCSS file → CSS string
     let processFile (filePath: string) : string =
         let baseDir = Some (Path.GetDirectoryName(Path.GetFullPath(filePath)))
         File.ReadAllText(filePath) |> processTextWithBaseDir baseDir
 
-    /// Process a ZSS file → write CSS to destination
+    /// Process a ZCSS file → write CSS to destination
     let processFileTo (src: string) (dst: string) : string =
         let css = processFile src
         let dir = Path.GetDirectoryName(dst)
@@ -157,7 +157,7 @@ module Processor =
 module BundleService =
 
     /// Process all .zcss files in assetsDir → outputDir/assets/
-    let processZssFiles (assetsDir: string) (outputDir: string) : int =
+    let processZcssFiles (assetsDir: string) (outputDir: string) : int =
         if not (Directory.Exists assetsDir) then 0
         else
             let files = Directory.GetFiles(assetsDir, "*.zcss", SearchOption.AllDirectories)
@@ -174,5 +174,5 @@ module BundleService =
                         Processor.processFileTo f target |> ignore
                         count <- count + 1
                     with ex ->
-                        eprintfn "[ZSS ERROR] '%s': %s" f ex.Message
+                        eprintfn "[ZCSS ERROR] '%s': %s" f ex.Message
                 count

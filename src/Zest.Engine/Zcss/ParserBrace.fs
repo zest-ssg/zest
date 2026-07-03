@@ -5,15 +5,15 @@ open System.Collections.Generic
 open System.Text.RegularExpressions
 
 // ============================================================
-// ZSS Parser — Brace-mode (CSS/SCSS style)
+// ZCSS Parser — Brace-mode (CSS/SCSS style)
 // ============================================================
 
 module ParserBrace =
 
     open ParserCore
 
-    let rec parseBraceBlock (startIdx: int) (lines: string array) (vars: IDictionary<string, string>) : ZssNode list * int =
-        let nodes = ResizeArray<ZssNode>()
+    let rec parseBraceBlock (startIdx: int) (lines: string array) (vars: IDictionary<string, string>) : ZcssNode list * int =
+        let nodes = ResizeArray<ZcssNode>()
         let mutable i = startIdx
         let mutable stop = false
 

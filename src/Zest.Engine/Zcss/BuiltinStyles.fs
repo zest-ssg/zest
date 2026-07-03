@@ -1,12 +1,12 @@
 namespace Zest.Engine.Zcss
 
 // ============================================================
-// Built-in Styles — Predefined CSS/ZSS utility strings
+// Built-in Styles — Predefined CSS/ZCSS utility strings
 // ============================================================
 
 module BuiltinStyles =
 
-    /// Generate built-in utility classes as ZSS source text.
+    /// Generate built-in utility classes as ZCSS source text.
     /// These can be imported via `@use "zest:utilities"`.
     let builtinUtilities = """
 // ── Zest Built-in Utilities ──────────────────────────────

@@ -18,11 +18,11 @@ module HtmlHelpers =
     let md (markdownText: string) : HtmlNode =
         Raw(MarkdownEngine.toHtml markdownText)
 
-    /// Compile a ZSS snippet inline as a `<style>` node.
-    let styleBlock (zssSource: string) : HtmlNode =
-        Element("style", [], [Raw(Zcss.Processor.processText zssSource)])
+    /// Compile a ZCSS snippet inline as a `<style>` node.
+    let styleBlock (zcssSource: string) : HtmlNode =
+        Element("style", [], [Raw(Zcss.Processor.processText zcssSource)])
 
-    /// Reference an external stylesheet (.zss → .css auto-rewritten).
+    /// Reference an external stylesheet (.zcss → .css auto-rewritten).
     let stylesheet (href: string) : HtmlNode =
         let cssHref =
             if href.EndsWith(".zcss", StringComparison.OrdinalIgnoreCase)

@@ -3,14 +3,14 @@ namespace Zest.Engine.Zcss
 open System
 
 // ============================================================
-// ZSS Parser — Main entry point
+// ZCSS Parser — Main entry point
 // ============================================================
 
 module Parser =
 
     open ParserCore
 
-    let parse (source: string) : ZssNode list =
+    let parse (source: string) : ZcssNode list =
         clearErrors()
         if String.IsNullOrWhiteSpace source then []
         else

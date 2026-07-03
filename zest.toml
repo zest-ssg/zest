@@ -3,7 +3,7 @@
 # Read by Zest.App.CommandLine.HelpRenderer at startup.
 
 [meta]
-version    = "1.1.2"
+version    = "0.3.6"
 header     = "Zest v{0} — Zenith Efficient Static Toolkit"
 ecosystem  = "Ecosystem: .zpage.fsx + .zcss + .toml + .js"
 

@@ -5,15 +5,15 @@ open System.Collections.Generic
 open System.Text.RegularExpressions
 
 // ============================================================
-// ZSS Parser — Indentation-mode (Python-style)
+// ZCSS Parser — Indentation-mode (Python-style)
 // ============================================================
 
 module ParserIndent =
 
     open ParserCore
 
-    let rec parseIndentBlock (startIdx: int) (lines: string array) (baseIndent: int) (vars: IDictionary<string, string>) : ZssNode list * int =
-        let nodes = ResizeArray<ZssNode>()
+    let rec parseIndentBlock (startIdx: int) (lines: string array) (baseIndent: int) (vars: IDictionary<string, string>) : ZcssNode list * int =
+        let nodes = ResizeArray<ZcssNode>()
         let mutable i = startIdx
         let mutable stop = false
 
