@@ -6,10 +6,8 @@ open System.IO
 open Zest.Engine
 
 /// Collections API: page queries, global data, and Nunjucks helpers.
-/// Mutable state is shared with ScriptRunner for context serialisation.
+/// Optimized with on-demand caching for Nunjucks data.
 module PageQuery =
-
-    // ── Global state ──────────────────────────────────────────────────────
 
     let internal allPagesRef : ContentPage list ref = ref []
     let internal includesRef : IDictionary<string, string> ref = ref (dict [])
@@ -31,8 +29,6 @@ module PageQuery =
     let includePartial (name: string) =
         match (!includesRef).TryGetValue(name) with true, c -> c | _ -> sprintf "<!-- include '%s' not found -->" name
 
-    // ── Global data ───────────────────────────────────────────────────────
-
     let internal globalDataRef : IDictionary<string, obj> ref =
         ref (dict [] :> IDictionary<string, obj>)
 
@@ -51,23 +47,17 @@ module PageQuery =
                 d.[kv.Key.Substring(prefix.Length + 1)] <- kv.Value
         d :> _
 
-    // ── Extended Collections API ──────────────────────────────────────────
-
-    /// Get pages sorted by date (newest first).
     let getPagesByDate () =
         !allPagesRef |> List.filter (fun p -> p.Date.IsSome) |> List.sortByDescending (fun p -> p.Date.Value)
 
-    /// Get pages by collection (first URL segment).
     let getPagesByCollection (collection: string) =
         !allPagesRef |> List.filter (fun p ->
             let parts = p.Url.Trim('/').Split('/')
             parts.Length > 0 && parts.[0].Equals(collection, StringComparison.OrdinalIgnoreCase))
 
-    /// Get all unique tags from all pages.
     let getAllTags () =
         !allPagesRef |> List.collect (fun p -> p.Tags) |> List.distinct |> List.sort
 
-    /// Get all unique collections (first URL segment).
     let getAllCollections () =
         !allPagesRef
         |> List.map (fun p ->
@@ -75,14 +65,11 @@ module PageQuery =
             if parts.Length > 0 && parts.[0] <> "" then parts.[0] else "root")
         |> List.distinct |> List.sort
 
-    /// Search pages by title (case-insensitive).
     let searchPages (query: string) =
         !allPagesRef |> List.filter (fun p -> p.Title.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
 
-    /// Get page count.
     let getPageCount () = (!allPagesRef).Length
 
-    /// Get pages within a date range.
     let getPagesByDateRange (fromDate: string) (toDate: string) =
         let fromDt = DateTime.Parse(fromDate)
         let toDt   = DateTime.Parse(toDate)
@@ -94,7 +81,6 @@ module PageQuery =
 
     // ── Nunjucks data helpers ────────────────────────────────────────────
 
-    /// Convert a Page record to a plain dict for Nunjucks template context.
     let pageToNunjucksDict (p: ContentPage) : IDictionary<string, obj> =
         let d = Dictionary<string, obj>()
         d.["url"]    <- box p.Url
@@ -107,24 +93,43 @@ module PageQuery =
         | _ -> ()
         d :> IDictionary<string, obj>
 
-    /// Get all pages as plain dict arrays for Nunjucks template injection.
+    // ── Cached Nunjucks data — computed once per build pass ──────────────
+
+    let mutable private _cachedPagesForNunjucks : IDictionary<string, obj>[] option = None
+    let mutable private _cachedTagsForNunjucks : string[] option = None
+    let mutable private _cachedCollectionsForNunjucks : string[] option = None
+
+    /// Reset cached Nunjucks data (call at build start).
+    let internal resetNunjucksCache () =
+        _cachedPagesForNunjucks <- None
+        _cachedTagsForNunjucks <- None
+        _cachedCollectionsForNunjucks <- None
+
     let getPagesForNunjucks () : IDictionary<string, obj>[] =
-        !allPagesRef |> List.map pageToNunjucksDict |> Array.ofList
+        match _cachedPagesForNunjucks with
+        | Some cached -> cached
+        | None ->
+            let result = !allPagesRef |> List.map pageToNunjucksDict |> Array.ofList
+            _cachedPagesForNunjucks <- Some result
+            result
 
-    /// Get all unique tags as string array.
     let getTagsForNunjucks () : string[] =
-        !allPagesRef
-        |> List.collect (fun p -> p.Tags)
-        |> List.distinct
-        |> List.sort
-        |> Array.ofList
+        match _cachedTagsForNunjucks with
+        | Some cached -> cached
+        | None ->
+            let result = !allPagesRef |> List.collect (fun p -> p.Tags) |> List.distinct |> List.sort |> Array.ofList
+            _cachedTagsForNunjucks <- Some result
+            result
 
-    /// Get all collections (first URL segment) as string array.
     let getCollectionsForNunjucks () : string[] =
-        !allPagesRef
-        |> List.map (fun p ->
-            let parts = p.Url.Trim('/').Split('/')
-            if parts.Length > 0 && parts.[0] <> "" then parts.[0] else "root")
-        |> List.distinct
-        |> List.sort
-        |> Array.ofList
+        match _cachedCollectionsForNunjucks with
+        | Some cached -> cached
+        | None ->
+            let result =
+                !allPagesRef
+                |> List.map (fun p ->
+                    let parts = p.Url.Trim('/').Split('/')
+                    if parts.Length > 0 && parts.[0] <> "" then parts.[0] else "root")
+                |> List.distinct |> List.sort |> Array.ofList
+            _cachedCollectionsForNunjucks <- Some result
+            result

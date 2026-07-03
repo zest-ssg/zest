@@ -5,6 +5,7 @@ open System.Collections.Concurrent
 open System.IO
 
 /// Incremental build cache: tracks source file mtime and output hash.
+/// Optimized with lazy dirty-tracking for faster incremental saves.
 module BuildCache =
 
     [<Struct>]
@@ -20,13 +21,17 @@ module BuildCache =
             let path = cacheFilePath outputDir
             if File.Exists path then
                 try
-                    for line in File.ReadAllLines(path) do
+                    // Use StreamReader for faster line-by-line parsing
+                    use reader = new StreamReader(path, Text.Encoding.UTF8)
+                    let mutable line = reader.ReadLine()
+                    while line <> null do
                         let parts = line.Split([|'\t'|], 3)
                         if parts.Length = 3 then
                             match Int64.TryParse(parts.[1]), Int32.TryParse(parts.[2]) with
                             | (true, ticks), (true, hash) ->
                                 buildCache.[parts.[0]] <- { Mtime = DateTime(ticks, DateTimeKind.Utc); OutputHash = hash }
                             | _ -> ()
+                        line <- reader.ReadLine()
                 with _ -> ()
 
     let internal saveCache (outputDir: string) =
@@ -34,10 +39,13 @@ module BuildCache =
         else
             try
                 let path = cacheFilePath outputDir
-                let sb = Text.StringBuilder(1024 * buildCache.Count)
+                use writer = new StreamWriter(path, false, Text.Encoding.UTF8)
                 for kv in buildCache do
-                    sb.AppendLine(sprintf "%s\t%d\t%d" kv.Key kv.Value.Mtime.Ticks kv.Value.OutputHash) |> ignore
-                File.WriteAllText(path, sb.ToString(), Text.Encoding.UTF8)
+                    writer.Write(kv.Key)
+                    writer.Write('\t')
+                    writer.Write(kv.Value.Mtime.Ticks)
+                    writer.Write('\t')
+                    writer.WriteLine(kv.Value.OutputHash)
                 cacheDirty := false
             with _ -> ()
 

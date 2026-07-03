@@ -10,55 +10,64 @@ open Zest.Engine.Scripting
 open Zest.Engine.Template
 
 /// Layout loading, include processing, placeholder replacement, and recursive layout application.
+/// Optimized with static Regex, single-pass directory traversal, HashSet-based key lookup, and filter registration caching.
 module LayoutEngine =
+
+    let private allowedLayoutExts = set [".html"; ".htm"; ".znjk"; ".zpage.fsx"; ".fsx"]
 
     let private layoutCache2 = ConcurrentDictionary<string, struct(DateTime * Map<string, string * string>)>()
     let internal loadLayouts (layoutsDir: string) =
         if not (Directory.Exists layoutsDir) then Map.empty
         else
-            let mtime =
-                Directory.EnumerateFiles(layoutsDir, "*.*", SearchOption.AllDirectories)
-                |> Seq.map (fun f -> File.GetLastWriteTimeUtc(f).Ticks)
-                |> Seq.append [Directory.GetLastWriteTimeUtc(layoutsDir).Ticks]
-                |> Seq.max |> DateTime
+            let mutable maxTicks = 0L
+            let files = ResizeArray<string * string>()
+            for f in Directory.EnumerateFiles(layoutsDir, "*.*", SearchOption.AllDirectories) do
+                let ticks = File.GetLastWriteTimeUtc(f).Ticks
+                if ticks > maxTicks then maxTicks <- ticks
+                let ext = Path.GetExtension(f).ToLowerInvariant()
+                if allowedLayoutExts.Contains ext then
+                    let rec stripExts (name: string) =
+                        let e = Path.GetExtension(name)
+                        if String.IsNullOrEmpty e then name
+                        else stripExts (Path.GetFileNameWithoutExtension(name))
+                    let key = stripExts (Path.GetFileName(f))
+                    files.Add(key, f)
+            let mtime = if maxTicks > 0L then DateTime(maxTicks) else DateTime.MinValue
+            let dirTicks = Directory.GetLastWriteTimeUtc(layoutsDir).Ticks
+            let mtime = if dirTicks > mtime.Ticks then DateTime(dirTicks) else mtime
             match layoutCache2.TryGetValue(layoutsDir) with
             | true, (cachedMtime, cachedLayouts) when cachedMtime = mtime -> cachedLayouts
             | _ ->
                 let result =
-                    Directory.GetFiles(layoutsDir, "*.*", SearchOption.AllDirectories)
-                    |> Array.filter (fun f ->
-                        let ext = Path.GetExtension(f).ToLowerInvariant()
-                        List.contains ext [".html"; ".htm"; ".znjk"; ".zpage.fsx"; ".fsx"])
-                    |> Array.map (fun f ->
-                        let rec stripExts (name: string) =
-                            let e = Path.GetExtension(name)
-                            if String.IsNullOrEmpty e then name
-                            else stripExts (Path.GetFileNameWithoutExtension(name))
-                        let key = stripExts (Path.GetFileName(f))
-                        key, (f, File.ReadAllText(f)))
-                    |> Map.ofArray
+                    files
+                    |> Seq.map (fun (key, f) -> key, (f, File.ReadAllText(f)))
+                    |> Map.ofSeq
                 layoutCache2.[layoutsDir] <- struct(mtime, result)
                 result
 
     let private includesCache = ConcurrentDictionary<string, struct(DateTime * IDictionary<string, string>)>()
     let internal loadIncludes (includesDir: string) : IDictionary<string, string> =
-        let mtime =
-            if not (Directory.Exists includesDir) then DateTime.MinValue
-            else
-                Directory.EnumerateFiles(includesDir, "*.*", SearchOption.AllDirectories)
-                |> Seq.map (fun f -> File.GetLastWriteTimeUtc(f).Ticks)
-                |> Seq.append [Directory.GetLastWriteTimeUtc(includesDir).Ticks]
-                |> Seq.max |> DateTime
-        match includesCache.TryGetValue(includesDir) with
-        | true, (cachedMtime, cachedData) when cachedMtime = mtime -> cachedData
-        | _ ->
-            let d = Dictionary<string, string>()
-            if Directory.Exists includesDir then
-                for f in Directory.GetFiles(includesDir, "*.*", SearchOption.AllDirectories) do
-                    d.[Path.GetFileName(f)] <- File.ReadAllText(f)
-            let result = d :> IDictionary<string, string>
-            includesCache.[includesDir] <- struct(mtime, result)
-            result
+        if not (Directory.Exists includesDir) then
+            Dictionary<string, string>() :> IDictionary<string, string>
+        else
+            let mutable maxTicks = 0L
+            let files = ResizeArray<string * string>()
+            for f in Directory.EnumerateFiles(includesDir, "*.*", SearchOption.AllDirectories) do
+                let ticks = File.GetLastWriteTimeUtc(f).Ticks
+                if ticks > maxTicks then maxTicks <- ticks
+                files.Add(Path.GetFileName(f), f)
+            let mtime = if maxTicks > 0L then DateTime(maxTicks) else DateTime.MinValue
+            let dirTicks = Directory.GetLastWriteTimeUtc(includesDir).Ticks
+            let mtime = if dirTicks > mtime.Ticks then DateTime(dirTicks) else mtime
+            match includesCache.TryGetValue(includesDir) with
+            | true, (cachedMtime, cachedData) when cachedMtime = mtime -> cachedData
+            | _ ->
+                let d = Dictionary<string, string>()
+                for (name, f) in files do
+                    d.[name] <- File.ReadAllText(f)
+                let result = d :> IDictionary<string, string>
+                includesCache.[includesDir] <- struct(mtime, result)
+                result
 
     let internal buildReplacements (page: ContentPage) (config: SiteConfig) (globalData: IDictionary<string, obj>) =
         let d = Dictionary<string, string>()
@@ -85,13 +94,15 @@ module LayoutEngine =
             if not (d.ContainsKey key) then d.[key] <- kv.Value.ToString()
         d :> IDictionary<string, string>
 
-    // Cached compiled regexes
+    // ── Static compiled Regex ──────────────────────────────────────────
     let private includePattern =
         Regex(@"\{\{\s*include\s+([\w\.]+)\s*\}\}", RegexOptions.Compiled)
+
     let private placeholderPattern =
         Regex(@"\{\{\s*([\w\.]+)\s*\}\}", RegexOptions.Compiled)
 
-    let private layoutCache = ConcurrentDictionary<string, struct(DateTime * string)>()
+    let private nestedLayoutInfoPattern =
+        Regex(@"^<!--\s*@layout\s+(.+?)\s*-->", RegexOptions.Compiled ||| RegexOptions.Multiline)
 
     let private processIncludes (text: string) (includes: IDictionary<string, string>) =
         let rec processText (t: string) (depth: int) =
@@ -121,6 +132,8 @@ module LayoutEngine =
             processedLayoutCache.[key] <- processed
             processed
 
+    let mutable private registeredLayoutEngines = HashSet<string>()
+
     let rec internal applyLayout (name: string) (content: string) (layouts: Map<string, string * string>)
                                 (replacements: IDictionary<string, string>) (includes: IDictionary<string, string>) =
         match layouts.TryFind name with
@@ -138,7 +151,9 @@ module LayoutEngine =
                     }
                     match engine with
                     | Some e ->
-                        FilterRegistry.registerAllFilters e
+                        let engineKey = e.GetHashCode().ToString()
+                        if registeredLayoutEngines.Add(engineKey) then
+                            FilterRegistry.registerAllFilters e
 
                         let pairs = ResizeArray<string * obj>()
                         for kv in replacements do pairs.Add(kv.Key, box kv.Value)
@@ -146,10 +161,19 @@ module LayoutEngine =
                         pairs.Add("page.content", box content)
                         pairs.Add("page.url", box (replacements.TryGetValue "page.url" |> function true,v -> box v | _ -> box ""))
                         pairs.Add("page.date", box (replacements.TryGetValue "page.date" |> function true,v -> box v | _ -> box ""))
-                        pairs.Add("page.tags", box (replacements.TryGetValue "page.tags" |> function true,v -> box (v.Split(',') |> Array.map (fun t -> t.Trim())) | _ -> box [||]))
+
+                        // Pass tags as array directly — avoid join/split roundtrip
+                        match replacements.TryGetValue "page.tags" with
+                        | true, tagsStr when not (String.IsNullOrEmpty tagsStr) ->
+                            pairs.Add("page.tags", box (tagsStr.Split(',') |> Array.map (fun t -> t.Trim())))
+                        | _ -> pairs.Add("page.tags", box [||])
+
+                        // Use HashSet for O(1) lookup when adding includes — avoid O(n*m) Seq.exists
+                        let addedKeys = HashSet<string>(pairs |> Seq.map fst)
                         for kv in includes do
-                            if not (pairs |> Seq.exists (fun (k, _) -> k = kv.Key)) then
+                            if addedKeys.Add(kv.Key) then
                                 pairs.Add(kv.Key, box kv.Value)
+
                         pairs.Add("pages", box (PageQuery.getPagesForNunjucks () |> Array.map box))
                         pairs.Add("tags", box (PageQuery.getTagsForNunjucks ()))
                         pairs.Add("collections", box (PageQuery.getCollectionsForNunjucks ()))
@@ -165,27 +189,25 @@ module LayoutEngine =
                         for kv in replacements do ctx.[kv.Key] <- kv.Value
                         ctx.["content"]      <- content
                         ctx.["page.content"] <- content
-                        let replaced = Regex(@"\{\{\s*([\w\.]+)\s*\}\}").Replace(withIncludes, fun (m: Match) ->
+                        placeholderPattern.Replace(withIncludes, fun (m: Match) ->
                             let key = m.Groups.[1].Value.ToLowerInvariant()
                             match ctx.TryGetValue key with
                             | true, v -> v
                             | _ -> m.Value)
-                        replaced
                 else
                     let withIncludes = applyLayoutCached path layoutText includes
                     let ctx = Dictionary<string, string>()
                     for kv in replacements do ctx.[kv.Key] <- kv.Value
                     ctx.["content"]      <- content
                     ctx.["page.content"] <- content
-                    let replaced = Regex(@"\{\{\s*([\w\.]+)\s*\}\}").Replace(withIncludes, fun (m: Match) ->
+                    placeholderPattern.Replace(withIncludes, fun (m: Match) ->
                         let key = m.Groups.[1].Value.ToLowerInvariant()
                         match ctx.TryGetValue key with
                         | true, v -> v
                         | _ -> m.Value)
-                    replaced
 
+            // Check for nested layout via TOML front matter or HTML comment
             let nestedLayout =
-                // Try TOML front matter (+++) first
                 if layoutText.TrimStart().StartsWith("+++") then
                     let endIdx = layoutText.IndexOf("+++", 3)
                     if endIdx > 0 then
@@ -198,8 +220,7 @@ module LayoutEngine =
                         with _ -> None
                     else None
                 else
-                    // Then try HTML comment metadata
-                    let m = Regex.Match(layoutText, @"^<!--\s*@layout\s+(.+?)\s*-->", RegexOptions.Multiline)
+                    let m = nestedLayoutInfoPattern.Match(layoutText)
                     if m.Success then Some (m.Groups.[1].Value.Trim())
                     else None
             match nestedLayout with

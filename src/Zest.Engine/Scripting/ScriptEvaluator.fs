@@ -11,7 +11,46 @@ open Zest.Engine.Html
 open Zest.Engine.Template
 
 /// Evaluates .zpage.fsx / .md files into Page records.
+/// Optimized with content caching, static Regex, and filter/page-data caching.
 module ScriptEvaluator =
+
+    // ── Static compiled Regex (allocated once) ──────────────────────
+    let private headingPattern = Regex(@"^#\s+(.+)$", RegexOptions.Compiled ||| RegexOptions.Multiline)
+
+    // ── Nunjucks context caching (built once per build, shared across all pages) ──
+    let mutable private cachedNunjucksSiteContext : (string * obj)[] option = None
+    let mutable private cachedNunjucksGlobalDataHash = 0
+
+    let internal resetNunjucksCache () =
+        cachedNunjucksSiteContext <- None
+        cachedNunjucksGlobalDataHash <- 0
+
+    let private getNunjucksSiteContext (config: SiteConfig) (globalData: IDictionary<string, obj>) =
+        let hash = globalData.GetHashCode() ^^^ config.GetHashCode()
+        match cachedNunjucksSiteContext with
+        | Some ctx when cachedNunjucksGlobalDataHash = hash -> ctx
+        | _ ->
+            let pairs = ResizeArray<string * obj>()
+            pairs.Add("site.title",       box config.Title)
+            pairs.Add("site.description", box config.Description)
+            pairs.Add("site.base_url",    box config.BaseUrl)
+            pairs.Add("site.version",     box config.SiteVersion)
+            pairs.Add("site.author",      box config.Author)
+            pairs.Add("site.language",    box config.Language)
+            for kv in globalData do
+                pairs.Add("site." + kv.Key, kv.Value)
+            let result = pairs |> Seq.toArray
+            cachedNunjucksSiteContext <- Some result
+            cachedNunjucksGlobalDataHash <- hash
+            result
+
+    // ── Filter registry caching (track registered engines) ─────────
+    let mutable private registeredEngines = HashSet<string>()
+
+    let private ensureFiltersRegistered (engine: ITemplateEngine) =
+        let key = engine.GetHashCode().ToString()
+        if registeredEngines.Add(key) then
+            FilterRegistry.registerAllFilters engine
 
     /// Extract and render content HTML from script text (legacy Markdown fallback mode).
     let private renderContent (ext: string) (bodyText: string) (fullText: string) : string =
@@ -19,7 +58,6 @@ module ScriptEvaluator =
         | ".md" | ".markdown" ->
             MarkdownEngine.toHtml bodyText
         | _ ->
-            // .zpage.fsx / .fsx: strip metadata comments and #r / #load directives, treat remainder as Markdown
             let lines =
                 fullText.Split('\n')
                 |> Array.filter (fun l ->
@@ -32,8 +70,6 @@ module ScriptEvaluator =
             MarkdownEngine.toHtml (String.concat "\n" lines)
 
     /// Render .znjk content pages using the ZestNjk engine.
-    /// Builds a nested context (site.*, page.*, etc.) so {{ site.title }} syntax works.
-    /// Also injects Zest page data (pages, tags, collections) and registers Zest custom filters.
     let private renderNunjucksContent
         (bodyText: string)
         (config: SiteConfig)
@@ -49,20 +85,11 @@ module ScriptEvaluator =
             Filters = []
         } with
         | Some engine ->
-            // ── Register Zest custom filters ──────────────────
-            FilterRegistry.registerAllFilters engine
+            ensureFiltersRegistered engine
 
-            // ── Build context ──────────────────────────────────
             let pairs = ResizeArray<string * obj>()
-            // ── site.* ──────────────────────────────────────────
-            pairs.Add("site.title",       box config.Title)
-            pairs.Add("site.description", box config.Description)
-            pairs.Add("site.base_url",    box config.BaseUrl)
-            pairs.Add("site.version",     box config.SiteVersion)
-            pairs.Add("site.author",      box config.Author)
-            pairs.Add("site.language",    box config.Language)
-            for kv in globalData do
-                pairs.Add("site." + kv.Key, kv.Value)
+            let siteCtx = getNunjucksSiteContext config globalData
+            pairs.AddRange(siteCtx)
             // ── page.* ──────────────────────────────────────────
             pairs.Add("page.title", box (meta.Title |> Option.defaultValue slug))
             meta.Description |> Option.iter (fun v -> pairs.Add("page.description", box v))
@@ -79,30 +106,21 @@ module ScriptEvaluator =
                 eprintfn "[Zest] Nunjucks error in content '%s': %O" filePath err
                 bodyText
         | None ->
-            // Return raw text when Nunjucks engine is unavailable
             bodyText
 
-    /// Build the absolute path to the content directory.
-    /// Uses EffectiveContentDir to support root directory management:
-    /// - RootDir = "." → project root is the content directory
-    /// - RootDir = "content" → use the content subdirectory
     let private resolveContentDir (config: SiteConfig) =
         Path.GetFullPath(
             Path.Combine(Directory.GetCurrentDirectory(),
                          config.EffectiveContentDir.TrimStart('.', '\\', '/')))
 
-    /// Compute slug from file path.
     let private computeSlug (filePath: string) (contentDir: string) =
         let relPath  = Path.GetRelativePath(contentDir, filePath)
         let rawSlug  =
             let fn = Path.GetFileNameWithoutExtension(filePath)
-            // Handle .zpage.fsx → slug without .zpage suffix
             let fn2 = if fn.EndsWith(".zpage") then fn.[..fn.Length - 7] else fn
-            // Handle .zest → legacy fallback
             if fn2.EndsWith(".zest") then fn2.[..fn2.Length - 6] else fn2
         relPath, rawSlug
 
-    /// Build pageData dictionary (global data + metadata extensions).
     let private buildPageData (globalData: IDictionary<string, obj>) (meta: ContentMeta) =
         let d = Dictionary<string, obj>()
         for kv in globalData do d.[kv.Key] <- kv.Value
@@ -110,10 +128,9 @@ module ScriptEvaluator =
         meta.Description |> Option.iter (fun v -> d.["description"] <- box v)
         d :> IDictionary<string, obj>
 
-    /// Fast metadata extraction (no script execution), used for the first-pass collections API scan.
-    let extractMeta (filePath: string) (config: SiteConfig) : ContentPage option =
+    /// Fast metadata extraction with pre-loaded text — avoids double File.ReadAllText.
+    let extractMetaWithText (filePath: string) (config: SiteConfig) (text: string) : ContentPage option =
         try
-            let text       = File.ReadAllText(filePath)
             let ext        = Path.GetExtension(filePath).ToLowerInvariant()
             let contentDir = resolveContentDir config
             let relPath, rawSlug = computeSlug filePath contentDir
@@ -123,8 +140,8 @@ module ScriptEvaluator =
                 meta.Title
                 |> Option.orElse (
                     if ext = ".md" || ext = ".markdown" then
-                        Regex.Match(bodyText, @"^#\s+(.+)$", RegexOptions.Multiline)
-                        |> fun m -> if m.Success then Some(m.Groups.[1].Value.Trim()) else None
+                        let m = headingPattern.Match(bodyText)
+                        if m.Success then Some(m.Groups.[1].Value.Trim()) else None
                     else None)
                 |> Option.defaultValue rawSlug
             let url, outputPath =
@@ -147,8 +164,54 @@ module ScriptEvaluator =
             eprintfn "[Zest] WARN: extractMeta failed for '%s': %s" filePath ex.Message
             None
 
+    /// Fast metadata extraction (no script execution), used for the first-pass collections API scan.
+    /// Reads file content from disk.
+    let extractMeta (filePath: string) (config: SiteConfig) : ContentPage option =
+        try
+            extractMetaWithText filePath config (File.ReadAllText(filePath))
+        with ex ->
+            eprintfn "[Zest] WARN: extractMeta failed for '%s': %s" filePath ex.Message
+            None
+
+    /// Build a ContentPage from batch-evaluated script HTML + pre-loaded text.
+    /// Used by ContentPipeline to avoid re-reading file text.
+    let buildPage
+        (filePath: string)
+        (config: SiteConfig)
+        (globalData: IDictionary<string, obj>)
+        (text: string)
+        (htmlContent: string)
+        : Result<ContentPage, string> =
+        try
+            let ext        = Path.GetExtension(filePath).ToLowerInvariant()
+            let contentDir = resolveContentDir config
+            let relPath, rawSlug = computeSlug filePath contentDir
+            let meta, _ = MetaParser.parse ext text
+            let slug = PermalinkRouter.slugify rawSlug
+            let mergedData = Dictionary<string, obj>()
+            for kv in globalData do mergedData.[kv.Key] <- kv.Value
+            for kv in meta.Extra do mergedData.[kv.Key] <- box kv.Value
+            meta.Description |> Option.iter (fun v -> mergedData.["description"] <- box v)
+            let url, outputPath =
+                match meta.Permalink with
+                | Some p when p.Length > 0 -> PermalinkRouter.computePermalink p
+                | _ -> PermalinkRouter.defaultRoute relPath slug
+            Ok { ContentPage.empty with
+                    SourcePath = filePath
+                    Url = url
+                    OutputPath = outputPath
+                    Layout = Some (meta.Layout |> Option.defaultValue config.DefaultLayout)
+                    Title = meta.Title |> Option.defaultValue rawSlug
+                    Content = htmlContent
+                    Data = mergedData
+                    Permalink = meta.Permalink
+                    Tags = meta.Tags
+                    Date = meta.Date
+                    Slug = slug }
+        with ex ->
+            Error(sprintf "Failed to build page '%s': %s" filePath ex.Message)
+
     /// Evaluate a single content file into a Page (returns Error on failure).
-    /// Auto-detects whether the file uses the page { ... } CE block and executes F# scripts accordingly.
     let evaluate
         (filePath:   string)
         (config:     SiteConfig)
@@ -164,23 +227,18 @@ module ScriptEvaluator =
             let meta, bodyText = MetaParser.parse ext text
             let slug = PermalinkRouter.slugify rawSlug
 
-            // ── Determine if this is a page { ... } F# script ──
             let isScript = ScriptRunner.isPageScript ext text
 
             if isScript then
-                // ── Mode A: evaluate as F# script ───────────────
-                // Inject global data so scripts can call PageQuery.getData etc.
                 PageQuery.setGlobalData globalData
 
                 match ScriptRunner.evaluatePageScript text with
                 | Ok htmlContent ->
-                    // Merge metadata
                     let mergedData = Dictionary<string, obj>()
                     for kv in globalData         do mergedData.[kv.Key] <- kv.Value
                     for kv in meta.Extra         do mergedData.[kv.Key] <- box kv.Value
                     meta.Description |> Option.iter (fun v -> mergedData.["description"] <- box v)
 
-                    // Determine final URL / OutputPath
                     let finalPermalink = meta.Permalink
                     let url, outputPath =
                         match finalPermalink with
@@ -200,13 +258,12 @@ module ScriptEvaluator =
                             Date         = meta.Date
                             Slug         = slug }
                 | Error evalErr ->
-                    // Script evaluation failed, fall back to Markdown
                     eprintfn "[Zest] WARN: Script evaluation failed '%s': %s — falling back to Markdown mode" filePath evalErr
-                    // fallback to Markdown
                     let title =
                         meta.Title
-                        |> Option.orElse (Regex.Match(bodyText, @"^#\s+(.+)$", RegexOptions.Multiline)
-                                              |> fun m -> if m.Success then Some(m.Groups.[1].Value.Trim()) else None)
+                        |> Option.orElse (
+                            let m = headingPattern.Match(bodyText)
+                            if m.Success then Some(m.Groups.[1].Value.Trim()) else None)
                         |> Option.defaultValue rawSlug
 
                     let layout = meta.Layout |> Option.defaultValue config.DefaultLayout
@@ -217,10 +274,8 @@ module ScriptEvaluator =
 
                     let contentHtml =
                         match ext with
-                        | ".znjk" ->
-                            renderNunjucksContent bodyText config globalData meta slug filePath
-                        | _ ->
-                            renderContent ext bodyText text
+                        | ".znjk" -> renderNunjucksContent bodyText config globalData meta slug filePath
+                        | _       -> renderContent ext bodyText text
 
                     Ok { ContentPage.empty with
                             SourcePath   = filePath
@@ -236,13 +291,12 @@ module ScriptEvaluator =
                             Slug         = slug }
 
             else
-                // ── Mode B: legacy Markdown / comment metadata mode ──
                 let title =
                     meta.Title
                     |> Option.orElse (
                         if ext = ".md" || ext = ".markdown" then
-                            Regex.Match(bodyText, @"^#\s+(.+)$", RegexOptions.Multiline)
-                            |> fun m -> if m.Success then Some(m.Groups.[1].Value.Trim()) else None
+                            let m = headingPattern.Match(bodyText)
+                            if m.Success then Some(m.Groups.[1].Value.Trim()) else None
                         else None)
                     |> Option.defaultValue rawSlug
 
@@ -254,10 +308,8 @@ module ScriptEvaluator =
 
                 let contentHtml =
                     match ext with
-                    | ".znjk" ->
-                        renderNunjucksContent bodyText config globalData meta slug filePath
-                    | _ ->
-                        renderContent ext bodyText text
+                    | ".znjk" -> renderNunjucksContent bodyText config globalData meta slug filePath
+                    | _       -> renderContent ext bodyText text
 
                 Ok { ContentPage.empty with
                         SourcePath   = filePath

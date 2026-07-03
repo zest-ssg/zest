@@ -1,10 +1,11 @@
 namespace Zest.Engine
 
-open System.Collections.Generic
+open System.Collections.Concurrent
 open System.IO
+open System.Threading.Tasks
 open Zest.Engine.Zcss
 
-/// Asset (assets/) copying and ZCSS compilation.
+/// Asset (assets/) copying and ZCSS compilation — fully parallelized.
 module BuildAssets =
 
     let internal copyAssets (projectRoot: string) (outputDir: string) =
@@ -13,13 +14,17 @@ module BuildAssets =
         else
             let dst = Path.Combine(outputDir, "assets")
             Directory.CreateDirectory(dst) |> ignore
-            let createdDirs = HashSet<string>()
+            let createdDirs = ConcurrentDictionary<string, byte>()
             let ensureDir (target: string) =
                 let dir = Path.GetDirectoryName(target)
-                if dir <> null && createdDirs.Add(dir) then
-                    Directory.CreateDirectory(dir) |> ignore
+                if dir <> null then
+                    createdDirs.GetOrAdd(dir, fun _ ->
+                        Directory.CreateDirectory(dir) |> ignore
+                        1uy) |> ignore
             let mutable n = 0
-            for file in Directory.GetFiles(src, "*", SearchOption.AllDirectories) do
+            // Single file system traversal, parallel processing
+            let files = Directory.GetFiles(src, "*", SearchOption.AllDirectories)
+            Parallel.ForEach(files, fun (file: string) ->
                 let ext = Path.GetExtension(file).ToLowerInvariant()
                 let rel = Path.GetRelativePath(src, file)
                 let srcLastWrite = File.GetLastWriteTimeUtc(file)
@@ -33,5 +38,5 @@ module BuildAssets =
                     ensureDir target
                     if not (File.Exists target) || srcLastWrite > File.GetLastWriteTimeUtc(target) then
                         File.Copy(file, target, overwrite = true)
-                n <- n + 1
+                System.Threading.Interlocked.Increment(&n) |> ignore) |> ignore
             n

@@ -12,13 +12,11 @@ open PageQuery
 open ScriptDiscovery
 
 /// Evaluates .zpage.fsx / .fsx scripts by spawning `dotnet fsi` as a subprocess.
-/// Context data (pages, site config) is passed via a temp JSON file.
-/// The script preamble injects DSL helpers + collections API via #load.
+/// Optimized with static SHA256 and pre-sized StringBuilder.
 module ScriptRunner =
 
     // ── Script Cache ─────────────────────────────────────────────────────
 
-    /// Cache entry for evaluated scripts.
     type private CacheEntry = {
         Hash: string
         Result: Result<string, string>
@@ -28,22 +26,20 @@ module ScriptRunner =
     let private scriptCache = Dictionary<string, CacheEntry>()
     let mutable private cacheEnabled = true
 
-    /// Enable or disable script caching.
     let setCacheEnabled (enabled: bool) = cacheEnabled <- enabled
-
-    /// Clear the script cache.
     let clearCache () = scriptCache.Clear()
 
-    /// Compute a hash of the script content for cache keying.
+    // Static SHA256 instance (reused, thread-safe via lock)
+    let private sha256 = SHA256.Create()
+    let private sha256Lock = obj()
+
     let private computeHash (content: string) : string =
-        use sha = SHA256.Create()
         let bytes = Encoding.UTF8.GetBytes(content)
-        let hash = sha.ComputeHash(bytes)
+        let hash = lock sha256Lock (fun () -> sha256.ComputeHash(bytes))
         BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant()
 
     // ── Context serialisation ─────────────────────────────────────────────
 
-    /// Serialise all context to a JSON file that the subprocess preamble reads.
     let private writeContextFile (path: string) =
         let pageToObj (p: ContentPage) =
             let date = p.Date |> Option.map (fun d -> d.ToString("yyyy-MM-dd")) |> Option.defaultValue ""
@@ -64,7 +60,7 @@ module ScriptRunner =
 
     let private buildPreamble (ctxFile: string) =
         let dllPath = ScriptDiscovery.getIsolatedDslDll ()
-        let sb = Text.StringBuilder()
+        let sb = Text.StringBuilder(512)
         sb.AppendLine("#r @\"" + dllPath + "\"") |> ignore
         sb.AppendLine("open System") |> ignore
         sb.AppendLine("open System.Text.RegularExpressions") |> ignore
@@ -78,7 +74,6 @@ module ScriptRunner =
         sb.AppendLine("open Zest.Dsl.DslUtilities") |> ignore
         sb.AppendLine("open Zest.Dsl.DslSeo") |> ignore
         sb.AppendLine("open Zest.Dsl.DslXml") |> ignore
-        // Debug helper: prints a message to stderr during FSI evaluation
         sb.AppendLine("""let console_log (message: string) = eprintfn "[DEBUG] %s" message""") |> ignore
         sb.ToString()
 
@@ -92,24 +87,18 @@ module ScriptRunner =
         psi.StandardOutputEncoding <- Encoding.UTF8
         psi.StandardErrorEncoding  <- Encoding.UTF8
         psi.CreateNoWindow         <- true
-        // Set env vars to speed up .NET runtime startup
         psi.EnvironmentVariables.["DOTNET_System_GlobalizationInvariant"] <- "1"
         psi.EnvironmentVariables.["DOTNET_TieredPGO"] <- "0"
         psi.EnvironmentVariables.["DOTNET_ReadyToRun"] <- "1"
         use proc = Process.Start(psi)
-        // IMPORTANT: read stdout/stderr asynchronously to avoid deadlock.
-        // Synchronous ReadToEnd on one stream blocks the other, causing
-        // deadlock when the stdout buffer fills before the process exits.
         let stdoutTask = proc.StandardOutput.ReadToEndAsync()
         let stderrTask = proc.StandardError.ReadToEndAsync()
-        // Wait for process with timeout to avoid infinite hang
         if not (proc.WaitForExit(60_000)) then
             try proc.Kill() with _ -> ()
             Error "FSI process timed out (60s)"
         else
             let stdout = stdoutTask.Result
             let stderr = stderrTask.Result
-            // Verbose mode: print FSI stderr to console for debugging
             if !PageQuery.verboseRef && not (String.IsNullOrEmpty stderr) then
                 Console.ForegroundColor <- ConsoleColor.DarkGray
                 Console.Error.WriteLine("[FSI] ---- stderr ----")
@@ -118,7 +107,6 @@ module ScriptRunner =
                 Console.ResetColor()
             if proc.ExitCode = 0 then Ok stdout
             else
-                // Build a comprehensive error report with formatted lines
                 let errLines =
                     stderr.Split('\n')
                     |> Array.filter (fun l ->
@@ -168,16 +156,13 @@ module ScriptRunner =
 
     let evaluatePageScript (scriptText: string) : Result<string, string> =
         try
-            // Check cache first
             let hash = computeHash scriptText
             if cacheEnabled && scriptCache.ContainsKey(hash) then
                 scriptCache.[hash].Result
             else
-                // Ensure context file exists (resetSession may not have been called)
                 if String.IsNullOrEmpty ctxFilePath || not (File.Exists ctxFilePath) then
                     resetSession ()
 
-                // Strip metadata comments from script
                 let stripped =
                     scriptText.Split('\n')
                     |> Array.filter (fun l ->
@@ -195,40 +180,29 @@ module ScriptRunner =
                             scriptCache.[hash] <- { Hash = hash; Result = result; Timestamp = DateTime.Now }
                         result
                     | Error msg ->
-                        let result = Error(sprintf "FSI evaluation reported errors — %s" msg)
-                        // Don't cache errors
-                        result
+                        Error(sprintf "FSI evaluation reported errors — %s" msg)
                 finally
                     if File.Exists tmpFsx then File.Delete tmpFsx
         with ex ->
             Error(sprintf "ScriptRunner threw: %s" ex.Message)
 
-    // ── Batch evaluation: evaluate multiple scripts in ONE FSI process ────
-    // This dramatically improves build performance by avoiding repeated
-    // `dotnet fsi` process startups (each takes 3-5 seconds).
-
-    ///<summary>
-    /// Evaluate multiple page scripts in a single FSI subprocess.
-    /// Returns a map from script hash → result string.
-    ///</summary>
     let evaluatePageScriptsBatch (scripts: (string * string) list) : Map<string, Result<string, string>> =
         if scripts.IsEmpty then Map.empty
         else
             try
-                // Ensure context file exists
                 if String.IsNullOrEmpty ctxFilePath || not (File.Exists ctxFilePath) then
                     resetSession ()
 
-                // Build a single combined script: preamble + each page wrapped with markers
                 let preamble = buildPreamble ctxFilePath
 
-                // Sentinel markers to split outputs
                 let marker id = sprintf "___ZEST_PAGE_START_%s___" id
                 let endMarker id = sprintf "___ZEST_PAGE_END_%s___" id
 
-                let body = StringBuilder()
+                // Pre-size StringBuilder based on total script length
+                let totalScriptLen = scripts |> List.sumBy (fun (s: string * string) -> (snd s).Length)
+                let estimatedSize = totalScriptLen + preamble.Length + 1000
+                let body = StringBuilder(estimatedSize)
                 for (id, scriptText) in scripts do
-                    // Strip metadata comments
                     let stripped =
                         scriptText.Split('\n')
                         |> Array.filter (fun l ->
@@ -244,21 +218,18 @@ module ScriptRunner =
                     File.WriteAllText(tmpFsx, preamble + "\n" + body.ToString(), Encoding.UTF8)
                     match runFsi tmpFsx with
                     | Ok stdout ->
-                        // Parse output and split by markers
                         let results = Dictionary<string, Result<string, string>>()
                         for (id, _) in scripts do
                             let s = marker id
                             let e = endMarker id
-                            let sIdx = stdout.IndexOf(s)
-                            let eIdx = stdout.IndexOf(e)
+                            let sIdx = stdout.IndexOf(s, StringComparison.Ordinal)
+                            let eIdx = stdout.IndexOf(e, StringComparison.Ordinal)
                             if sIdx >= 0 && eIdx > sIdx then
                                 let content = stdout.Substring(sIdx + s.Length, eIdx - (sIdx + s.Length))
-                                // Strip leading newline from printfn
                                 let trimmed = content.TrimStart('\r', '\n')
                                 results.[id] <- Ok trimmed
                             else
                                 results.[id] <- Error "Script output not found in batch"
-                        // Cache successful results
                         for (id, scriptText) in scripts do
                             match results.TryGetValue(id) with
                             | true, Ok html when cacheEnabled ->
@@ -267,7 +238,6 @@ module ScriptRunner =
                             | _ -> ()
                         results |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
                     | Error msg ->
-                        // Batch failed — fall back to individual evaluation
                         if !PageQuery.verboseRef then
                             Console.Error.WriteLine(sprintf "[FSI] Batch failed, falling back to individual: %s" msg)
                         scripts |> List.map (fun (id, scriptText) ->

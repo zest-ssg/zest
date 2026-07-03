@@ -5,7 +5,7 @@ open System.Collections.Concurrent
 open System.Collections.Generic
 open System.IO
 
-/// Global data (_data/*.toml) loading and caching.
+/// Global data (_data/*.toml) loading and caching — single-pass file traversal.
 module BuildData =
 
     let private globalDataCache = ConcurrentDictionary<string, struct(DateTime * IDictionary<string, obj>)>()
@@ -23,9 +23,9 @@ module BuildData =
         | true, (cachedMtime, cachedData) when cachedMtime = mtime -> cachedData
         | _ ->
             let dict = Dictionary<string, obj>()
-            if not (Directory.Exists dataDir) then ()
-            else
-                for file in Directory.GetFiles(dataDir, "*.toml", SearchOption.AllDirectories) do
+            if Directory.Exists dataDir then
+                // Single traversal: enumerate once, use for both reading and loading
+                for file in Directory.EnumerateFiles(dataDir, "*.toml", SearchOption.AllDirectories) do
                     try
                         let name  = Path.GetFileNameWithoutExtension(file)
                         let model = Tomlyn.Toml.ToModel(File.ReadAllText(file))
