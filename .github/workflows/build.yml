@@ -45,10 +45,10 @@ jobs:
           dotnet-version: "10.0.x"
 
       - name: Restore
-        run: dotnet restore Zest.sln
+        run: dotnet restore zest.sln
 
       - name: Build solution
-        run: dotnet build Zest.sln --configuration Release --no-restore
+        run: dotnet build zest.sln --configuration Release --no-restore
 
       - name: Publish for ${{ matrix.rid }}
         run: |
