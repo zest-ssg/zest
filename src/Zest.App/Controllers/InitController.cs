@@ -14,12 +14,12 @@ public static class InitController
 
         if (targetDir == "." && Directory.GetFiles(targetDir).Length > 0)
         {
-            Logger.WriteWarning("  Warning: Current directory is not empty.");
+            LogWriter.WriteWarning("  Warning: Current directory is not empty.");
             Console.Write("  Continue anyway? (y/N): ");
             var resp = Console.ReadLine()?.Trim().ToLowerInvariant();
             if (resp != "y" && resp != "yes")
             {
-                Logger.WriteDim("  Aborted.");
+                LogWriter.WriteDim("  Aborted.");
                 return 1;
             }
         }
@@ -31,17 +31,17 @@ public static class InitController
 
         if (!Directory.Exists(templateDir))
         {
-            Logger.WriteError("  Error: Could not locate default template directory.");
+            LogWriter.WriteError("  Error: Could not locate default template directory.");
             return 1;
         }
 
         CopyDirectory(templateDir, targetDir);
-        Logger.WriteSuccess($"  [Zest] Created new project at '{targetDir}'");
+        LogWriter.WriteSuccess($"  [Zest] Created new project at '{targetDir}'");
         Console.WriteLine();
-        Logger.WriteAccent("  Next steps:");
-        Logger.WriteInfo("    1. cd " + targetDir);
-        Logger.WriteInfo("    2. zest build              # Build the site");
-        Logger.WriteInfo("    3. zest serve              # Start dev server");
+        LogWriter.WriteAccent("  Next steps:");
+        LogWriter.WriteInfo("    1. cd " + targetDir);
+        LogWriter.WriteInfo("    2. zest build              # Build the site");
+        LogWriter.WriteInfo("    3. zest serve              # Start dev server");
         return 0;
     }
 

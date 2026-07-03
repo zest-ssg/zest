@@ -6,7 +6,7 @@ namespace Zest.Infra.Services;
 /// Secure file path resolution with directory traversal protection.
 /// Handles directory-style URLs, query string stripping, and index.html fallback.
 /// </summary>
-internal static class FilePathResolver
+internal static class PathMapper
 {
     /// <summary>
     /// Resolve a URL path to a secure physical file path within the output directory.

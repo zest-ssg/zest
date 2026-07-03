@@ -14,7 +14,7 @@ namespace Zest.Infra.Configuration;
 /// Includes caching: the config file's last write time is tracked so that
 /// repeated calls only re-parse when the file has actually changed.
 /// </summary>
-public static class SiteConfigLoader
+public static class ConfigLoader
 {
     private static SiteConfig? _cachedConfig;
     private static DateTime _lastLoadTimeUtc;
@@ -26,7 +26,7 @@ public static class SiteConfigLoader
     /// </summary>
     public static SiteConfig Load(string? projectPath = null)
     {
-        var root = ProjectRootFinder.Find(projectPath) ?? Directory.GetCurrentDirectory();
+        var root = RootFinder.Find(projectPath) ?? Directory.GetCurrentDirectory();
         var configPath = Path.Combine(root, "_config.toml");
 
         // Check cache: if the file hasn't changed, return cached config
@@ -66,31 +66,31 @@ public static class SiteConfigLoader
 
             var config = SiteConfigDefaults.create();
 
-            var title = TomlConfigReader.GetString(model, "title", config.Title);
-            var baseUrl = TomlConfigReader.GetString(model, "base_url", config.BaseUrl);
-            var description = TomlConfigReader.GetString(model, "description", config.Description);
-            var defaultLayout = TomlConfigReader.GetString(model, "default_layout", config.DefaultLayout);
-            var permalinkFormat = TomlConfigReader.GetString(model, "permalink_format", config.PermalinkFormat);
-            var siteVersion = TomlConfigReader.GetString(model, "site_version", config.SiteVersion);
-            var contentDir = TomlConfigReader.GetString(model, "content_dir", config.ContentDir);
-            var outputDir = TomlConfigReader.GetString(model, "output_dir", config.OutputDir);
-            var layoutsDir = TomlConfigReader.GetString(model, "layouts_dir", config.LayoutsDir);
-            var includesDir = TomlConfigReader.GetString(model, "includes_dir", config.IncludesDir);
-            var dataDir = TomlConfigReader.GetString(model, "data_dir", config.DataDir);
-            var assetsDir = TomlConfigReader.GetString(model, "assets_dir", config.AssetsDir);
-            var rootDir = TomlConfigReader.GetString(model, "root_dir", config.RootDir);
-            var devServerPort = TomlConfigReader.GetInt(model, "dev_server_port", config.DevServerPort);
-            var liveReloadPort = TomlConfigReader.GetInt(model, "live_reload_port", config.LiveReloadPort);
-            var enableMinification    = TomlConfigReader.GetBool(model, "enable_minification",     config.EnableMinification);
-            var enableCacheBusting   = TomlConfigReader.GetBool(model, "enable_cache_busting",    config.EnableCacheBusting);
-            var enableParallel       = TomlConfigReader.GetBool(model, "enable_parallel_build",   config.EnableParallelBuild);
-            var enableIncremental    = TomlConfigReader.GetBool(model, "enable_incremental_build",config.EnableIncrementalBuild);
-            var author               = TomlConfigReader.GetString(model, "author",   config.Author);
-            var language             = TomlConfigReader.GetString(model, "language", config.Language);
-            var logLevel             = TomlConfigReader.GetString(model, "log_level", config.LogLevel);
-            var logToFile            = TomlConfigReader.GetBool  (model, "log_to_file", config.LogToFile);
-            var logTimestamps        = TomlConfigReader.GetBool  (model, "log_timestamps", config.LogTimestamps);
-            var templateEngine       = TomlConfigReader.GetString(model, "template_engine", config.TemplateEngine);
+            var title = TomlReader.GetString(model, "title", config.Title);
+            var baseUrl = TomlReader.GetString(model, "base_url", config.BaseUrl);
+            var description = TomlReader.GetString(model, "description", config.Description);
+            var defaultLayout = TomlReader.GetString(model, "default_layout", config.DefaultLayout);
+            var permalinkFormat = TomlReader.GetString(model, "permalink_format", config.PermalinkFormat);
+            var siteVersion = TomlReader.GetString(model, "site_version", config.SiteVersion);
+            var contentDir = TomlReader.GetString(model, "content_dir", config.ContentDir);
+            var outputDir = TomlReader.GetString(model, "output_dir", config.OutputDir);
+            var layoutsDir = TomlReader.GetString(model, "layouts_dir", config.LayoutsDir);
+            var includesDir = TomlReader.GetString(model, "includes_dir", config.IncludesDir);
+            var dataDir = TomlReader.GetString(model, "data_dir", config.DataDir);
+            var assetsDir = TomlReader.GetString(model, "assets_dir", config.AssetsDir);
+            var rootDir = TomlReader.GetString(model, "root_dir", config.RootDir);
+            var devServerPort = TomlReader.GetInt(model, "dev_server_port", config.DevServerPort);
+            var liveReloadPort = TomlReader.GetInt(model, "live_reload_port", config.LiveReloadPort);
+            var enableMinification    = TomlReader.GetBool(model, "enable_minification",     config.EnableMinification);
+            var enableCacheBusting   = TomlReader.GetBool(model, "enable_cache_busting",    config.EnableCacheBusting);
+            var enableParallel       = TomlReader.GetBool(model, "enable_parallel_build",   config.EnableParallelBuild);
+            var enableIncremental    = TomlReader.GetBool(model, "enable_incremental_build",config.EnableIncrementalBuild);
+            var author               = TomlReader.GetString(model, "author",   config.Author);
+            var language             = TomlReader.GetString(model, "language", config.Language);
+            var logLevel             = TomlReader.GetString(model, "log_level", config.LogLevel);
+            var logToFile            = TomlReader.GetBool  (model, "log_to_file", config.LogToFile);
+            var logTimestamps        = TomlReader.GetBool  (model, "log_timestamps", config.LogTimestamps);
+            var templateEngine       = TomlReader.GetString(model, "template_engine", config.TemplateEngine);
 
             // Parse [[taxonomies]] array
             var taxonomies = config.Taxonomies;
@@ -158,7 +158,7 @@ public static class SiteConfigLoader
         }
         catch (Exception ex)
         {
-            Logger.Error("Config", $"Failed to parse '{configPath}': {ex.Message}", ex);
+            LogWriter.Error("Config", $"Failed to parse '{configPath}': {ex.Message}", ex);
             _cachedConfig = SiteConfigDefaults.create();
             return _cachedConfig;
         }

@@ -11,11 +11,11 @@ namespace Zest.Infra.Services;
 /// Monitors file changes, triggers rebuilds via F# BuildEngine,
 /// and broadcasts reload to all connected browsers.
 /// </summary>
-public class DevServerService : HttpServerBase
+public class DevServer : HttpServer
 {
     private readonly SiteConfig _config;
     private readonly BuildService _buildService = new();
-    private readonly WebSocketServer _wsServer;
+    private readonly SocketHub _wsServer;
     private string? _outputDir;
     private FileSystemWatcher? _watcher;
     private long _rebuildCount;
@@ -28,11 +28,11 @@ public class DevServerService : HttpServerBase
     protected override string ServerName => "Development";
     protected override int Port => _config.DevServerPort;
 
-    public DevServerService(SiteConfig config, string host = "localhost", bool openBrowser = false)
+    public DevServer(SiteConfig config, string host = "localhost", bool openBrowser = false)
         : base(host, openBrowser)
     {
         _config = config;
-        _wsServer = new WebSocketServer(config.LiveReloadPort);
+        _wsServer = new SocketHub(config.LiveReloadPort);
     }
 
     protected override string GetOutputDir()
@@ -52,7 +52,7 @@ public class DevServerService : HttpServerBase
         BuildService.PrintResult(result, _config);
 
         // WebSocket server for live reload
-        _wsServer.Start(_cts!);
+        _wsServer.Start(Cts!);
 
         StartFileWatcher();
     }
@@ -67,15 +67,15 @@ public class DevServerService : HttpServerBase
         return true;
     }
 
-    public override void Stop()
+    public override void Shutdown()
     {
-        _cts?.Cancel();
-        _listener?.Stop();
+        Cts?.Cancel();
+        Listener?.Stop();
         _wsServer.Stop();
         _watcher?.Dispose();
         _debounceTimer?.Dispose();
 
-        Logger.Info($"Total requests: {_totalRequests}, rebuilds: {_rebuildCount}");
+        LogWriter.Info($"Total requests: {TotalRequests}, rebuilds: {_rebuildCount}");
     }
 
     /// Directories whose contents should NOT trigger rebuilds.
@@ -114,7 +114,7 @@ public class DevServerService : HttpServerBase
                     if (IgnoredDirNames.Contains(p))
                         return;
                 }
-                else if (p.StartsWith("."))
+                else if (p.StartsWith('.'))
                 {
                     // Only skip hidden directories (starting with .)
                     return;
@@ -147,7 +147,7 @@ public class DevServerService : HttpServerBase
                 if (result.Errors.Length > 0)
                 {
                     foreach (var err in result.Errors)
-                        Logger.Error("Build", err);
+                        LogWriter.Error("Build", err);
                 }
 
                 Interlocked.Increment(ref _rebuildCount);
@@ -156,7 +156,7 @@ public class DevServerService : HttpServerBase
             }
             catch (Exception ex)
             {
-                Logger.Error("DevServer", $"Rebuild failed: {ex.Message}");
+                LogWriter.Error("DevServer", $"Rebuild failed: {ex.Message}");
             }
         }
     }
@@ -168,15 +168,15 @@ public class DevServerService : HttpServerBase
             var css = Zest.Engine.Zcss.Processor.processFile(filePath);
             var cssBytes = Encoding.UTF8.GetBytes(css);
             ctx.Response.ContentType = "text/css; charset=utf-8";
-            HttpResponseHelper.AddCorsHeaders(ctx.Response);
+            HttpHelper.AddCorsHeaders(ctx.Response);
             ctx.Response.ContentLength64 = cssBytes.Length;
             await ctx.Response.OutputStream.WriteAsync(cssBytes);
             await ctx.Response.OutputStream.FlushAsync();
         }
         catch (Exception ex)
         {
-            Logger.Error("ZCSS", $"Failed to compile {filePath}: {ex.Message}");
-            await HttpResponseHelper.WriteFileResponseAsync(ctx, filePath);
+            LogWriter.Error("ZCSS", $"Failed to compile {filePath}: {ex.Message}");
+            await HttpHelper.WriteFileResponseAsync(ctx, filePath);
         }
     }
 }

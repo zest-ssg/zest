@@ -15,17 +15,17 @@ public static class BuildController
         BuildCommandOptions opts;
         try
         {
-            opts = CliParser.ParseBuild(args);
+            opts = CommandParser.ParseBuild(args);
         }
         catch (ArgumentException ex)
         {
-            Logger.WriteError($"  Error: {ex.Message}");
+            LogWriter.WriteError($"  Error: {ex.Message}");
             return 1;
         }
 
         if (opts.ShowHelp)
         {
-            CliParser.PrintBuildHelp();
+            CommandParser.PrintBuildHelp();
             return 0;
         }
 
@@ -35,20 +35,20 @@ public static class BuildController
             var fullPath = Path.GetFullPath(opts.ProjectPath);
             if (!Directory.Exists(fullPath))
             {
-                Logger.WriteError($"  Directory not found: {fullPath}");
+                LogWriter.WriteError($"  Directory not found: {fullPath}");
                 return 1;
             }
             Directory.SetCurrentDirectory(fullPath);
         }
 
-        var config = SiteConfigLoader.Load();
+        var config = ConfigLoader.Load();
 
         // Initialize logger from CLI flags overriding config
         var effectiveLevel = opts.Verbose ? "Debug" : config.LogLevel;
         if (opts.Quiet) effectiveLevel = "Warn";
-        Logger.Configure(effectiveLevel, config.LogToFile, config.LogTimestamps);
-        Logger.Debug("Build", $"Log level: {Logger.MinLevel}, file logging: {config.LogToFile}");
-        Logger.Debug("Build", $"Project: {config.Title} (rootDir={config.RootDir})");
+        LogWriter.Configure(effectiveLevel, config.LogToFile, config.LogTimestamps);
+        LogWriter.Debug("Build", $"Log level: {LogWriter.MinLevel}, file logging: {config.LogToFile}");
+        LogWriter.Debug("Build", $"Project: {config.Title} (rootDir={config.RootDir})");
 
         var buildSvc = new BuildService();
         var result = buildSvc.Execute(config);
@@ -56,7 +56,7 @@ public static class BuildController
         BuildService.PrintResult(result, config);
 
         if (opts.Watch)
-            FileWatcherService.StartWatcher(config);
+            WatchAgent.StartWatcher(config);
 
         return result.Success ? 0 : 1;
     }

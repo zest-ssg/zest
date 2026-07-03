@@ -26,15 +26,15 @@ public static class WatchConstants
 /// File watcher that triggers site rebuild on content changes.
 /// Filters by relevant extensions and excludes hidden/system directories.
 /// </summary>
-public static class FileWatcherService
+public static class WatchAgent
 {
     public static void StartWatcher(SiteConfig config)
     {
         var contentDir = Path.GetFullPath(Path.Combine(
             Directory.GetCurrentDirectory(), config.EffectiveContentDir.TrimStart('.', '\\', '/')));
 
-        Logger.WriteAccent($"  Watching for changes in '{contentDir}'...");
-        Logger.WriteDim("  Press Ctrl+C to stop.");
+        LogWriter.WriteAccent($"  Watching for changes in '{contentDir}'...");
+        LogWriter.WriteDim("  Press Ctrl+C to stop.");
 
         using var watcher = new FileSystemWatcher(contentDir, "*.*")
         {
@@ -53,7 +53,7 @@ public static class FileWatcherService
             }
             catch (Exception ex)
             {
-                Logger.Error("Watch", $"Rebuild failed: {ex.Message}");
+                LogWriter.Error("Watch", $"Rebuild failed: {ex.Message}");
             }
         };
 
@@ -90,7 +90,7 @@ public static class FileWatcherService
         for (int i = 0; i < parts.Length - 1; i++)
         {
             var p = parts[i];
-            if (WatchConstants.ExcludedDirs.Contains(p) || p.StartsWith("_") || p.StartsWith("."))
+            if (WatchConstants.ExcludedDirs.Contains(p) || p.StartsWith('_') || p.StartsWith('.'))
                 return false;
         }
 

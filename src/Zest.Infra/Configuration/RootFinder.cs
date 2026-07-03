@@ -6,7 +6,7 @@ namespace Zest.Infra.Configuration;
 /// Finds the project root directory by looking for _config.toml or content/ directory.
 /// Walks up from the starting directory until a match is found.
 /// </summary>
-internal static class ProjectRootFinder
+internal static class RootFinder
 {
     /// <summary>
     /// Find the project root directory. Walks up from hint (or CWD) looking for

@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using Zest.App.CommandLine;
 using Zest.App.Controllers;
 using Zest.Infra.Services;
@@ -13,6 +15,8 @@ using Zest.Infra.Services;
  *   zest --version                 Show version
  *   zest --help                    Show help
  */
+namespace Zest.App;
+
 public static class Program
 {
     public static int Main(string[] args)
@@ -40,53 +44,55 @@ public static class Program
         }
         catch (Exception ex)
         {
-            Logger.Error("Program", $"Fatal error: {ex.Message}", ex);
+            LogWriter.Error("Program", $"Fatal error: {ex.Message}", ex);
             return 1;
         }
     }
 
+    private static readonly CompositeFormat _headerFormat = CompositeFormat.Parse(HelpRenderer.Header);
+
     private static int ShowVersion()
     {
-        Logger.WriteAccent(string.Format(HelpText.Header, HelpText.Version));
-        Logger.WriteDim(HelpText.Ecosystem);
+        LogWriter.WriteAccent(string.Format(CultureInfo.InvariantCulture, _headerFormat, HelpRenderer.Version));
+        LogWriter.WriteDim(HelpRenderer.Ecosystem);
         return 0;
     }
 
     private static int PrintHelp()
     {
-        Logger.WriteAccent(string.Format(HelpText.Header, HelpText.Version));
-        Logger.WriteDim(HelpText.Ecosystem);
+        LogWriter.WriteAccent(string.Format(CultureInfo.InvariantCulture, _headerFormat, HelpRenderer.Version));
+        LogWriter.WriteDim(HelpRenderer.Ecosystem);
         Console.WriteLine();
 
-        Logger.WriteSection("Usage");
-        Logger.WriteInfo(HelpText.Usage);
+        LogWriter.WriteSection("Usage");
+        LogWriter.WriteInfo(HelpRenderer.Usage);
         Console.WriteLine();
 
-        Logger.WriteSection("Commands");
-        Logger.WriteInfo(HelpText.Commands);
-        Logger.WriteInfo(HelpText.CommandsServe);
-        Logger.WriteInfo(HelpText.CommandsPreview);
-        Logger.WriteInfo(HelpText.CommandsInit);
-        Logger.WriteInfo(HelpText.CommandsVersion);
-        Logger.WriteInfo(HelpText.CommandsHelp);
+        LogWriter.WriteSection("Commands");
+        LogWriter.WriteInfo(HelpRenderer.Commands);
+        LogWriter.WriteInfo(HelpRenderer.CommandsServe);
+        LogWriter.WriteInfo(HelpRenderer.CommandsPreview);
+        LogWriter.WriteInfo(HelpRenderer.CommandsInit);
+        LogWriter.WriteInfo(HelpRenderer.CommandsVersion);
+        LogWriter.WriteInfo(HelpRenderer.CommandsHelp);
         Console.WriteLine();
 
-        Logger.WriteSection("Options");
-        Logger.WriteInfo(HelpText.Options);
-        Logger.WriteInfo(HelpText.OptionsWatch);
+        LogWriter.WriteSection("Options");
+        LogWriter.WriteInfo(HelpRenderer.Options);
+        LogWriter.WriteInfo(HelpRenderer.OptionsWatch);
         Console.WriteLine();
 
-        Logger.WriteSection("File Formats");
-        Logger.WriteInfo(HelpText.FileFormats);
+        LogWriter.WriteSection("File Formats");
+        LogWriter.WriteInfo(HelpRenderer.FileFormats);
         Console.WriteLine();
 
-        Logger.WriteDim($"  {HelpText.HelpSuffix}");
+        LogWriter.WriteDim($"  {HelpRenderer.HelpSuffix}");
         return 0;
     }
 
     private static int UnknownCommand(string cmd)
     {
-        Logger.WriteError($"  Unknown command: '{cmd}'");
+        LogWriter.WriteError($"  Unknown command: '{cmd}'");
         Console.WriteLine();
         PrintHelp();
         return 1;

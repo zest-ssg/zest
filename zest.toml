@@ -1,0 +1,36 @@
+# ─── Zest CLI Metadata ────────────────────────────────
+# This file defines the CLI branding, version, and help text.
+# Read by Zest.App.CommandLine.HelpRenderer at startup.
+
+[meta]
+version    = "1.1.2"
+header     = "Zest v{0} — Zenith Efficient Static Toolkit"
+ecosystem  = "Ecosystem: .zpage.fsx + .zcss + .toml + .js"
+
+[usage]
+general    = "Usage: zest <command> [options]"
+
+[commands]
+build      = "  build                       Build static site to _site/"
+serve      = "  serve                       Build + start dev server (live reload)"
+preview    = "  preview                     Preview built _site/ directory"
+init       = "  init                        Scaffold new project from template"
+version    = "  --version, -v               Show version info"
+help       = "  --help,    -h               Show this help"
+
+[options]
+port       = "  --port, -p PORT             Server port (default: 8080)"
+watch      = "  --watch, -w                 Watch files and auto-rebuild"
+
+[formats]
+items = """
+  .zpage.fsx  F# template scripts with HTML DSL & Markdown
+  .znjk       Nunjucks-compatible templates
+  .html       Static HTML files (copied as-is, no template syntax)
+  .zcss       Zest Stylesheet — CSS superset with nesting/vars
+  .toml       Site config & global data (zero-config by default)
+  .js         Client scripts, copied as-is to output
+  .md         Standard Markdown content files"""
+
+[suffix]
+help_message = "Run 'zest <command> --help' for command-specific options."

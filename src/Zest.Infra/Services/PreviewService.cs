@@ -8,7 +8,7 @@ namespace Zest.Infra.Services;
 /// Preview server — serves _site/ static files directly, no build triggered.
 /// Useful for previewing the built site before deployment.
 /// </summary>
-public class PreviewService : HttpServerBase
+public class PreviewService : HttpServer
 {
     private readonly SiteConfig _config;
     private readonly int _port;
@@ -45,7 +45,7 @@ public class PreviewService : HttpServerBase
         // Verify output directory has content
         if (!Directory.EnumerateFileSystemEntries(outputDir).Any())
         {
-            Logger.Warn("Preview", $"Output directory '{outputDir}' is empty. Run 'zest build' first.");
+            LogWriter.Warn("Preview", $"Output directory '{outputDir}' is empty. Run 'zest build' first.");
         }
     }
 }

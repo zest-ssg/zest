@@ -12,11 +12,11 @@ namespace Zest.Infra.Services;
 /// Features:
 ///   - Structured log format: timestamp | level | [module] message
 ///   - ERROR level includes full exception stack trace
-///   - Configurable level, file mirroring, and timestamps via <see cref="Logger.Configure"/>
+///   - Configurable level, file mirroring, and timestamps via <see cref="LogWriter.Configure"/>
 ///   - Debug output only when level is Debug (or verbose)
 ///   - Thread-safe file logging
 /// </summary>
-public static class Logger
+public static class LogWriter
 {
     public enum Level
     {
@@ -252,7 +252,7 @@ public static class Logger
         var sb = new StringBuilder(128);
         if (_logTimestamps)
         {
-            sb.Append(DateTime.Now.ToString("HH:mm:ss.fff"));
+            sb.Append(DateTime.Now.ToString("HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture));
             sb.Append(' ');
         }
         sb.Append('[');

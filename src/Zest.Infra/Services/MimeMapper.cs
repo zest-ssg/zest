@@ -7,7 +7,7 @@ namespace Zest.Infra.Services;
 /// <summary>
 /// MIME type mapping by file extension.
 /// </summary>
-internal static class MimeTypeMap
+internal static class MimeMapper
 {
     private static readonly Dictionary<string, string> _map = new(StringComparer.OrdinalIgnoreCase)
     {

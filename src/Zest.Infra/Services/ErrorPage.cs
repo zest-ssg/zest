@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
 
@@ -8,7 +9,7 @@ namespace Zest.Infra.Services;
 /// <summary>
 /// 404 response generation with custom 404.html fallback and page suggestions.
 /// </summary>
-internal static class NotFoundResponse
+internal static class ErrorPage
 {
     /// <summary>
     /// Try to write a 404 response, using custom 404.html if available.
@@ -17,12 +18,12 @@ internal static class NotFoundResponse
     public static async Task WriteNotFound(HttpListenerContext ctx, string outputDir, string? requestedPath = null)
     {
         ctx.Response.StatusCode = 404;
-        HttpResponseHelper.AddCorsHeaders(ctx.Response);
+        HttpHelper.AddCorsHeaders(ctx.Response);
 
         var custom404 = Path.Combine(outputDir, "404.html");
         if (File.Exists(custom404))
         {
-            await HttpResponseHelper.WriteFileResponseAsync(ctx, custom404);
+            await HttpHelper.WriteFileResponseAsync(ctx, custom404);
             return;
         }
 
@@ -45,15 +46,15 @@ internal static class NotFoundResponse
         sb.AppendLine(".back{display:inline-block;margin-top:24px;padding:8px 20px;background:#4361ee;color:#fff;border-radius:6px;font-size:.9em;font-weight:500}");
         sb.AppendLine(".back:hover{background:#3a0ca3;text-decoration:none}");
         sb.AppendLine("</style></head><body>");
-        sb.AppendLine($"<h1>404</h1>");
-        sb.AppendLine($"<p>The requested path <code>{WebUtility.HtmlEncode(requestedPath ?? "/")}</code> was not found.</p>");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"<h1>404</h1>");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"<p>The requested path <code>{WebUtility.HtmlEncode(requestedPath ?? "/")}</code> was not found.</p>");
 
         if (suggestions.Count > 0)
         {
             sb.AppendLine("<div class=\"suggestions\">");
             sb.AppendLine("<h2>Did you mean:</h2><ul>");
             foreach (var s in suggestions)
-                sb.AppendLine($"<li><a href=\"{s.Url}\">{WebUtility.HtmlEncode(s.Title)}</a></li>");
+                sb.AppendLine(CultureInfo.InvariantCulture, $"<li><a href=\"{s.Url}\">{WebUtility.HtmlEncode(s.Title)}</a></li>");
             sb.AppendLine("</ul></div>");
         }
 
@@ -61,7 +62,7 @@ internal static class NotFoundResponse
         sb.AppendLine($"<a href=\"/\" class=\"back\">← Back to home</a>");
         sb.AppendLine("</body></html>");
 
-        await HttpResponseHelper.WriteStringResponse(ctx, 404, sb.ToString());
+        await HttpHelper.WriteStringResponse(ctx, 404, sb.ToString());
     }
 
     /// <summary>
@@ -90,7 +91,7 @@ internal static class NotFoundResponse
                 var title = Path.GetFileNameWithoutExtension(file);
                 if (title == "index")
                     title = Path.GetFileName(Path.GetDirectoryName(file)!) ?? relPath;
-                var url = "/" + relPath.TrimStart('/') + (relPath.EndsWith("/") ? "" : "/");
+                var url = "/" + relPath.TrimStart('/') + (relPath.EndsWith('/') ? "" : "/");
                 if (url == "//") url = "/";
                 result.Add((url, title));
             }
