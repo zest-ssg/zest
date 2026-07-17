@@ -12,6 +12,9 @@
     <Compile Include="DslSugar.fs" />
     <Compile Include="CompoundBuilder.fs" />
     <Compile Include="DslCss.fs" />
+    <Compile Include="CssValidator.fs" />
+    <Compile Include="CssScoper.fs" />
+    <Compile Include="DslStyle.fs" />
     <Compile Include="ContentGuard.fs" />
     <Compile Include="DslCollections.fs" />
     <Compile Include="DslUtilities.fs" />

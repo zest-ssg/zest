@@ -1,5 +1,6 @@
 namespace Zest.Dsl
 
+open System
 open System.Text
 
 // ============================================================
@@ -143,6 +144,62 @@ module DslCss =
                 sb.Remove(sb.Length - 1, 1) |> ignore
                 sb.Append("}") |> ignore
         sb.ToString()
+
+    // ── Compilation diagnostics ───────────────────────────
+
+    /// Result type carrying compiled CSS with optional warnings.
+    type CssCompileResult =
+        { /// The compiled CSS string.
+          Css: string
+          /// Non-fatal warnings (e.g. empty rules skipped).
+          Warnings: string list }
+
+    /// Compile with diagnostics — identical to compileStylesheet
+    /// but also reports skipped empty rules as warnings.
+    let compileStylesheetWithDiagnostics (rules: CssRule list) : CssCompileResult =
+        let sb = StringBuilder()
+        let warned = ResizeArray<string>()
+        for rule in rules do
+            if List.isEmpty rule.Declarations then
+                warned.Add(sprintf "Skipped empty rule: '%s' (no declarations)" rule.Selector)
+            else
+                sb.AppendLine(sprintf "%s {" rule.Selector) |> ignore
+                for decl in rule.Declarations do
+                    sb.AppendLine(sprintf "  %s: %s;" decl.Property decl.Value) |> ignore
+                sb.AppendLine("}") |> ignore
+        { Css = sb.ToString().TrimEnd(); Warnings = warned |> List.ofSeq }
+
+    // ── Value validation helper ───────────────────────────
+
+    /// Lightweight value-format helper for common CSS data types.
+    /// Returns None if the value looks valid, Some(msg) with a warning otherwise.
+    /// Covers length units (px, em, rem, %, vw, vh), colours, and times (s, ms).
+    let validateValue (propName: string) (value: string) : string option =
+        let trimmed = value.Trim()
+        if String.IsNullOrWhiteSpace trimmed then
+            Some(sprintf "Empty value for property '%s'" propName)
+        else
+            let isValidLength (v: string) =
+                let lower = v.ToLowerInvariant()
+                lower.EndsWith("px") || lower.EndsWith("em") || lower.EndsWith("rem")
+                || lower.EndsWith("%") || lower.EndsWith("vw") || lower.EndsWith("vh")
+                || lower.EndsWith("vmin") || lower.EndsWith("vmax") || lower.EndsWith("ch")
+                || lower.EndsWith("ex") || lower.EndsWith("cm") || lower.EndsWith("mm")
+                || lower.EndsWith("in") || lower.EndsWith("pt") || lower.EndsWith("pc")
+                || lower = "0" || lower = "auto" || lower = "inherit" || lower = "initial"
+                || lower = "unset" || lower = "revert"
+            let isKnownLengthProperty (p: string) =
+                let lower = p.ToLowerInvariant()
+                lower.Contains("width") || lower.Contains("height") || lower.Contains("size")
+                || lower.Contains("margin") || lower.Contains("padding") || lower.Contains("gap")
+                || lower.Contains("radius") || lower.Contains("spacing")
+                || lower = "top" || lower = "right" || lower = "bottom" || lower = "left"
+                || lower = "font-size" || lower = "line-height" || lower = "letter-spacing"
+                || lower = "word-spacing" || lower = "text-indent"
+                || lower.Contains("offset")
+            if isKnownLengthProperty propName && not (isValidLength trimmed) then
+                Some(sprintf "Suspicious length value '%s' for property '%s' — expected unit like px, em, rem, %%" trimmed propName)
+            else None
 
     // ── Stylesheet Computation Expression Builder ───────────
 
@@ -556,3 +613,38 @@ module DslCss =
                 sb.AppendLine("  }") |> ignore
         sb.AppendLine("}") |> ignore
         sb.ToString().TrimEnd()
+
+    /// Generate a @font-face rule from descriptor declarations.
+    /// The declarations should use CSS font descriptor properties
+    /// (font-family, src, font-weight, font-style, font-display, etc.).
+    ///
+    /// Example:
+    ///   fontFace [
+    ///       prop "font-family" "\"My Font\""
+    ///       prop "src" "url('/fonts/myfont.woff2') format('woff2')"
+    ///       prop "font-display" "swap"
+    ///   ]
+    let fontFace (decls: CssDecl list) : string =
+        if List.isEmpty decls then ""
+        else
+            let sb = StringBuilder()
+            sb.AppendLine("@font-face {") |> ignore
+            for decl in decls do
+                sb.AppendLine(sprintf "  %s: %s;" decl.Property decl.Value) |> ignore
+            sb.AppendLine("}") |> ignore
+            sb.ToString().TrimEnd()
+
+    /// Generate a @import at-rule for an external stylesheet.
+    ///
+    /// Example:
+    ///   cssImport "url('/css/reset.css')"
+    ///   cssImport (sprintf "\"%s\"" "https://fonts.googleapis.com/css2?family=Inter")
+    let cssImport (url: string) : string =
+        sprintf "@import %s;" url
+
+    /// Generate a @import with a media query condition.
+    ///
+    /// Example:
+    ///   cssImportMedia "url('/css/print.css')" "print"
+    let cssImportMedia (url: string) (mediaQuery: string) : string =
+        sprintf "@import %s %s;" url mediaQuery

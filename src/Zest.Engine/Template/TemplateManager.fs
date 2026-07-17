@@ -13,11 +13,11 @@ open System.IO
 
 /// Configuration for the template engine.
 type TemplateConfig = {
-    /// Which engine to use. "znjk" or "native" (old placeholder system).
+    /// Which engine to use. "nunjucks" or "native" (old placeholder system).
     Engine: string
     /// Whether to cache parsed templates in memory.
     EnableCache: bool
-    /// Template file extension (e.g. ".html", ".znjk").
+    /// Template file extension (e.g. ".html", ".njk").
     Extension: string
     /// Optional custom filters to register.
     Filters: (string * FilterFn) list
@@ -38,8 +38,8 @@ module TemplateManager =
     /// Initialize a template engine by name.
     let initEngine (name: string) (config: TemplateConfig) : ITemplateEngine option =
         match name with
-        | "znjk" ->
-            let engine = ZestNjkEngine()
+        | "nunjucks" | "njk" ->
+            let engine = NunjucksEngine()
             for (fnName, fn) in config.Filters do
                 (engine :> ITemplateEngine).RegisterFilter fnName fn
             engines.[name] <- engine

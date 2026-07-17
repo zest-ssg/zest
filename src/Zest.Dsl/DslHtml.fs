@@ -81,6 +81,11 @@ module Dsl =
     let scriptInline code = elem "script" [] [raw code]
     let style css = elem "style" [] [raw css]
 
+    /// Convenience re-export — inlines a compiled ZCSS stylesheet string
+    /// (output of `stylesheet { ... }` computation expression).
+    /// Equivalent to `styleZcss` from DslStyle.
+    let styleZcss (compiledCss: string) = elem "style" [] [raw ("\n" + compiledCss + "\n")]
+
     // ---- Class-shortcut helpers ----
     let divC cls ch = elem "div" [attr "class" cls] ch
     let pC cls ch = elem "p" [attr "class" cls] ch

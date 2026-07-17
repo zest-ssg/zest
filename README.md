@@ -4,7 +4,7 @@
 
 <h1 align="center">Zest SSG</h1>
 
-<p align="center"><em>Zenith Efficient Static Toolkit</em></p>
+<p align="center"><em>Zealous Efficient Static Toolkit</em></p>
 
 <p align="center">
   <a href="LICENSE">License</a> · <a href="#quick-start">Quick Start</a> · <a href="#documentation">Docs</a>
@@ -16,12 +16,12 @@
 
 ## Features
 
-- **Template as Code** — `.zpage.fsx` are real F# scripts executed at build time via `dotnet fsi`. Full F#: list comprehensions, pattern matching, string interpolation, arbitrary computation.
+- **Template as Code** — `.zest.fsx` are real F# scripts executed at build time via `dotnet fsi`. Full F#: list comprehensions, pattern matching, string interpolation, arbitrary computation.
 - **`.zhtml` Lightweight Pages** — Pure HTML pages with optional Nunjucks template syntax. No FSI overhead.
 - **HTML DSL** — Compose HTML declaratively: `render [ h1 []; p [] ]`.
 - **Markdown** — Standard `.md` files with frontmatter support.
 - **ZCSS** — A CSS superset with nesting, F#-style `let` bindings, math expressions, color functions, and mixins — compiled to standard CSS.
-- **ZestNjk Templates** — Nunjucks-compatible template engine for layouts: filters, expressions, macros, `{% if %}`, `{% for %}`, template inheritance, Zest API integration. Files use `.znjk` extension.
+- **11ty-Compatible Templates** — Full Nunjucks (.njk), Liquid (.liquid), Handlebars (.hbs), Mustache (.mustache), HAML (.haml), Pug (.pug), and WebC (.webc) support — all with auto-conversion to Nunjucks engine for filters, macros, template inheritance, and Zest API integration.
 - **`_init.fsx`** — Optional initialization script (runs before build) to inject dynamic data, load JSON/TOML, read env vars.
 - **TOML Config** — Zero-config defaults; customize via `_config.toml` and `_data/*.toml`. No YAML.
 - **Live Reload** — `zest serve` watches for changes and auto-rebuilds.
@@ -45,7 +45,7 @@ zest build
 zest preview
 ```
 
-## Example: `.zpage.fsx` Page
+## Example: `.zest.fsx` Page
 
 ```fsharp
 // @title Hello World
@@ -109,14 +109,14 @@ if env = "production" then
 ```
 my-site/
 ├── _config.toml            # Site configuration (TOML)
-├── _init.zpage.fsx         # Optional init script (runs before build)
+├── _init.zest.fsx         # Optional init script (runs before build)
 ├── _data/
 │   └── site.toml           # Global data (accessible from scripts/templates)
 ├── content/
-│   ├── index.zpage.fsx     # Home page (F# script template)
+│   ├── index.zest.fsx     # Home page (F# script template)
 │   ├── about.md            # About page (Markdown)
 │   └── posts/
-│       ├── hello-world.zpage.fsx
+│       ├── hello-world.zest.fsx
 │       └── contact.zhtml   # Pure HTML (no FSI overhead)
 ├── _layouts/
 │   ├── default.html        # Layouts (Nunjucks or native replace)
@@ -132,7 +132,7 @@ my-site/
 | Project | Language | Responsibility |
 |---------|----------|----------------|
 | **Zest.App** | C# | CLI entry point, command routing |
-| **Zest.Engine** | F# | Core engine: builds, HTML DSL, ScriptRunner, Markdown, ZCSS compiler, ZestNjk template engine |
+| **Zest.Engine** | F# | Core engine: builds, HTML DSL, ScriptRunner, Markdown, ZCSS compiler, Nunjucks template engine, 11ty-compatible language layer |
 | **Zest.Dsl** | F# | Precompiled DSL helpers for FSI script evaluation |
 | **Zest.Infra** | C# | Configuration loading, file watching, dev server |
 
@@ -155,8 +155,14 @@ dotnet publish src/Zest.App/Zest.App.csproj -c Release -r win-x64 --self-contain
 
 | Extension | Purpose | Processing |
 |-----------|---------|------------|
-| `.zpage.fsx` | F# script templates (F# + Markdown + HTML DSL) | Compiled via `dotnet fsi` |
-| `.znjk` | Zest Nunjucks templates (Nunjucks-compatible syntax with Zest API integration) | Rendered via ZestNjkEngine — supports filters, expressions, `{% if %}`, `{% for %}`, macros, template inheritance |
+| `.zest.fsx` | F# script templates (F# + Markdown + HTML DSL) | Compiled via `dotnet fsi` |
+| `.njk`      | Nunjucks templates (filters, macros, inheritance, Zest API) | Rendered via NunjucksEngine |
+| `.liquid`   | Liquid templates (Jinja2 family, auto-converted)          | Converted → NunjucksEngine |
+| `.hbs`      | Handlebars templates (auto-converted to Nunjucks)         | HandlebarsMustacheConverter → NunjucksEngine |
+| `.mustache` | Mustache templates (auto-converted to Nunjucks)            | HandlebarsMustacheConverter → NunjucksEngine |
+| `.webc`     | WebC components (SSR preprocessed)                        | WebC preprocessor → NunjucksEngine |
+| `.haml`     | HAML templates (auto-converted to HTML → Nunjucks)        | HamlConverter → NunjucksEngine |
+| `.pug`      | Pug templates (auto-converted to HTML → Nunjucks)         | PugConverter → NunjucksEngine |
 | `.zcss` | ZCSS stylesheets (CSS superset) | Compiled to `.css` |
 | `.md` | Standard Markdown | Rendered to HTML |
 | `.toml` | Configuration and data (no YAML) | Parsed at build time |
@@ -192,7 +198,7 @@ dotnet publish src/Zest.App/Zest.App.csproj -c Release -r win-x64 --self-contain
 
 | Engine | Config Value | Features |
 |--------|-------------|----------|
-| **ZestNjk** (default) | `template_engine = "znjk"` | Filters, expressions, `{% if %}`, `{% for %}`, macros, template inheritance, Zest API filters (`pages_by_tag`, `recent`, `by_collection`, `search`, `where`) |
+| **Nunjucks** (default) | `template_engine = "nunjucks"` | Filters, expressions, `{% if %}`, `{% for %}`, macros, template inheritance, Zest API filters (`pages_by_tag`, `recent`, `by_collection`, `search`, `where`) — also handles `.liquid`, `.hbs`, `.mustache`, `.webc`, `.haml`, `.pug` via auto-conversion |
 | **Native Replace** | `template_engine = "replace"` | Simple `{{ variable }}` substitution |
 
 ### HTML DSL Reference
@@ -235,7 +241,7 @@ else
 
 **Zest is not a general-purpose static site generator.** It is a specific answer to specific constraints.
 
-1. **F# as the Template** — The template is the program. `.zpage.fsx` files are real F# code, not strings.
+1. **F# as the Template** — The template is the program. `.zest.fsx` files are real F# code, not strings.
 2. **ZCSS as the Layout Engine** — Not a CSS pre-processor, but a layout engine that emits CSS.
 3. **TOML as the Contract** — No YAML. Ever.
 4. **JavaScript as Order** — No Node.js, no npm, no bundlers. JavaScript exists only for client-side interactivity.

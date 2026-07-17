@@ -11,7 +11,7 @@ open Zest.Engine
 open PageQuery
 open ScriptDiscovery
 
-/// Evaluates .zpage.fsx / .fsx scripts by spawning `dotnet fsi` as a subprocess.
+/// Evaluates .zest.fsx / .fsx scripts by spawning `dotnet fsi` as a subprocess.
 /// Optimized with static SHA256, pre-sized StringBuilder, and long-running FSI session reuse.
 module ScriptRunner =
 
@@ -145,14 +145,14 @@ module ScriptRunner =
         writeContextFile ctxFilePath
 
     // ── isPageScript: detect whether a file uses the Zest DSL render pipeline.
-    //   .zpage.fsx always returns true (the extension guarantees it).
+    //   .zest.fsx always returns true (the extension guarantees it).
     //   .fsx files are matched by keyword patterns.
     //   .md / .markdown always returns false (plain Markdown).
 
     let isPageScript (ext: string) (text: string) =
         match ext with
         | ".md" | ".markdown" -> false
-        | ".zpage.fsx" -> true
+        | ".zest.fsx" -> true
         | _ ->
             text.Split('\n')
             |> Array.map (fun l -> l.Trim())

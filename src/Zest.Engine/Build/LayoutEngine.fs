@@ -13,7 +13,7 @@ open Zest.Engine.Template
 /// Optimized with static Regex, single-pass directory traversal, HashSet-based key lookup, and filter registration caching.
 module LayoutEngine =
 
-    let private allowedLayoutExts = set [".html"; ".htm"; ".znjk"; ".zpage.fsx"; ".fsx"]
+    let private allowedLayoutExts = set [".html"; ".htm"; ".njk"; ".liquid"; ".hbs"; ".mustache"; ".zest.fsx"; ".fsx"]
 
     let private layoutCache2 = ConcurrentDictionary<string, struct(DateTime * Map<string, string * string>)>()
     let internal loadLayouts (layoutsDir: string) =
@@ -139,14 +139,17 @@ module LayoutEngine =
         match layouts.TryFind name with
         | None -> content
         | Some (path, layoutText) ->
-            let isNunjucks = path.EndsWith(".znjk", StringComparison.OrdinalIgnoreCase)
+            let isNunjucks = path.EndsWith(".njk", StringComparison.OrdinalIgnoreCase)
+                            || path.EndsWith(".liquid", StringComparison.OrdinalIgnoreCase)
+                            || path.EndsWith(".hbs", StringComparison.OrdinalIgnoreCase)
+                            || path.EndsWith(".mustache", StringComparison.OrdinalIgnoreCase)
 
             let rendered =
                 if isNunjucks then
-                    let engine = TemplateManager.getOrCreateEngine "znjk" {
-                        Engine = "znjk"
+                    let engine = TemplateManager.getOrCreateEngine "nunjucks" {
+                        Engine = "nunjucks"
                         EnableCache = true
-                        Extension = ".znjk"
+                        Extension = ".njk"
                         Filters = []
                     }
                     match engine with

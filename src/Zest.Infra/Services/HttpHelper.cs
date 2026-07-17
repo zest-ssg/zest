@@ -84,4 +84,17 @@ internal static class HttpHelper
         await ctx.Response.OutputStream.FlushAsync();
         return false;
     }
+
+    /// <summary>
+    /// Format a byte count into a human-readable string (B, KB, MB).
+    /// </summary>
+    public static string FormatBytes(long bytes)
+    {
+        return bytes switch
+        {
+            < 1024 => $"{bytes}B",
+            < 1024 * 1024 => $"{bytes / 1024.0:F1}KB",
+            _ => $"{bytes / (1024.0 * 1024.0):F1}MB"
+        };
+    }
 }

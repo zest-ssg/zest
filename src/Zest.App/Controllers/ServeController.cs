@@ -47,7 +47,7 @@ public static class ServeController
             config = config.WithDevServerPort(opts.PortOverride.Value);
         }
 
-        using var server = new DevServer(config, opts.Host, opts.OpenBrowser);
+        using var server = new DevServer(config, opts.Host, opts.OpenBrowser, opts.SPA, opts.DirectoryListing);
         server.Start();
 
         var evt = new ManualResetEventSlim(false);
@@ -89,7 +89,8 @@ public static class ServeController
         LogWriter.SetQuiet(opts.Quiet);
 
         var config = ConfigLoader.Load();
-        using var server = new PreviewService(config, opts.Port, opts.Host, opts.OpenBrowser);
+        using var server = new PreviewService(config, opts.Port, opts.Host, opts.OpenBrowser,
+            watch: opts.Watch, liveReload: opts.LiveReload, spaFallback: opts.SPA, dirListing: opts.DirectoryListing);
         server.Start();
 
         var evt = new ManualResetEventSlim(false);

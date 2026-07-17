@@ -20,19 +20,28 @@ public class DevServer : HttpServer
     private FileSystemWatcher? _watcher;
     private long _rebuildCount;
 
+    // SSE fallback for environments where WebSocket is blocked
+    private readonly List<Stream> _sseClients = new();
+    private readonly object _sseLock = new();
+
     // Keep debounce timer as field to prevent GC from collecting it
     private System.Timers.Timer? _debounceTimer;
     // Prevent concurrent rebuilds
     private readonly object _rebuildLock = new();
+    // Track whether the current change batch is CSS-only (for style injection vs full reload)
+    private bool _cssOnlyChanges = true;
+    private readonly object _changeLock = new();
 
     protected override string ServerName => "Development";
     protected override int Port => _config.DevServerPort;
 
-    public DevServer(SiteConfig config, string host = "localhost", bool openBrowser = false)
+    public DevServer(SiteConfig config, string host = "localhost", bool openBrowser = false, bool spaFallback = false, bool dirListing = false)
         : base(host, openBrowser)
     {
         _config = config;
         _wsServer = new SocketHub(config.LiveReloadPort);
+        EnableSpaFallback = spaFallback;
+        EnableDirectoryListing = dirListing;
     }
 
     protected override string GetOutputDir()
@@ -59,6 +68,14 @@ public class DevServer : HttpServer
 
     protected override string? GetLiveReloadScript() => _wsServer.GetLiveReloadScript();
 
+    protected override async Task<bool> TryHandleVirtualPath(HttpListenerContext ctx, string urlPath)
+    {
+        if (urlPath != "/__zest_livereload_events") return false;
+
+        await HandleSseConnection(ctx);
+        return true;
+    }
+
     protected override async Task<bool> TryHandleSpecialFile(HttpListenerContext ctx, string filePath, string ext)
     {
         if (ext != ".zcss") return false;
@@ -74,6 +91,16 @@ public class DevServer : HttpServer
         _wsServer.Stop();
         _watcher?.Dispose();
         _debounceTimer?.Dispose();
+
+        // Close all SSE connections
+        lock (_sseLock)
+        {
+            foreach (var s in _sseClients)
+            {
+                try { s.Close(); } catch { }
+            }
+            _sseClients.Clear();
+        }
 
         LogWriter.Info($"Total requests: {TotalRequests}, rebuilds: {_rebuildCount}");
     }
@@ -124,6 +151,13 @@ public class DevServer : HttpServer
             var ext = Path.GetExtension(e.Name!)?.ToLowerInvariant() ?? "";
             if (!WatchConstants.Extensions.Contains(ext)) return;
 
+            // Track whether this change batch is CSS-only
+            var isCss = ext is ".css" or ".zcss";
+            lock (_changeLock)
+            {
+                if (!isCss) _cssOnlyChanges = false;
+            }
+
             _debounceTimer.Stop();
             _debounceTimer.Start();
         }
@@ -152,7 +186,24 @@ public class DevServer : HttpServer
 
                 Interlocked.Increment(ref _rebuildCount);
 
-                _wsServer.BroadcastReload();
+                // Choose broadcast type based on changed file types
+                bool cssOnly;
+                lock (_changeLock)
+                {
+                    cssOnly = _cssOnlyChanges;
+                    _cssOnlyChanges = true; // reset for next batch
+                }
+
+                if (cssOnly)
+                {
+                    _wsServer.BroadcastStyleUpdate();
+                    BroadcastSse("{\"type\":\"style\"}");
+                }
+                else
+                {
+                    _wsServer.BroadcastReload();
+                    BroadcastSse("{\"type\":\"reload\"}");
+                }
             }
             catch (Exception ex)
             {
@@ -177,6 +228,75 @@ public class DevServer : HttpServer
         {
             LogWriter.Error("ZCSS", $"Failed to compile {filePath}: {ex.Message}");
             await HttpHelper.WriteFileResponseAsync(ctx, filePath);
+        }
+    }
+
+    /// <summary>
+    /// Handle an SSE (Server-Sent Events) connection for live reload.
+    /// Keeps the connection open and streams reload events.
+    /// </summary>
+    private async Task HandleSseConnection(HttpListenerContext ctx)
+    {
+        var response = ctx.Response;
+        response.ContentType = "text/event-stream; charset=utf-8";
+        response.Headers["Cache-Control"] = "no-cache";
+        response.Headers["Connection"] = "keep-alive";
+        HttpHelper.AddCorsHeaders(response);
+        response.SendChunked = true;
+
+        var stream = response.OutputStream;
+
+        lock (_sseLock) _sseClients.Add(stream);
+        LogWriter.VerboseLog($"SSE client connected (total: {_sseClients.Count})");
+
+        try
+        {
+            // Send initial comment to establish connection
+            var initBytes = Encoding.UTF8.GetBytes(": connected\n\n");
+            await stream.WriteAsync(initBytes);
+            await stream.FlushAsync();
+
+            // Keep connection alive until cancelled
+            while (Cts is { IsCancellationRequested: false })
+            {
+                await Task.Delay(15_000, Cts.Token);
+                // Send keepalive comment
+                var keepalive = Encoding.UTF8.GetBytes(": keepalive\n\n");
+                await stream.WriteAsync(keepalive);
+                await stream.FlushAsync();
+            }
+        }
+        catch { }
+        finally
+        {
+            lock (_sseLock) _sseClients.Remove(stream);
+            try { stream.Close(); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// Broadcast an SSE event to all connected SSE clients.
+    /// </summary>
+    private void BroadcastSse(string jsonData)
+    {
+        lock (_sseLock)
+        {
+            if (_sseClients.Count == 0) return;
+
+            var payload = Encoding.UTF8.GetBytes($"data: {jsonData}\n\n");
+            var dead = new List<Stream>();
+
+            foreach (var s in _sseClients)
+            {
+                try
+                {
+                    s.Write(payload, 0, payload.Length);
+                    s.Flush();
+                }
+                catch { dead.Add(s); }
+            }
+
+            foreach (var s in dead) _sseClients.Remove(s);
         }
     }
 }

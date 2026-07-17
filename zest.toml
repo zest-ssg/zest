@@ -4,8 +4,8 @@
 
 [meta]
 version    = "0.3.6"
-header     = "Zest v{0} — Zenith Efficient Static Toolkit"
-ecosystem  = "Ecosystem: .zpage.fsx + .zcss + .toml + .js"
+header     = "Zest v{0} — Zealous Efficient Static Toolkit"
+ecosystem  = "Ecosystem: .zest.fsx + .zcss"
 
 [usage]
 general    = "Usage: zest <command> [options]"
@@ -24,9 +24,15 @@ watch      = "  --watch, -w                 Watch files and auto-rebuild"
 
 [formats]
 items = """
-  .zpage.fsx  F# template scripts with HTML DSL & Markdown
-  .znjk       Nunjucks-compatible templates
-  .html       Static HTML files (copied as-is, no template syntax)
+  .zest.fsx  F# template scripts with HTML DSL & Markdown
+  .njk       Nunjucks-compatible templates
+  .liquid    Liquid templates (Jinja2 family, Nunjucks-compatible)
+  .hbs       Handlebars templates (auto-converted to Nunjucks)
+  .mustache  Mustache templates (auto-converted to Nunjucks)
+  .webc      WebC components (SSR-processed)
+  .haml      HAML templates (auto-converted)
+  .pug       Pug templates (auto-converted)
+  .html      HTML files (Nunjucks-preprocessed when template syntax detected)
   .zcss       Zest Stylesheet — CSS superset with nesting/vars
   .toml       Site config & global data (zero-config by default)
   .js         Client scripts, copied as-is to output

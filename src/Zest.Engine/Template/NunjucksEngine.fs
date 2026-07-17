@@ -7,12 +7,12 @@ open System.Text
 open System.Text.RegularExpressions
 
 // ============================================================
-// ZestNjkEngine — Zest-specific Nunjucks-compatible template engine
+// NunjucksEngine — Nunjucks-compatible template engine
 // ============================================================
-// NOT official Nunjucks - Zest's Nunjucks-like (.znjk) engine.
+// Nunjucks-compatible (.njk) template engine for Zest.
 // Syntax aims to be highly compatible with Nunjucks/Jinja2,
 // but this is a Zest-specific implementation with Zest API
-// integrations. Use .znjk extension for Zest Nunjucks templates.
+// integrations. Use .njk extension for Nunjucks templates.
 //
 // Supports: variables, filters, tags (if/for/block/extends/include/
 //           set/raw/filter/macro/import/from), template inheritance,
@@ -667,7 +667,7 @@ module private NunjucksImpl =
 
 // ── Public engine class ────────────────────────────────────────────────
 
-type ZestNjkEngine() =
+type NunjucksEngine() =
 
     let templateCache = Dictionary<string, struct(DateTime * string)>()
     let mutable loadFileFn: string -> Result<string, string> = fun path ->
@@ -678,7 +678,7 @@ type ZestNjkEngine() =
     member _.SetLoadFile(fn: string -> Result<string, string>) = loadFileFn <- fn
 
     interface ITemplateEngine with
-        member _.Name = "znjk"
+        member _.Name = "nunjucks"
 
         member _.Render(templateText: string) (variables: IDictionary<string, obj>) : Result<string, TemplateError> =
             try
