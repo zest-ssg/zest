@@ -101,19 +101,177 @@ module private NunjucksImpl =
         | _ -> Seq.singleton v
 
     // ── Expression evaluator ────────────────────────────────
+    // Precedence (low → high): or → and → not → comparison → additive
+    // → multiplicative → atom (literal / path / pipe-filter chain).
+    // Respects quotes and paren/bracket nesting when splitting operators.
+
+    /// Coerce any value to a float for arithmetic/numeric comparison.
+    let toNum (v: obj) : float =
+        match v with
+        | :? int as i -> float i
+        | :? int64 as i -> float i
+        | :? double as d -> d
+        | :? single as f -> float f
+        | :? bool as b -> if b then 1.0 else 0.0
+        | :? string as s -> (match Double.TryParse s with true, n -> n | _ -> nan)
+        | null -> 0.0
+        | _ -> nan
+
+    /// Structural equality used by == / != operators.
+    let valuesEqual (a: obj) (b: obj) : bool =
+        match a, b with
+        | null, null -> true
+        | null, _ | _, null -> false
+        | (:? string as sa), (:? string as sb) -> sa = sb
+        | _ ->
+            let na, nb = toNum a, toNum b
+            if not (Double.IsNaN na) && not (Double.IsNaN nb) then na = nb
+            else (toStr a) = (toStr b)
+
+    /// Scan for the rightmost top-level occurrence of any operator in `ops`.
+    /// `ops` must be ordered longest-first so multi-char ops win. Word
+    /// operators (and/or/not/in) require alphanumeric word boundaries.
+    let findTopOp (text: string) (ops: string list) : (int * string) option =
+        let n = text.Length
+        let isWord (op: string) = op.Length > 0 && Char.IsLetter op.[0]
+        let boundaryOk (i: int) (len: int) =
+            let before = i = 0 || not (Char.IsLetterOrDigit text.[i-1] || text.[i-1] = '_')
+            let after = i + len >= n || not (Char.IsLetterOrDigit text.[i+len] || text.[i+len] = '_')
+            before && after
+        let mutable inS = false
+        let mutable inD = false
+        let mutable depth = 0
+        let mutable best : (int * string) option = None
+        let mutable i = 0
+        while i < n do
+            let c = text.[i]
+            if inS then (if c = '\'' then inS <- false); i <- i + 1
+            elif inD then (if c = '"' then inD <- false); i <- i + 1
+            elif c = '\'' then inS <- true; i <- i + 1
+            elif c = '"' then inD <- true; i <- i + 1
+            elif c = '(' || c = '[' then depth <- depth + 1; i <- i + 1
+            elif c = ')' || c = ']' then depth <- depth - 1; i <- i + 1
+            elif depth = 0 then
+                let matched =
+                    ops |> List.tryFind (fun op ->
+                        i + op.Length <= n
+                        && text.Substring(i, op.Length) = op
+                        && (not (isWord op) || boundaryOk i op.Length))
+                match matched with
+                | Some op -> best <- Some(i, op); i <- i + op.Length
+                | None -> i <- i + 1
+            else i <- i + 1
+        best
+
     let rec evalExpr (exprText: string) (ctx: IDictionary<string, obj>) : obj =
-        let rec resolvePath (parts: string list) (cur: obj option) : obj =
-            match parts, cur with
-            | [], None -> null
-            | [], Some v -> v
-            | name :: rest, None ->
-                match ctx.TryGetValue name with
-                | true, v -> resolvePath rest (Some v)
-                | _ -> null
-            | part :: rest, Some curObj ->
-                resolvePath rest (Some(propGet curObj part))
         let text = exprText.Trim()
-        if text = "" then box "" else
+        if text = "" then box "" else evalOr text ctx
+
+    and evalOr (text: string) ctx : obj =
+        match findTopOp text [ "or" ] with
+        | Some(i, op) ->
+            let l = evalOr (text.[..i-1]) ctx
+            if toBool l then box true else box (toBool (evalOr (text.[i+op.Length..]) ctx))
+        | None -> evalAnd text ctx
+
+    and evalAnd (text: string) ctx : obj =
+        match findTopOp text [ "and" ] with
+        | Some(i, op) ->
+            let l = evalAnd (text.[..i-1]) ctx
+            if not (toBool l) then box false else box (toBool (evalAnd (text.[i+op.Length..]) ctx))
+        | None -> evalNot text ctx
+
+    and evalNot (text: string) ctx : obj =
+        let t = text.Trim()
+        if t.StartsWith("not ") then box (not (toBool (evalNot (t.[4..]) ctx)))
+        else evalCompare t ctx
+
+    and evalCompare (text: string) ctx : obj =
+        match findTopOp text [ "=="; "!="; ">="; "<="; ">"; "<"; " in " ] with
+        | Some(i, op) ->
+            let lhs = text.[..i-1]
+            let rhs = text.[i+op.Length..]
+            let l = evalAdd lhs ctx
+            let r = evalAdd rhs ctx
+            match op.Trim() with
+            | "==" -> box (valuesEqual l r)
+            | "!=" -> box (not (valuesEqual l r))
+            | ">"  -> box (toNum l >  toNum r)
+            | "<"  -> box (toNum l <  toNum r)
+            | ">=" -> box (toNum l >= toNum r)
+            | "<=" -> box (toNum l <= toNum r)
+            | "in" ->
+                let found = seqOf r |> Seq.exists (fun x -> valuesEqual x l)
+                let strContains = match r with :? string as sv -> sv.Contains(toStr l) | _ -> false
+                box (found || strContains)
+            | _ -> box false
+        | None -> evalAdd text ctx
+
+    and evalAdd (text: string) ctx : obj =
+        match findTopOp text [ "+"; "-" ] with
+        | Some(i, op) when text.[..i-1].Trim() <> "" ->
+            let l = evalAdd (text.[..i-1]) ctx
+            let r = evalMul (text.[i+op.Length..]) ctx
+            // '+' concatenates when either side is a non-numeric string
+            if op = "+" && (match l, r with (:? string as ls), _ when Double.IsNaN(toNum ls) -> true
+                                          | _, (:? string as rs) when Double.IsNaN(toNum rs) -> true
+                                          | _ -> false)
+            then box (toStr l + toStr r)
+            else box (if op = "+" then toNum l + toNum r else toNum l - toNum r)
+        | _ -> evalMul text ctx
+
+    and evalMul (text: string) ctx : obj =
+        match findTopOp text [ "*"; "/"; "%" ] with
+        | Some(i, op) when text.[..i-1].Trim() <> "" ->
+            let l = toNum (evalMul (text.[..i-1]) ctx)
+            let r = toNum (evalAtom (text.[i+op.Length..]) ctx)
+            box (match op with "*" -> l * r | "/" -> (if r = 0.0 then 0.0 else l / r) | _ -> (if r = 0.0 then 0.0 else l % r))
+        | _ -> evalAtom text ctx
+
+    /// Resolve a dotted/bracketed path like `a.b[0].c['x']` against the context.
+    and resolvePath (pathText: string) (ctx: IDictionary<string, obj>) : obj =
+        let segments = ResizeArray<string>()
+        let sb = StringBuilder()
+        let mutable i = 0
+        let n = pathText.Length
+        while i < n do
+            let c = pathText.[i]
+            if c = '.' then
+                if sb.Length > 0 then segments.Add(sb.ToString()); sb.Clear() |> ignore
+                i <- i + 1
+            elif c = '[' then
+                if sb.Length > 0 then segments.Add(sb.ToString()); sb.Clear() |> ignore
+                let e = pathText.IndexOf(']', i)
+                if e > i then
+                    segments.Add(pathText.Substring(i+1, e-i-1).Trim().Trim('"', '\''))
+                    i <- e + 1
+                else i <- n
+            else sb.Append(c) |> ignore; i <- i + 1
+        if sb.Length > 0 then segments.Add(sb.ToString())
+        let mutable cur : obj = null
+        let mutable first = true
+        let mutable ok = true
+        for seg in segments do
+            if ok then
+                if first then
+                    match ctx.TryGetValue seg with
+                    | true, v -> cur <- v
+                    | _ -> ok <- false; cur <- null
+                    first <- false
+                else
+                    match cur with
+                    | :? System.Collections.IList as l ->
+                        match Int32.TryParse seg with
+                        | true, idx when idx >= 0 && idx < l.Count -> cur <- l.[idx]
+                        | _ -> cur <- propGet cur seg
+                    | _ -> cur <- propGet cur seg
+        cur
+
+    and evalAtom (text: string) (ctx: IDictionary<string, obj>) : obj =
+        let t = text.Trim()
+        if t = "" then box "" else
+        // Parenthesized sub-expression
+        if t.StartsWith("(") && t.EndsWith(")") then evalExpr (t.[1..t.Length-2]) ctx else
         let tryLiteral (s: string) =
             let t = s.Trim()
             if (t.StartsWith("\"") && t.EndsWith("\"")) || (t.StartsWith("'") && t.EndsWith("'")) then
@@ -125,11 +283,11 @@ module private NunjucksImpl =
                 match Int32.TryParse t with
                 | true, i -> Some(box i)
                 | _ -> match Double.TryParse t with | true, f -> Some(box f) | _ -> None
-        let pipeIdx = text.IndexOf("|")
-        if pipeIdx >= 0 then
-            let lhs = text.[..pipeIdx-1].Trim()
-            let rawVal = match tryLiteral lhs with Some v -> v | _ -> resolvePath (lhs.Split('.') |> Array.toList) None
-            let filterParts = text.[pipeIdx+1..].Split('|') |> Array.map (fun x -> x.Trim()) |> Array.filter (fun x -> x <> "")
+        let pipeIdx = t.IndexOf("|")
+        if pipeIdx >= 0 && (pipeIdx = 0 || t.[pipeIdx-1] <> '|') && (pipeIdx+1 >= t.Length || t.[pipeIdx+1] <> '|') then
+            let lhs = t.[..pipeIdx-1].Trim()
+            let rawVal = match tryLiteral lhs with Some v -> v | _ -> resolvePath lhs ctx
+            let filterParts = t.[pipeIdx+1..].Split('|') |> Array.map (fun x -> x.Trim()) |> Array.filter (fun x -> x <> "")
             let mutable result = rawVal
             for fp in filterParts do
                 let ppi = fp.IndexOf('(')
@@ -142,9 +300,9 @@ module private NunjucksImpl =
                 result <- applyFilter fname result fargs
             result
         else
-            match tryLiteral text with
+            match tryLiteral t with
             | Some v -> v
-            | _ -> resolvePath (text.Split('.') |> Array.toList) None
+            | _ -> resolvePath t ctx
 
     and applyFilter (name: string) (value: obj) (args: obj list) : obj =
         let s = toStr value
@@ -155,6 +313,11 @@ module private NunjucksImpl =
         | "upper" | "uppercase" -> box(s.ToUpperInvariant())
         | "title" -> box(Regex.Replace(s.ToLower(), @"\b\w", fun m -> m.Value.ToUpper()))
         | "trim" -> box(s.Trim())
+        | "strip" -> box(s.Trim())
+        | "lstrip" -> box(s.TrimStart())
+        | "rstrip" -> box(s.TrimEnd())
+        | "nl2br" -> box(s.Replace("\r\n", "\n").Replace("\n", "<br />\n"))
+        | "string" | "str" -> box s
         | "safe" -> value   // bypass auto-escape
         | "escape" | "e" -> box(HtmlEncode(s))
         | "striptags" -> box(Regex.Replace(s, @"<[^>]+>", "").Trim())
@@ -179,6 +342,10 @@ module private NunjucksImpl =
         | "int" -> box(try int s with _ -> 0)
         | "float" -> box(try float s with _ -> 0.0)
         | "abs" -> box(abs (try float s with _ -> 0.0))
+        | "round" ->
+            let precision = if args.Length > 0 then (try int(toStr args.[0]) with _ -> 0) else 0
+            let n = try float s with _ -> 0.0
+            box(Math.Round(n, precision))
 
         // Collection filters
         | "length" ->
@@ -297,6 +464,63 @@ module private NunjucksImpl =
                 |> Seq.map (fun kv -> [| box kv.Key; kv.Value |] :> obj)
                 |> Array.ofSeq :> obj
             | _ -> value
+        | "list" ->
+            match value with
+            | :? string as sv -> sv.ToCharArray() |> Array.map (fun c -> box(string c)) :> obj
+            | :? System.Collections.IEnumerable as ie -> ie |> Seq.cast<obj> |> Array.ofSeq :> obj
+            | _ -> [| value |] :> obj
+        | "keys" ->
+            match value with
+            | :? IDictionary<string, obj> as d -> d.Keys |> Seq.map box |> Array.ofSeq :> obj
+            | _ -> value
+        | "values" ->
+            match value with
+            | :? IDictionary<string, obj> as d -> d.Values |> Array.ofSeq :> obj
+            | _ -> value
+        | "unique" ->
+            match value with
+            | :? System.Collections.IEnumerable as ie ->
+                ie |> Seq.cast<obj> |> Seq.distinctBy toStr |> Array.ofSeq :> obj
+            | _ -> value
+        | "map" ->
+            let attr = if args.Length > 0 then toStr args.[0] else ""
+            match value with
+            | :? System.Collections.IEnumerable as ie when attr <> "" ->
+                ie |> Seq.cast<obj> |> Seq.map (fun x -> propGet x attr) |> Array.ofSeq :> obj
+            | _ -> value
+        | "sum" ->
+            let attr = if args.Length > 0 then toStr args.[0] else ""
+            match value with
+            | :? System.Collections.IEnumerable as ie ->
+                ie |> Seq.cast<obj>
+                |> Seq.sumBy (fun x ->
+                    let v = if attr = "" then x else propGet x attr
+                    match Double.TryParse(toStr v) with true, n -> n | _ -> 0.0)
+                |> box
+            | _ -> value
+        | "min" ->
+            match value with
+            | :? System.Collections.IEnumerable as ie ->
+                let nums = ie |> Seq.cast<obj> |> Seq.choose (fun x -> match Double.TryParse(toStr x) with true, n -> Some n | _ -> None) |> Array.ofSeq
+                if nums.Length > 0 then box(Array.min nums) else value
+            | _ -> value
+        | "max" ->
+            match value with
+            | :? System.Collections.IEnumerable as ie ->
+                let nums = ie |> Seq.cast<obj> |> Seq.choose (fun x -> match Double.TryParse(toStr x) with true, n -> Some n | _ -> None) |> Array.ofSeq
+                if nums.Length > 0 then box(Array.max nums) else value
+            | _ -> value
+        | "merge" ->
+            match value, (if args.Length > 0 then args.[0] else null) with
+            | (:? IDictionary<string, obj> as a), (:? IDictionary<string, obj> as b) ->
+                let merged = Dictionary<string, obj>(a)
+                for kv in b do merged.[kv.Key] <- kv.Value
+                merged :> obj
+            | _ -> value
+        | "json" | "dump" ->
+            let indent = if args.Length > 0 then (try int(toStr args.[0]) with _ -> 0) else 0
+            let opts = System.Text.Json.JsonSerializerOptions(WriteIndented = (indent > 0))
+            box(System.Text.Json.JsonSerializer.Serialize(value, opts))
 
         // Default filter
         | "default" | "d" ->
@@ -319,6 +543,29 @@ module private NunjucksImpl =
                          | _ -> DateTime.Now
                      | _ -> DateTime.Now
             box(dt.ToString(fmt))
+
+        // Zest-specific date filters (SEO / RSS)
+        | "dateiso" ->
+            let dt = match value with
+                     | :? DateTime as d -> d
+                     | :? string as sv -> (match DateTime.TryParse sv with true, d -> d | _ -> DateTime.Now)
+                     | _ -> DateTime.Now
+            box(dt.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"))
+        | "daterfc822" | "daterss" ->
+            let dt = match value with
+                     | :? DateTime as d -> d
+                     | :? string as sv -> (match DateTime.TryParse sv with true, d -> d | _ -> DateTime.Now)
+                     | _ -> DateTime.Now
+            box(dt.ToUniversalTime().ToString("ddd, dd MMM yyyy HH:mm:ss", Globalization.CultureInfo.InvariantCulture) + " GMT")
+
+        // Zest-specific slug / text filters
+        | "slugize" ->
+            box(Regex.Replace(s.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-'))
+        | "slugizepath" ->
+            let segs = s.Split('/') |> Array.map (fun seg -> Regex.Replace(seg.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-'))
+            box(String.Join("/", segs))
+        | "totext" ->
+            box(Regex.Replace(s, @"<[^>]+>", "").Trim())
 
         // URL filter
         | "urlize" ->
@@ -422,20 +669,24 @@ module private NunjucksImpl =
 
                 match tag with
                 | "if" ->
-                    let cond = if args.Length > 0 then toBool(evalExpr args.[0] env.Variables) else true
-                    // Check for elseif/else in bodyTokens
-                    if cond then
-                        // Render body until first elseif/else
-                        let bodyOnly = bodyTokens |> takeUntilElseTag
-                        match renderTokens bodyOnly env with
+                    // Split the body into (condition, branchTokens) at top-level
+                    // elif/else boundaries, then render the first matching branch.
+                    let condExpr = args |> String.concat " "
+                    let branches = splitIfBranches condExpr bodyTokens
+                    let chosen =
+                        branches |> List.tryPick (fun (cond, toks) ->
+                            let matched =
+                                match cond with
+                                | None -> true   // else branch
+                                | Some "" -> true
+                                | Some e -> toBool (evalExpr e env.Variables)
+                            if matched then Some toks else None)
+                    match chosen with
+                    | Some toks ->
+                        match renderTokens toks env with
                         | Ok h -> sb.Append(h) |> ignore
                         | Error e -> error <- Some e
-                    else
-                        // Skip to else/elseif/end
-                        let remaining = bodyTokens |> skipPastIfBody
-                        match renderTokens remaining env with
-                        | Ok h -> sb.Append(h) |> ignore
-                        | Error e -> error <- Some e
+                    | None -> ()
 
                 | "for" ->
                     let ls = args |> String.concat " "
@@ -444,21 +695,35 @@ module private NunjucksImpl =
                         if inIdx >= 0 then ls.[..inIdx-1].Trim(), ls.[inIdx+4..]
                         else ls, ""
                     let iter = evalExpr iterExpr env.Variables |> seqOf |> Array.ofSeq
+                    let loopTokens = forLoopBody bodyTokens
+                    // Support "key, value" destructuring for dict/pair iteration.
+                    let varNames = loopVar.Split(',') |> Array.map (fun v -> v.Trim())
                     if iter.Length > 0 then
                         for idxItem, item in iter |> Array.indexed do
                             let ctx = Dictionary<string, obj>(env.Variables |> Seq.map (fun kv -> KeyValuePair(kv.Key, kv.Value)))
-                            ctx.[loopVar] <- item
+                            if varNames.Length = 2 then
+                                match item with
+                                | :? IDictionary<string, obj> as kv ->
+                                    ctx.[varNames.[0]] <- (match kv.TryGetValue "key" with true, k -> k | _ -> box "")
+                                    ctx.[varNames.[1]] <- (match kv.TryGetValue "value" with true, v -> v | _ -> box "")
+                                | :? System.Collections.IList as pair when pair.Count >= 2 ->
+                                    ctx.[varNames.[0]] <- pair.[0]
+                                    ctx.[varNames.[1]] <- pair.[1]
+                                | _ -> ctx.[loopVar] <- item
+                            else
+                                ctx.[loopVar] <- item
                             ctx.["loop"] <- box(dict [
                                 "index", box(idxItem+1); "index0", box idxItem
+                                "revindex", box(iter.Length-idxItem); "revindex0", box(iter.Length-idxItem-1)
                                 "first", box(idxItem=0); "last", box(idxItem=iter.Length-1)
                                 "length", box iter.Length
                             ])
-                            match renderTokens bodyTokens { env with Variables = ctx :> IDictionary<string, obj> } with
+                            match renderTokens loopTokens { env with Variables = ctx :> IDictionary<string, obj> } with
                             | Ok h -> sb.Append(h) |> ignore
                             | Error e -> error <- Some e
                     else
                         // else body of for
-                        let elseBody = bodyTokens |> skipPastIfBody
+                        let elseBody = forElseBody bodyTokens
                         match renderTokens elseBody env with
                         | Ok h -> sb.Append(h) |> ignore
                         | Error e -> error <- Some e
@@ -650,19 +915,64 @@ module private NunjucksImpl =
         | Some e -> Error e
         | None -> Ok(sb.ToString())
 
-    /// Take tokens from body until hitting an elseif/else tag (for if body)
-    and takeUntilElseTag (tokens: Token list) : Token list =
-        tokens |> List.takeWhile (fun t ->
-            match t with
-            | TagToken(n, _) when n = "else" || n = "elseif" || n = "elif" -> false
-            | _ -> true)
+    /// Split an if-block body into ordered branches, each tagged with an
+    /// optional condition (None = the final `else`). Nested if/for blocks are
+    /// skipped so their inner elif/else tags don't split the outer branch.
+    and splitIfBranches (firstCond: string) (tokens: Token list) : (string option * Token list) list =
+        let arr = tokens |> Array.ofList
+        let n = arr.Length
+        let branches = ResizeArray<string option * Token list>()
+        let mutable curCond : string option = Some firstCond
+        let cur = ResizeArray<Token>()
+        let mutable depth = 0
+        let mutable i = 0
+        while i < n do
+            match arr.[i] with
+            | TagToken(("if" | "for"), _) -> depth <- depth + 1; cur.Add arr.[i]
+            | TagToken(("endif" | "endfor"), _) -> depth <- depth - 1; cur.Add arr.[i]
+            | TagToken(("elif" | "elseif"), a) when depth = 0 ->
+                branches.Add(curCond, List.ofSeq cur); cur.Clear()
+                curCond <- Some(a |> String.concat " ")
+            | TagToken("else", _) when depth = 0 ->
+                branches.Add(curCond, List.ofSeq cur); cur.Clear()
+                curCond <- None
+            | t -> cur.Add t
+            i <- i + 1
+        branches.Add(curCond, List.ofSeq cur)
+        List.ofSeq branches
 
-    /// Given an if body, skip past the if-true portion and return remaining (else/elseif branches)
-    and skipPastIfBody (tokens: Token list) : Token list =
-        tokens |> List.skipWhile (fun t ->
-            match t with
-            | TagToken(n, _) when n = "else" || n = "elseif" || n = "elif" -> false
-            | _ -> true)
+    /// Extract the `{% else %}` body of a for-loop (depth-aware). Returns the
+    /// tokens after a top-level else, or an empty list when none is present.
+    and forElseBody (tokens: Token list) : Token list =
+        let arr = tokens |> Array.ofList
+        let n = arr.Length
+        let mutable depth = 0
+        let mutable elseIdx = -1
+        let mutable i = 0
+        while i < n && elseIdx < 0 do
+            match arr.[i] with
+            | TagToken(("if" | "for"), _) -> depth <- depth + 1
+            | TagToken(("endif" | "endfor"), _) -> depth <- depth - 1
+            | TagToken("else", _) when depth = 0 -> elseIdx <- i
+            | _ -> ()
+            i <- i + 1
+        if elseIdx >= 0 && elseIdx + 1 < n then arr.[elseIdx+1..] |> Array.toList else []
+
+    /// Extract the loop body of a for-loop, stopping at a top-level else.
+    and forLoopBody (tokens: Token list) : Token list =
+        let arr = tokens |> Array.ofList
+        let n = arr.Length
+        let mutable depth = 0
+        let mutable elseIdx = -1
+        let mutable i = 0
+        while i < n && elseIdx < 0 do
+            match arr.[i] with
+            | TagToken(("if" | "for"), _) -> depth <- depth + 1
+            | TagToken(("endif" | "endfor"), _) -> depth <- depth - 1
+            | TagToken("else", _) when depth = 0 -> elseIdx <- i
+            | _ -> ()
+            i <- i + 1
+        if elseIdx >= 0 then arr.[..elseIdx-1] |> Array.toList else tokens
 
 
 // ── Public engine class ────────────────────────────────────────────────

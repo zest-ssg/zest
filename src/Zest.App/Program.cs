@@ -12,6 +12,10 @@ using Zest.Infra.Services;
  *   zest serve [--port PORT]       Build + start dev server with live reload
  *   zest preview [--port PORT]     Preview built _site/ directory (no build)
  *   zest init [path]               Scaffold new project
+ *   zest scaffold <template> [path]  Generate project from preset (blog/docs/portfolio/empty)
+ *   zest migrate <source-ssg> [--from --to --dry-run]  Migrate from Jekyll/Hexo/Hugo/11ty
+ *   zest convert-config <from> <to>  Convert _config between YAML ↔ TOML
+ *   zest clean [--cache] [--output]  Clear build artifacts (cache and/or _site)
  *   zest --version                 Show version
  *   zest --help                    Show help
  */
@@ -37,6 +41,10 @@ public static class Program
                 "serve" or "dev" => ServeController.Execute(args),
                 "preview" => ServeController.ExecutePreview(args),
                 "init" => InitController.Execute(args),
+                "scaffold" => ScaffoldCommand.Execute(args),
+                "migrate" => MigrateCommand.Execute(args),
+                "convert-config" or "convert_config" => ConfigConverter.Execute(args),
+                "clean" => CleanController.Execute(args),
                 "--version" or "-v" => ShowVersion(),
                 "--help" or "-h" => PrintHelp(),
                 _ => UnknownCommand(command)
@@ -73,6 +81,10 @@ public static class Program
         LogWriter.WriteInfo(HelpRenderer.CommandsServe);
         LogWriter.WriteInfo(HelpRenderer.CommandsPreview);
         LogWriter.WriteInfo(HelpRenderer.CommandsInit);
+        LogWriter.WriteInfo("  zest scaffold <template> [path]   Generate project from preset (blog/docs/portfolio/empty)");
+        LogWriter.WriteInfo("  zest migrate <source-ssg>         Migrate from Jekyll/Hexo/Hugo/11ty (--from --to --dry-run)");
+        LogWriter.WriteInfo("  zest convert-config <from> <to>   Convert _config between YAML ↔ TOML");
+        LogWriter.WriteInfo("  zest clean [--cache] [--output]   Clear build artifacts (default: both)");
         LogWriter.WriteInfo(HelpRenderer.CommandsVersion);
         LogWriter.WriteInfo(HelpRenderer.CommandsHelp);
         Console.WriteLine();

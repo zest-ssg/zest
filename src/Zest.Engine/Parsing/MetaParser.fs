@@ -301,7 +301,9 @@ module MetaParser =
             (tomlMeta, tomlBody)
         else
             match ext with
-            | ".njk" | ".liquid" | ".hbs" | ".mustache" | ".haml" | ".pug" | ".webc" ->
+            | FileExtensions.Nunjucks | FileExtensions.Liquid | FileExtensions.Handlebars
+            | FileExtensions.Mustache | FileExtensions.Haml | FileExtensions.Pug
+            | FileExtensions.WebC ->
                 parseHtmlCommentsWithLines lines
             | _ ->
                 let meta = parseFsxCommentsWithLines lines

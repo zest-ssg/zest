@@ -25,6 +25,23 @@ module BuildEngine =
         try
             ScriptRunner.resetSession()
             ScriptEvaluator.resetNunjucksCache()
+
+            // ── Surface active compatibility / template modes ──
+            // Helps users verify that [compat] / [template] flags took effect.
+            let compatFlags =
+                [ if config.CompatJekyll then "jekyll"
+                  if config.CompatHexo then "hexo"
+                  if config.CompatHugo then "hugo"
+                  if config.CompatEleventy then "eleventy" ]
+            if not (List.isEmpty compatFlags) then
+                eprintfn "[Zest] Compat mode active: %s" (String.concat ", " compatFlags)
+            // Strict Nunjucks mode disables Zest extension filters so only
+            // official-Nunjucks-compatible filters remain available.
+            let isStrict = config.NunjucksCompatibility = "strict"
+            FilterRegistry.setStrictMode isStrict
+            if isStrict then
+                eprintfn "[Zest] Nunjucks strict mode — Zest extension filters disabled."
+
             let root       = Directory.GetCurrentDirectory()
             let contentDir = resolveEffectiveContentDir root config
             let outputDir  = resolvePath root config.OutputDir
@@ -91,6 +108,12 @@ module BuildEngine =
             for kv in initResult.GlobalData do
                 if not (gDict.ContainsKey kv.Key) then
                     gDict.[kv.Key] <- kv.Value
+            // Merge init-declared global functions as template-accessible values.
+            for kv in initResult.GlobalFunctions do
+                if not (gDict.ContainsKey kv.Key) then
+                    gDict.[kv.Key] <- kv.Value
+            // Propagate init-declared filters so every engine picks them up.
+            FilterRegistry.setInitFilters initResult.Filters
             PageQuery.setGlobalData gDict
 
             // ── Content pipeline: discover → evaluate → write output ──

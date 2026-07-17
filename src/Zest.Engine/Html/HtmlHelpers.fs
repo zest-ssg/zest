@@ -25,7 +25,7 @@ module HtmlHelpers =
     /// Reference an external stylesheet (.zcss → .css auto-rewritten).
     let stylesheet (href: string) : HtmlNode =
         let cssHref =
-            if href.EndsWith(".zcss", StringComparison.OrdinalIgnoreCase)
+            if href.EndsWith(FileExtensions.Zcss, StringComparison.OrdinalIgnoreCase)
             then href.[..href.Length - 5] + "css"
             else href
         Element("link", ["rel", "stylesheet"; "href", cssHref], [])

@@ -22,9 +22,38 @@
     <!-- Strip satellite resource assemblies -->
     <SatelliteResourceLanguages>none</SatelliteResourceLanguages>
 
-    <!-- App metadata -->
+    <!-- NuGet package metadata (shared across all projects)
+         The CLI tool is published as PackageId=zest with
+         ToolCommandName=zest, so users install via:
+           dotnet tool install -g zest
+         and invoke via: zest <command>
+         Lowercase PackageId matches the .NET tool naming convention
+         (cf. dotnet-ef, powershell, dotnet-outdated). -->
+    <Version>0.2.0</Version>
+    <AssemblyVersion>0.2.0.0</AssemblyVersion>
+    <FileVersion>0.2.0.0</FileVersion>
+    <Authors>Zest Contributors</Authors>
+    <Company>Zest SSG</Company>
     <Copyright>Apache 2.0 License</Copyright>
-    <Description>Zest SSG — Zenith Efficient Static Toolkit</Description>
+    <Description>Zest SSG — Zealous Efficient Static Toolkit. A hybrid F# + C# static site generator where templates are real code.</Description>
+    <PackageTags>ssg;static-site-generator;fsharp;csharp;nunjucks;template;zcss;dotnet-tool</PackageTags>
+    <RepositoryUrl>https://github.com/zest-ssg/zest</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryCommit>$(SourceRevisionId)</RepositoryCommit>
+    <PackageProjectUrl>https://github.com/zest-ssg/zest</PackageProjectUrl>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>zest.png</PackageIcon>
+    <PackageIconUrl>https://raw.githubusercontent.com/zest-ssg/zest/main/zest.png</PackageIconUrl>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>false</IncludeSymbols>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!-- Library projects (Engine/Dsl/Infra) are not published as separate
+         NuGet packages — they ship inside the zest tool package. -->
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <!-- Shared NuGet package versions (use PackageReference Version="..." in csproj/fsproj to consume) -->

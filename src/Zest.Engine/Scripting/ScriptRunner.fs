@@ -151,8 +151,8 @@ module ScriptRunner =
 
     let isPageScript (ext: string) (text: string) =
         match ext with
-        | ".md" | ".markdown" -> false
-        | ".zest.fsx" -> true
+        | FileExtensions.Markdown | FileExtensions.MarkdownLong -> false
+        | FileExtensions.ZestScript -> true
         | _ ->
             text.Split('\n')
             |> Array.map (fun l -> l.Trim())

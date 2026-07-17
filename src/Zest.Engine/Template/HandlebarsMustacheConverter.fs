@@ -3,6 +3,7 @@ namespace Zest.Engine.Template
 open System
 open System.Text
 open System.Text.RegularExpressions
+open Zest.Engine
 
 // ============================================================
 // HandlebarsMustacheConverter
@@ -107,6 +108,6 @@ module HandlebarsMustacheConverter =
 
     let convertByExtension (ext: string) (template: string) : string =
         match ext.ToLowerInvariant() with
-        | ".hbs"      -> convertHandlebars template
-        | ".mustache" -> convertMustache template
-        | _           -> template
+        | FileExtensions.Handlebars -> convertHandlebars template
+        | FileExtensions.Mustache   -> convertMustache template
+        | _                         -> template

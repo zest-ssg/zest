@@ -55,7 +55,7 @@ module ScriptEvaluator =
     /// Extract and render content HTML from script text (legacy Markdown fallback mode).
     let private renderContent (ext: string) (bodyText: string) (fullText: string) : string =
         match ext with
-        | ".md" | ".markdown" ->
+        | FileExtensions.Markdown | FileExtensions.MarkdownLong ->
             MarkdownEngine.toHtml bodyText
         | _ ->
             let lines =
@@ -83,23 +83,23 @@ module ScriptEvaluator =
         // Pre-process format-specific syntax before Nunjucks
         let templateText =
             match ext.ToLowerInvariant() with
-            | ".hbs"      -> HandlebarsMustacheConverter.convertHandlebars bodyText
-            | ".mustache" -> HandlebarsMustacheConverter.convertMustache bodyText
-            | ".liquid"   ->
+            | FileExtensions.Handlebars -> HandlebarsMustacheConverter.convertHandlebars bodyText
+            | FileExtensions.Mustache   -> HandlebarsMustacheConverter.convertMustache bodyText
+            | FileExtensions.Liquid     ->
                 // Liquid whitespace control: {%- → {%  and -%} → %}
                 bodyText.Replace("{%-", "{%").Replace("-%}", " %}")
-            | ".webc"     ->
+            | FileExtensions.WebC       ->
                 // WebC SSR: strip script/webc:setup, normalize template tags
                 let step1 = Regex.Replace(bodyText, @"<script[^>]*webc:setup[^>]*>.*?</script>", "", RegexOptions.Singleline)
                 let step2 = Regex.Replace(step1, @"<template[^>]*webc:nocss[^>]*>", "<!-- webc:nocss -->")
                 step2.Replace("</template>", "<!-- /webc -->")
-            | ".haml"     -> HamlConverter.convert bodyText
-            | ".pug"      -> PugConverter.convert bodyText
-            | _           -> bodyText
+            | FileExtensions.Haml       -> HamlConverter.convert bodyText
+            | FileExtensions.Pug        -> PugConverter.convert bodyText
+            | _                         -> bodyText
         match TemplateManager.getOrCreateEngine "nunjucks" {
             Engine = "nunjucks"
             EnableCache = true
-            Extension = ".njk"
+            Extension = FileExtensions.Nunjucks
             Filters = []
         } with
         | Some engine ->
@@ -156,7 +156,7 @@ module ScriptEvaluator =
             let title =
                 meta.Title
                 |> Option.orElse (
-                    if ext = ".md" || ext = ".markdown" then
+                    if ext = FileExtensions.Markdown || ext = FileExtensions.MarkdownLong then
                         let m = headingPattern.Match(bodyText)
                         if m.Success then Some(m.Groups.[1].Value.Trim()) else None
                     else None)
@@ -291,7 +291,7 @@ module ScriptEvaluator =
 
                     let contentHtml =
                         match ext with
-                        | ".njk" | ".liquid" | ".hbs" | ".mustache" | ".webc" | ".haml" | ".pug" -> renderNunjucksContent bodyText config globalData meta slug filePath ext
+                        | FileExtensions.Nunjucks | FileExtensions.Liquid | FileExtensions.Handlebars | FileExtensions.Mustache | FileExtensions.WebC | FileExtensions.Haml | FileExtensions.Pug -> renderNunjucksContent bodyText config globalData meta slug filePath ext
                         | _       -> renderContent ext bodyText text
 
                     Ok { ContentPage.empty with
@@ -311,7 +311,7 @@ module ScriptEvaluator =
                 let title =
                     meta.Title
                     |> Option.orElse (
-                        if ext = ".md" || ext = ".markdown" then
+                        if ext = FileExtensions.Markdown || ext = FileExtensions.MarkdownLong then
                             let m = headingPattern.Match(bodyText)
                             if m.Success then Some(m.Groups.[1].Value.Trim()) else None
                         else None)
@@ -325,7 +325,7 @@ module ScriptEvaluator =
 
                 let contentHtml =
                     match ext with
-                    | ".njk" | ".liquid" | ".hbs" | ".mustache" | ".webc" | ".haml" | ".pug" -> renderNunjucksContent bodyText config globalData meta slug filePath ext
+                    | FileExtensions.Nunjucks | FileExtensions.Liquid | FileExtensions.Handlebars | FileExtensions.Mustache | FileExtensions.WebC | FileExtensions.Haml | FileExtensions.Pug -> renderNunjucksContent bodyText config globalData meta slug filePath ext
                     | _       -> renderContent ext bodyText text
 
                 Ok { ContentPage.empty with

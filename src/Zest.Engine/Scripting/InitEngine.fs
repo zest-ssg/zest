@@ -11,21 +11,34 @@ open System.Text.Json
 // InitEngine — evaluates _init.zest.fsx at project root before build
 // ============================================================
 // _init.zest.fsx runs as a `dotnet fsi` subprocess. It can:
-//   - addGlobal "key" value       → inject data into globalData
-//   - loadJson "path"             → parse JSON file to dictionary
-//   - loadToml "path"             → parse TOML file to dictionary
-//   - loadEnv "KEY"               → read environment variable
-//   - console_log "message"       → debug print to stderr
-//   - exec "command" "args"       → run shell command, get stdout
+//   - addGlobal "key" value            → inject data into globalData
+//   - addFilter "name" "spec"          → register a Nunjucks filter pipeline
+//   - addGlobalFunction "name" value   → provide a global value to templates
+//   - registerMigration "note"         → log a custom migration note
+//   - loadJson "path"                  → parse JSON file to dictionary
+//   - loadToml "path"                  → parse TOML file to dictionary
+//   - loadEnv "KEY"                    → read environment variable
+//   - console_log "message"            → debug print to stderr
+//   - exec "command" "args"            → run shell command, get stdout
 //
-// Filter registration requires compiled F# code (not supported
-// via _init.zest.fsx since F# functions can't cross process boundary).
+// Because F# functions can't cross the process boundary, `addFilter`
+// takes a pipeline-spec string and `addGlobalFunction` takes a
+// pre-evaluated value. The build pipeline registers these on the
+// in-process template engine after the script exits.
 // ============================================================
 
 /// Result from running _init.zest.fsx
 type InitResult = {
     /// Additional global data to merge into the build context.
     GlobalData: IDictionary<string, obj>
+    /// Custom template filters declared via `addFilter name spec`.
+    /// The spec is a Nunjucks filter-pipeline string (e.g. "upper | trim")
+    /// applied to the filter's input value.
+    Filters: IDictionary<string, string>
+    /// Global template functions declared via `addGlobalFunction name value`.
+    /// Stored as pre-evaluated values (functions can't cross the process
+    /// boundary, so nullary value-providing is the supported form).
+    GlobalFunctions: IDictionary<string, obj>
     /// Script had errors
     HasErrors: bool
     /// Error messages (if any)
@@ -37,6 +50,9 @@ module InitEngine =
     let private verboseRef = ref false
 
     let setVerbose (v: bool) = verboseRef := v
+
+    /// Stringify any value (null-safe).
+    let private toStr (v: obj) = if isNull v then "" else v.ToString()
 
     /// Find the _init.zest.fsx in the project root.
     let private findInitScript (rootDir: string) : string option =
@@ -64,6 +80,17 @@ module InitEngine =
         sb.AppendLine("let private __initErrors = System.Collections.Concurrent.ConcurrentBag<string>()") |> ignore
         // addGlobal — adds a key-value pair to global data
         sb.AppendLine("""let addGlobal (key: string) (value: obj) = __initGlobals.[key] <- value""") |> ignore
+        // addFilter — register a custom template filter by pipeline spec.
+        // Since F# functions can't cross the process boundary, the spec is a
+        // Nunjucks filter-pipeline string (e.g. "upper | trim") that the
+        // engine applies to the filter's input value.
+        sb.AppendLine("""let addFilter (name: string) (spec: string) = __initGlobals.["__filter:" + name] <- box spec""") |> ignore
+        // addGlobalFunction — provide a global value to templates. Stored
+        // pre-evaluated; nullary value-providing is the supported form.
+        sb.AppendLine("""let addGlobalFunction (name: string) (value: obj) = __initGlobals.["__gfn:" + name] <- value""") |> ignore
+        // registerMigration — register a custom migration spec (callable
+        // from `zest migrate`). Stored as a string note for logging.
+        sb.AppendLine("""let registerMigration (note: string) = __initGlobals.["__migration:" + note] <- box note""") |> ignore
         // loadJson — load and parse a JSON file
         sb.AppendLine("""let loadJson (path: string) : obj =""") |> ignore
         sb.AppendLine("""    let text = File.ReadAllText(path)""") |> ignore
@@ -102,12 +129,37 @@ module InitEngine =
         sb.AppendLine("    File.WriteAllText(@\"" + resultFile.Replace("\\", "\\\\") + "\", data)") |> ignore
         sb.ToString()
 
+    /// Empty InitResult (used when no script or on early failure).
+    let private emptyResult : InitResult =
+        { GlobalData = dict [] :> IDictionary<string, obj>
+          Filters = dict [] :> IDictionary<string, string>
+          GlobalFunctions = dict [] :> IDictionary<string, obj>
+          HasErrors = false; Errors = [] }
+
+    /// Split the raw globals dict (keyed with `__filter:` / `__gfn:` prefixes
+    /// for filters and global functions) into the three InitResult buckets.
+    let private splitResult (raw: IDictionary<string, obj>) (hasErrors: bool) (errors: string list) : InitResult =
+        let globals = Dictionary<string, obj>()
+        let filters = Dictionary<string, string>()
+        let globalFns = Dictionary<string, obj>()
+        for kv in raw do
+            if kv.Key.StartsWith("__filter:") then
+                filters.[kv.Key.Substring(9)] <- toStr kv.Value
+            elif kv.Key.StartsWith("__gfn:") then
+                globalFns.[kv.Key.Substring(6)] <- kv.Value
+            elif kv.Key.StartsWith("__migration:") then
+                ()  // migration notes are informational only
+            else
+                globals.[kv.Key] <- kv.Value
+        { GlobalData = globals :> IDictionary<string, obj>
+          Filters = filters :> IDictionary<string, string>
+          GlobalFunctions = globalFns :> IDictionary<string, obj>
+          HasErrors = hasErrors; Errors = errors }
+
     /// Run the _init.zest.fsx script (if present) and return the result.
     let run (rootDir: string) (globalData: IDictionary<string, obj>) : InitResult =
         match findInitScript rootDir with
-        | None ->
-            // No _init.zest.fsx — no-op
-            { GlobalData = dict [] :> IDictionary<string, obj>; HasErrors = false; Errors = [] }
+        | None -> emptyResult
         | Some initPath ->
             try
                 let tmpResult = Path.Combine(Path.GetTempPath(), sprintf "zest-init-%s.json" (Guid.NewGuid().ToString("N")))
@@ -134,7 +186,7 @@ module InitEngine =
 
                     if not (proc.WaitForExit(60_000)) then
                         try proc.Kill() with _ -> ()
-                        { GlobalData = dict []; HasErrors = true; Errors = ["_init.zest.fsx timed out (60s)"] }
+                        { emptyResult with HasErrors = true; Errors = ["_init.zest.fsx timed out (60s)"] }
                     else
                         let stderr = stderrTask.Result
 
@@ -166,18 +218,18 @@ module InitEngine =
                                 dict [] :> IDictionary<string, obj>
 
                         if proc.ExitCode = 0 then
-                            { GlobalData = extraGlobals; HasErrors = false; Errors = [] }
+                            splitResult extraGlobals false []
                         else
                             let errLines =
                                 stderr.Split('\n')
                                 |> Array.filter (fun l -> not (String.IsNullOrWhiteSpace l))
                                 |> Array.truncate 20
                                 |> Array.toList
-                            { GlobalData = extraGlobals; HasErrors = true; Errors = errLines }
+                            splitResult extraGlobals true errLines
 
                 finally
                     if File.Exists tmpFsx then File.Delete tmpFsx
                     try if File.Exists tmpResult then File.Delete tmpResult with _ -> ()
 
             with ex ->
-                { GlobalData = dict []; HasErrors = true; Errors = [sprintf "_init.zest.fsx failed: %s" ex.Message] }
+                { emptyResult with HasErrors = true; Errors = [sprintf "_init.zest.fsx failed: %s" ex.Message] }

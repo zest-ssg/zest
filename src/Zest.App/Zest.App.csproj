@@ -5,10 +5,25 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
 
-    <!-- Framework-dependent deployment (FSI needs assemblies on disk) -->
+    <!-- .NET Tool packaging
+         Installed via:  dotnet tool install -g zest
+         Invoked via:    zest <command>
+         PackAsTool places the output under the tool manifest layout
+         so `dotnet tool install` works against the produced .nupkg.
+         ToolCommandName=zest keeps the CLI command name short.
+         PackageId=zest matches the .NET tool naming convention
+         (lowercase, like dotnet-ef / powershell / dotnet-outdated). -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>zest</ToolCommandName>
+    <PackageId>zest</PackageId>
+    <IsPackable>true</IsPackable>
+
+    <!-- Framework-dependent deployment (FSI needs assemblies on disk).
+         No RID is set so the tool is platform-neutral and runs on any
+         .NET 10 runtime (win/linux/osx). The previous win-x64 hard-coding
+         blocked `dotnet tool install` on non-Windows hosts. -->
     <PublishSingleFile>false</PublishSingleFile>
     <SelfContained>false</SelfContained>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <AssemblyName>zest</AssemblyName>
     <DebugType>embedded</DebugType>
 
@@ -19,12 +34,35 @@
 
     <!-- App icon -->
     <ApplicationIcon>..\..\zest.ico</ApplicationIcon>
+
+    <!-- Pack README + icon into the .nupkg so nuget.org shows them.
+         The files live at repo root; PackFolderInclude keeps them
+         at the package root for NuGet's metadata conventions. -->
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>zest.png</PackageIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Zest.Engine\Zest.Engine.fsproj" />
     <ProjectReference Include="..\Zest.Infra\Zest.Infra.csproj" />
     <ProjectReference Include="..\Zest.Dsl\Zest.Dsl.fsproj" />
+  </ItemGroup>
+
+  <!-- zest.toml holds CLI branding/help text. Embed it as a resource so
+       the tool works immediately after `dotnet tool install` without
+       needing to locate the file on disk. HelpRenderer falls back to
+       the file-system path during local development. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\zest.toml">
+      <LogicalName>zest.toml</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- Package icon + README at the nupkg root (NuGet metadata convention). -->
+  <ItemGroup>
+    <None Include="..\..\zest.png" Pack="true" PackagePath="\" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <!-- Exclude unused files from publish output -->

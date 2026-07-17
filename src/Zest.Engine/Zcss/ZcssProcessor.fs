@@ -5,6 +5,7 @@ open System.Collections.Generic
 open System.IO
 open System.Text
 open System.Text.RegularExpressions
+open Zest.Engine
 
 // ============================================================
 // ZCSS — Public API
@@ -40,16 +41,22 @@ module Processor =
     /// Process ZCSS source text with a known base directory for @use resolution.
     let private processTextWithBaseDir (baseDir: string option) (source: string) : string =
 
-        // Step 1: Extract and remove @use lines, collect imported contents
-        let userSource, importedContents =
+        // Step 1: Extract and remove @use lines, collect imported contents.
+        // Capture aliases (group 2) so namespaced variables (e.g. `p.primary`
+        // from `@use "zest:palette" as p;`) can be resolved later.
+        let userSource, importedContents, useDirectives =
             let uses = usePat.Matches(source)
             let imported = ResizeArray<string>()
+            let directives = ResizeArray<Modules.UseDirective>()
             let userSrc = usePat.Replace(source, "")
             for m in uses do
-                match resolveUserImport baseDir (m.Groups.[1].Value) with
+                let path = m.Groups.[1].Value
+                let alias = if m.Groups.[2].Success then Some m.Groups.[2].Value else None
+                directives.Add({ Modules.Path = path; Modules.Alias = alias })
+                match resolveUserImport baseDir path with
                 | Some content -> imported.Add(content)
                 | None -> ()
-            userSrc, List.ofSeq imported
+            userSrc, List.ofSeq imported, List.ofSeq directives
 
         // Step 2: Parse imported modules with mode-detected parser and collect their AST + variables
         let importedNodes, importedVars =
@@ -77,10 +84,15 @@ module Processor =
         let userLines = cleanedUser.Split('\n') |> Array.map (fun l -> l.TrimEnd('\r'))
         let mode = ParserCore.detectMode userLines
         let userVars = ParserCore.extractVars userLines
-        // Merge imported vars into user vars (user vars take precedence for !default)
+
+        // Merge imported vars + namespaced vars + user vars (user vars take
+        // precedence for !default). Namespaced vars register `alias.name`
+        // keys so `@use "zest:palette" as p;` makes `p.primary` resolvable.
+        let namespacedVars = Modules.buildNamespacedVars baseDir useDirectives
         let mergedVars =
             let d = new Dictionary<string, string>()
             for kv in importedVars do d.[kv.Key] <- kv.Value
+            for kv in namespacedVars do d.[kv.Key] <- kv.Value
             for kv in userVars do d.[kv.Key] <- kv.Value
             d :> IDictionary<string, string>
 
@@ -169,7 +181,7 @@ module BundleService =
                 for f in files do
                     try
                         let rel = Path.GetRelativePath(assetsDir, f)
-                        let cssRel = Path.ChangeExtension(rel, ".css")
+                        let cssRel = Path.ChangeExtension(rel, FileExtensions.Css)
                         let target = Path.Combine(outAssets, cssRel)
                         Processor.processFileTo f target |> ignore
                         count <- count + 1

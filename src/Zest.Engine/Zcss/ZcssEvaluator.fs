@@ -79,15 +79,34 @@ module Evaluator =
     //  10. Repeat 1-9 a few times to handle chained references
 
     // ── Cached regex patterns (module-level, created once) ──
-    let private dollarRefRe  = Regex(@"\$([\w-]+)", RegexOptions.Compiled)
+    // dollarRefRe allows dotted names so namespaced refs like `$p.primary`
+    // (from `@use "zest:palette" as p;`) resolve correctly.
+    let private dollarRefRe  = Regex(@"\$([\w][\w.-]*)", RegexOptions.Compiled)
     let private pipeFnRe     = Regex(@"^(\w+)\((.*)\)$", RegexOptions.Compiled)
+    // Matches bare namespaced refs `alias.name` (no leading $). Only used
+    // to resolve `p.primary`-style references; safe because it requires a
+    // dot, which CSS values never contain outside of numbers/units.
+    let private bareDottedRe = Regex(@"(?<![\w$.])(([a-zA-Z_]\w*)\.([\w-]+))", RegexOptions.Compiled)
 
-    /// Resolve $name references (SCSS-style) - e.g. $primary → #3b82f6
+    /// Resolve $name references (SCSS-style) - e.g. $primary → #3b82f6.
+    /// Also resolves namespaced $alias.name references.
     let private resolveDollarRefs (v: string) (vars: IDictionary<string, string>) : string =
         if not (v.Contains('$')) then v
         else
             dollarRefRe.Replace(v, fun m ->
                 match vars.TryGetValue(m.Groups.[1].Value) with
+                | true, vv -> vv
+                | _ -> m.Value)
+
+    /// Resolve bare namespaced references `alias.name` (no $). Only replaces
+    /// when the full `alias.name` key exists in vars, so normal CSS values
+    /// and dotted numbers (0.5px) are left untouched.
+    let private resolveBareDotted (v: string) (vars: IDictionary<string, string>) : string =
+        if not (v.Contains('.')) then v
+        else
+            bareDottedRe.Replace(v, fun m ->
+                let key = m.Groups.[1].Value
+                match vars.TryGetValue key with
                 | true, vv -> vv
                 | _ -> m.Value)
 
@@ -119,6 +138,7 @@ module Evaluator =
     let rec private resolvePass (v: string) (vars: IDictionary<string, string>) : string =
         v
         |> fun x -> resolveDollarRefs x vars
+        |> fun x -> resolveBareDotted x vars
         |> fun x -> resolveBareVars x vars
         |> fun x -> resolveLetIn x vars
         |> fun x -> resolveIfExpr x vars

@@ -4,6 +4,7 @@ open System
 open System.Collections.Concurrent
 open System.Collections.Generic
 open System.IO
+open Zest.Engine
 
 // ============================================================
 // TemplateManager — Unified template engine entry point
@@ -31,7 +32,7 @@ module TemplateManager =
     let private defaultConfig: TemplateConfig = {
         Engine = "native"
         EnableCache = true
-        Extension = ".html"
+        Extension = FileExtensions.Html
         Filters = []
     }
 

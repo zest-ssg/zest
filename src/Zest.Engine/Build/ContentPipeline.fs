@@ -15,6 +15,14 @@ open Zest.Engine.Scripting
 /// Content discovery, evaluation, and output writing pipeline — fully parallelized.
 module ContentPipeline =
 
+    /// Extensions processed by the content pipeline.
+    /// Excludes .html — HTML is handled separately (native-mode Nunjucks preprocessing).
+    let private processableExts =
+        [ FileExtensions.ZestScript; FileExtensions.Nunjucks; FileExtensions.Liquid
+          FileExtensions.Handlebars; FileExtensions.Mustache; FileExtensions.WebC
+          FileExtensions.Haml; FileExtensions.Pug; FileExtensions.FSharpScript
+          FileExtensions.Markdown; FileExtensions.MarkdownLong ]
+
     /// Process all content files: discover, evaluate, and write output.
     let internal processContent
         (contentDir: string)
@@ -37,39 +45,60 @@ module ContentPipeline =
                 Directory.EnumerateFiles(contentDir, "*.*", SearchOption.AllDirectories)
                 |> Seq.filter (fun f ->
                     let ext = Path.GetExtension(f).ToLowerInvariant()
-                    (ext = ".zest.fsx" || ext = ".njk" || ext = ".liquid" || ext = ".hbs" || ext = ".mustache" || ext = ".webc" || ext = ".haml" || ext = ".pug" || ext = ".fsx" || ext = ".md" || ext = ".markdown")
+                    (processableExts |> List.exists ((=) ext))
                     && not (PathResolver.isExcluded contentDir f))
                 |> Seq.distinct
                 |> Seq.toArray
 
-        // ── .html files: 11ty-style Nunjucks preprocessing ──
-        // Like 11ty preprocesses .html through Liquid, Zest preprocesses
-        // .html files through Nunjucks when they contain template syntax.
+        // ── .html files: native-mode Nunjucks preprocessing ──
+        // In native mode, HTML files are routed through the Nunjucks compat
+        // layer so `{{ }}` / `{% %}` syntax resolves against the full page +
+        // site context (like .njk content). Plain HTML without template
+        // syntax is copied verbatim.
         if Directory.Exists contentDir then
             let htmlFiles = Directory.GetFiles(contentDir, "*.html", SearchOption.AllDirectories)
                             |> Array.filter (fun f -> not (PathResolver.isExcluded contentDir f))
             if htmlFiles.Length > 0 then
+                let engineCfg = { Engine = "nunjucks"; EnableCache = true; Extension = FileExtensions.Nunjucks; Filters = [] }
                 Parallel.ForEach(htmlFiles, fun htmlFile ->
                     let relPath = Path.GetRelativePath(contentDir, htmlFile)
                     let destPath = Path.Combine(outputDir, relPath)
                     let destDir = Path.GetDirectoryName(destPath)
                     if destDir <> null then Directory.CreateDirectory(destDir) |> ignore
                     let content = File.ReadAllText(htmlFile)
-                    // 11ty-style: preprocess .html through Nunjucks if template syntax detected
                     if content.Contains("{{") || content.Contains("{%") then
-                        match TemplateManager.getOrCreateEngine "nunjucks" {
-                            Engine = "nunjucks"
-                            EnableCache = true
-                            Extension = ".njk"
-                            Filters = []
-                        } with
+                        match TemplateManager.getOrCreateEngine "nunjucks" engineCfg with
                         | Some engine ->
-                            let objDict = Collections.Generic.Dictionary<string, obj>()
-                            objDict.["content"] <- box ""
-                            match engine.Render content objDict with
+                            // Build the full page + site context so HTML can
+                            // reference {{ page.title }}, {{ site.* }}, pages, etc.
+                            let pairs = ResizeArray<string * obj>()
+                            for kv in globalData do pairs.Add(kv.Key, kv.Value)
+                            pairs.Add("site.title", box config.Title)
+                            pairs.Add("site.description", box config.Description)
+                            pairs.Add("site.base_url", box config.BaseUrl)
+                            pairs.Add("site.author", box config.Author)
+                            pairs.Add("site.language", box config.Language)
+                            // Extract page meta (title/slug from frontmatter if present)
+                            try
+                                let meta = ScriptEvaluator.extractMetaWithText htmlFile config content
+                                match meta with
+                                | Some m ->
+                                    let title =
+                                        if String.IsNullOrEmpty m.Title then Path.GetFileNameWithoutExtension htmlFile
+                                        else m.Title
+                                    pairs.Add("page.title", box title)
+                                    // Surface the page's Data dictionary (which holds
+                                    // description + all frontmatter extras) as page.* keys.
+                                    for kv in m.Data do pairs.Add("page." + kv.Key, box kv.Value)
+                                | None -> ()
+                            with _ -> ()
+                            pairs.Add("pages", box (PageQuery.getPagesForNunjucks () |> Array.map box))
+                            pairs.Add("tags", box (PageQuery.getTagsForNunjucks ()))
+                            pairs.Add("collections", box (PageQuery.getCollectionsForNunjucks ()))
+                            let ctx = TemplateManager.buildNestedContext pairs
+                            match engine.Render content ctx with
                             | Ok rendered ->
-                                let utf8 = System.Text.Encoding.UTF8
-                                File.WriteAllText(destPath, rendered, utf8)
+                                File.WriteAllText(destPath, rendered, System.Text.Encoding.UTF8)
                             | Error _ ->
                                 File.WriteAllText(destPath, content, System.Text.Encoding.UTF8)
                         | None ->
@@ -98,8 +127,8 @@ module ContentPipeline =
         PageQuery.setAllPages metaPages
         ScriptRunner.resetSession ()
 
-        let mdFiles  = allFiles |> Array.filter (fun f -> let e = Path.GetExtension(f).ToLowerInvariant() in e = ".md" || e = ".markdown")
-        let fsxFiles = allFiles |> Array.filter (fun f -> let e = Path.GetExtension(f).ToLowerInvariant() in e <> ".md" && e <> ".markdown")
+        let mdFiles  = allFiles |> Array.filter (fun f -> let e = Path.GetExtension(f).ToLowerInvariant() in e = FileExtensions.Markdown || e = FileExtensions.MarkdownLong)
+        let fsxFiles = allFiles |> Array.filter (fun f -> let e = Path.GetExtension(f).ToLowerInvariant() in e <> FileExtensions.Markdown && e <> FileExtensions.MarkdownLong)
 
         let evalResults = ConcurrentBag<Result<ContentPage, string>>()
 
@@ -197,12 +226,18 @@ module ContentPipeline =
             | Error e -> errors.Add(e)
             | Ok page ->
                 let outPath = Path.Combine(outputDir, page.OutputPath)
-                if config.EnableIncrementalBuild && not (BuildCache.needsRebuild page.SourcePath outPath) then
+                if config.EnableIncrementalBuild && not (BuildCache.needsRebuildWithDeps page.SourcePath outPath) then
                     Interlocked.Increment(&localCached) |> ignore
                 else
                     let replacements = BuildLayout.buildReplacements page config globalData
                     let layoutName   = page.Layout |> Option.defaultValue config.DefaultLayout
                     let finalHtml    = BuildLayout.applyLayout layoutName page.Content layouts replacements includes
+                    // Record page→layout dependency so future layout changes
+                    // trigger a rebuild of only the affected pages.
+                    match layouts.TryFind layoutName with
+                    | Some (layoutPath, _) ->
+                        BuildCache.recordDependency page.SourcePath layoutPath
+                    | None -> ()
                     let dir = Path.GetDirectoryName(outPath)
                     if dir <> null then Directory.CreateDirectory(dir) |> ignore
                     File.WriteAllText(outPath, finalHtml, System.Text.Encoding.UTF8)
