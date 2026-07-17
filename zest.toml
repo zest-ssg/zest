@@ -3,7 +3,7 @@
 # Read by Zest.App.CommandLine.HelpRenderer at startup.
 
 [meta]
-version    = "0.3.6"
+version    = "0.1.0"
 header     = "Zest v{0} — Zealous Efficient Static Toolkit"
 ecosystem  = "Ecosystem: .zest.fsx + .zcss"
 

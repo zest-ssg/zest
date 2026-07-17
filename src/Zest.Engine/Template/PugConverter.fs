@@ -5,7 +5,7 @@ open System.Text
 open System.Text.RegularExpressions
 
 // ============================================================
-// PugConverter — Pug → HTML 转换器 (实验性)
+// PugConverter — Pug → HTML Converter
 // ============================================================
 // Converts Pug (indentation-based) syntax to HTML.
 // Covers the most common Pug features (formerly Jade).
