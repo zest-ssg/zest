@@ -8,6 +8,7 @@ open System.Threading
 open System.Threading.Tasks
 open Zest.Engine
 open Zest.Engine.Parsing
+open Zest.Engine.Template
 open Zest.Engine.Routing
 open Zest.Engine.Scripting
 
@@ -36,12 +37,14 @@ module ContentPipeline =
                 Directory.EnumerateFiles(contentDir, "*.*", SearchOption.AllDirectories)
                 |> Seq.filter (fun f ->
                     let ext = Path.GetExtension(f).ToLowerInvariant()
-                    (ext = ".zpage.fsx" || ext = ".znjk" || ext = ".fsx" || ext = ".md" || ext = ".markdown")
+                    (ext = ".zest.fsx" || ext = ".njk" || ext = ".liquid" || ext = ".hbs" || ext = ".mustache" || ext = ".webc" || ext = ".haml" || ext = ".pug" || ext = ".fsx" || ext = ".md" || ext = ".markdown")
                     && not (PathResolver.isExcluded contentDir f))
                 |> Seq.distinct
                 |> Seq.toArray
 
-        // ── .html files: copy verbatim to output, no template processing ──
+        // ── .html files: 11ty-style Nunjucks preprocessing ──
+        // Like 11ty preprocesses .html through Liquid, Zest preprocesses
+        // .html files through Nunjucks when they contain template syntax.
         if Directory.Exists contentDir then
             let htmlFiles = Directory.GetFiles(contentDir, "*.html", SearchOption.AllDirectories)
                             |> Array.filter (fun f -> not (PathResolver.isExcluded contentDir f))
@@ -51,11 +54,28 @@ module ContentPipeline =
                     let destPath = Path.Combine(outputDir, relPath)
                     let destDir = Path.GetDirectoryName(destPath)
                     if destDir <> null then Directory.CreateDirectory(destDir) |> ignore
-                    // Read once, write once — avoid double I/O
                     let content = File.ReadAllText(htmlFile)
-                    File.WriteAllText(destPath, content, System.Text.Encoding.UTF8)
+                    // 11ty-style: preprocess .html through Nunjucks if template syntax detected
                     if content.Contains("{{") || content.Contains("{%") then
-                        eprintfn "[Zest] WARN: '%s' contains Nunjucks template syntax, .html files do not support it — use .znjk instead" htmlFile
+                        match TemplateManager.getOrCreateEngine "nunjucks" {
+                            Engine = "nunjucks"
+                            EnableCache = true
+                            Extension = ".njk"
+                            Filters = []
+                        } with
+                        | Some engine ->
+                            let objDict = Collections.Generic.Dictionary<string, obj>()
+                            objDict.["content"] <- box ""
+                            match engine.Render content objDict with
+                            | Ok rendered ->
+                                let utf8 = System.Text.Encoding.UTF8
+                                File.WriteAllText(destPath, rendered, utf8)
+                            | Error _ ->
+                                File.WriteAllText(destPath, content, System.Text.Encoding.UTF8)
+                        | None ->
+                            File.WriteAllText(destPath, content, System.Text.Encoding.UTF8)
+                    else
+                        File.WriteAllText(destPath, content, System.Text.Encoding.UTF8)
                     Interlocked.Increment(&processed) |> ignore) |> ignore
 
         let total = allFiles.Length

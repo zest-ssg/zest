@@ -51,6 +51,20 @@ public class SocketHub : IDisposable
 
     public void BroadcastReload()
     {
+        BroadcastJson("{\"type\":\"reload\"}");
+    }
+
+    /// <summary>
+    /// Broadcast a CSS style update to all connected clients.
+    /// Clients will reload external stylesheets without a full page refresh.
+    /// </summary>
+    public void BroadcastStyleUpdate()
+    {
+        BroadcastJson("{\"type\":\"style\"}");
+    }
+
+    private void BroadcastJson(string json)
+    {
         lock (_wsLock)
         {
             if (_wsClients.Count == 0) return;
@@ -60,13 +74,13 @@ public class SocketHub : IDisposable
                 try
                 {
                     var stream = c.GetStream();
-                    var frame = EncodeWebSocketFrame("reload");
+                    var frame = EncodeWebSocketFrame(json);
                     stream.Write(frame, 0, frame.Length);
                 }
                 catch { dead.Add(c); }
             }
             foreach (var c in dead) _wsClients.Remove(c);
-            LogWriter.VerboseLog($"Broadcast reload to {_wsClients.Count} clients");
+            LogWriter.VerboseLog($"Broadcast to {_wsClients.Count} clients: {json}");
         }
     }
 
@@ -163,30 +177,85 @@ public class SocketHub : IDisposable
 
     /// <summary>
     /// Generate the live-reload WebSocket script for injection into HTML pages.
+    /// Supports full-page reload and CSS-only style injection.
+    /// Falls back to SSE if WebSocket connection fails.
     /// </summary>
     public string GetLiveReloadScript() => $@"
 <script>
 (function(){{
     var port = {_port};
     var connected = false;
-    function connect() {{
-        var ws = new WebSocket('ws://localhost:' + port + '/livereload');
-        ws.onmessage = function(e) {{
-            if (e.data === 'reload') {{
+    var wsFallbackTimer = null;
+
+    function handleMessage(data) {{
+        try {{
+            var msg = typeof data === 'string' ? JSON.parse(data) : JSON.parse(data.data);
+            if (msg.type === 'style') {{
+                connected = true;
+                var links = document.querySelectorAll('link[rel=""stylesheet""]');
+                links.forEach(function(link) {{
+                    try {{
+                        var url = new URL(link.href);
+                        url.searchParams.set('_t', Date.now());
+                        link.href = url.toString();
+                    }} catch(_) {{}}
+                }});
+                return;
+            }}
+            if (msg.type === 'reload') {{
                 connected = true;
                 window.location.reload();
+                return;
             }}
+        }} catch(_) {{}}
+        if (data === 'reload') {{
+            connected = true;
+            window.location.reload();
+        }}
+    }}
+
+    function tryWebSocket() {{
+        var ws = new WebSocket('ws://localhost:' + port + '/livereload');
+        // Fallback to SSE if WebSocket doesn't connect within 2 seconds
+        wsFallbackTimer = setTimeout(function() {{
+            ws.close();
+            tryEventSource();
+        }}, 2000);
+
+        ws.onopen = function() {{
+            if (wsFallbackTimer) clearTimeout(wsFallbackTimer);
+        }};
+        ws.onmessage = function(e) {{
+            if (wsFallbackTimer) clearTimeout(wsFallbackTimer);
+            handleMessage(e.data);
         }};
         ws.onclose = function() {{
+            if (wsFallbackTimer) clearTimeout(wsFallbackTimer);
             if (connected) {{
                 setTimeout(function(){{ window.location.reload(); }}, 1000);
             }} else {{
-                setTimeout(connect, 3000);
+                setTimeout(tryWebSocket, 3000);
             }}
         }};
         ws.onerror = function() {{}};
     }}
-    connect();
+
+    function tryEventSource() {{
+        var es = new EventSource('/__zest_livereload_events');
+        es.onmessage = function(e) {{
+            handleMessage(e);
+        }};
+        es.onerror = function() {{
+            es.close();
+            if (connected) {{
+                setTimeout(function(){{ window.location.reload(); }}, 1000);
+            }} else {{
+                setTimeout(tryWebSocket, 3000);
+            }}
+        }};
+    }}
+
+    tryWebSocket();
 }})();
 </script>";
 }

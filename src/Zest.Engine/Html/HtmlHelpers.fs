@@ -9,7 +9,7 @@ open Zest.Engine
 open Zest.Engine.Zcss
 
 // ============================================================
-// HtmlHelpers — helpers for use inside .zpage.fsx templates
+// HtmlHelpers — helpers for use inside .zest.fsx templates
 // ============================================================
 
 module HtmlHelpers =

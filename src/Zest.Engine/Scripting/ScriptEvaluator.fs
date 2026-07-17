@@ -10,7 +10,7 @@ open Zest.Engine.Routing
 open Zest.Engine.Html
 open Zest.Engine.Template
 
-/// Evaluates .zpage.fsx / .md files into Page records.
+/// Evaluates .zest.fsx / .md files into Page records.
 /// Optimized with content caching, static Regex, and filter/page-data caching.
 module ScriptEvaluator =
 
@@ -69,7 +69,8 @@ module ScriptEvaluator =
                 |> Array.skipWhile String.IsNullOrWhiteSpace
             MarkdownEngine.toHtml (String.concat "\n" lines)
 
-    /// Render .znjk content pages using the ZestNjk engine.
+    /// Render .njk / .liquid / .hbs / .mustache / .webc / .haml / .pug content
+    /// pages using the Nunjucks engine (with pre-conversion as needed).
     let private renderNunjucksContent
         (bodyText: string)
         (config: SiteConfig)
@@ -77,11 +78,28 @@ module ScriptEvaluator =
         (meta: ContentMeta)
         (slug: string)
         (filePath: string)
+        (ext: string)
         : string =
-        match TemplateManager.getOrCreateEngine "znjk" {
-            Engine = "znjk"
+        // Pre-process format-specific syntax before Nunjucks
+        let templateText =
+            match ext.ToLowerInvariant() with
+            | ".hbs"      -> HandlebarsMustacheConverter.convertHandlebars bodyText
+            | ".mustache" -> HandlebarsMustacheConverter.convertMustache bodyText
+            | ".liquid"   ->
+                // Liquid whitespace control: {%- → {%  and -%} → %}
+                bodyText.Replace("{%-", "{%").Replace("-%}", " %}")
+            | ".webc"     ->
+                // WebC SSR: strip script/webc:setup, normalize template tags
+                let step1 = Regex.Replace(bodyText, @"<script[^>]*webc:setup[^>]*>.*?</script>", "", RegexOptions.Singleline)
+                let step2 = Regex.Replace(step1, @"<template[^>]*webc:nocss[^>]*>", "<!-- webc:nocss -->")
+                step2.Replace("</template>", "<!-- /webc -->")
+            | ".haml"     -> HamlConverter.convert bodyText
+            | ".pug"      -> PugConverter.convert bodyText
+            | _           -> bodyText
+        match TemplateManager.getOrCreateEngine "nunjucks" {
+            Engine = "nunjucks"
             EnableCache = true
-            Extension = ".znjk"
+            Extension = ".njk"
             Filters = []
         } with
         | Some engine ->
@@ -100,13 +118,13 @@ module ScriptEvaluator =
             pairs.Add("tags", box (PageQuery.getTagsForNunjucks ()))
             pairs.Add("collections", box (PageQuery.getCollectionsForNunjucks ()))
             let ctx = TemplateManager.buildNestedContext pairs
-            match engine.Render bodyText ctx with
+            match engine.Render templateText ctx with
             | Ok html -> html
             | Error err ->
                 eprintfn "[Zest] Nunjucks error in content '%s': %O" filePath err
-                bodyText
+                templateText
         | None ->
-            bodyText
+            templateText
 
     let private resolveContentDir (config: SiteConfig) =
         Path.GetFullPath(
@@ -117,8 +135,7 @@ module ScriptEvaluator =
         let relPath  = Path.GetRelativePath(contentDir, filePath)
         let rawSlug  =
             let fn = Path.GetFileNameWithoutExtension(filePath)
-            let fn2 = if fn.EndsWith(".zpage") then fn.[..fn.Length - 7] else fn
-            if fn2.EndsWith(".zest") then fn2.[..fn2.Length - 6] else fn2
+            if fn.EndsWith(".zest") then fn.[..fn.Length - 6] else fn
         relPath, rawSlug
 
     let private buildPageData (globalData: IDictionary<string, obj>) (meta: ContentMeta) =
@@ -274,7 +291,7 @@ module ScriptEvaluator =
 
                     let contentHtml =
                         match ext with
-                        | ".znjk" -> renderNunjucksContent bodyText config globalData meta slug filePath
+                        | ".njk" | ".liquid" | ".hbs" | ".mustache" | ".webc" | ".haml" | ".pug" -> renderNunjucksContent bodyText config globalData meta slug filePath ext
                         | _       -> renderContent ext bodyText text
 
                     Ok { ContentPage.empty with
@@ -308,7 +325,7 @@ module ScriptEvaluator =
 
                 let contentHtml =
                     match ext with
-                    | ".znjk" -> renderNunjucksContent bodyText config globalData meta slug filePath
+                    | ".njk" | ".liquid" | ".hbs" | ".mustache" | ".webc" | ".haml" | ".pug" -> renderNunjucksContent bodyText config globalData meta slug filePath ext
                     | _       -> renderContent ext bodyText text
 
                 Ok { ContentPage.empty with

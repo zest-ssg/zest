@@ -45,4 +45,28 @@ internal static class PathMapper
 
         return fullPath;
     }
+
+    /// <summary>
+    /// Resolve a URL path to a physical directory path within the output directory.
+    /// Returns null if the URL doesn't correspond to a directory path.
+    /// </summary>
+    public static string? ResolveDirPath(string outputDir, string urlPath)
+    {
+        if (string.IsNullOrEmpty(urlPath) || urlPath == "/")
+            return Path.GetFullPath(outputDir);
+
+        var qIdx = urlPath.IndexOf('?');
+        if (qIdx >= 0) urlPath = urlPath[..qIdx];
+
+        var relative = urlPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+        var fullPath = Path.GetFullPath(Path.Combine(outputDir, relative));
+
+        // Security: ensure within outputDir
+        var normalizedOutput = Path.GetFullPath(outputDir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!fullPath.StartsWith(normalizedOutput, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(fullPath, Path.GetFullPath(outputDir), StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        return fullPath;
+    }
 }

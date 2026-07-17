@@ -43,9 +43,9 @@ internal static class HelpRenderer
         var t = new TomlTable();
         var meta = new TomlTable
         {
-            ["version"] = "1.1.2",
-            ["header"] = "Zest v{0} — Zenith Efficient Static Toolkit",
-            ["ecosystem"] = "Ecosystem: .zpage.fsx + .zcss + .toml + .js"
+            ["version"] = "0.0.0",
+            ["header"] = "Zest v{0} — Zealous Efficient Static Toolkit",
+            ["ecosystem"] = "Ecosystem: .zest.fsx + .zcss"
         };
         t["meta"] = meta;
         return t;

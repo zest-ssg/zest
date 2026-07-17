@@ -112,6 +112,14 @@ public static class LogWriter
     /// <summary>Log a request with method, path, status, and duration.</summary>
     public static void Request(string method, string path, int status, long durationMs)
     {
+        RequestDetail(method, path, status, durationMs, null, null);
+    }
+
+    /// <summary>
+    /// Log an HTTP request with optional byte size and cache hit info.
+    /// </summary>
+    public static void RequestDetail(string method, string path, int status, long durationMs, long? bytesServed, bool? cacheHit)
+    {
         if (_quiet || _minLevel > Level.Info) return;
         var statusColor = status switch
         {
@@ -127,6 +135,16 @@ public static class LogWriter
         Console.ForegroundColor = ConsoleColor.Gray;
         WriteDuration(durationMs);
         Console.Write($" {path}");
+        if (bytesServed.HasValue)
+        {
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.Write($"  {HttpHelper.FormatBytes(bytesServed.Value)}");
+        }
+        if (cacheHit == true)
+        {
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.Write("  (cached)");
+        }
         Console.ResetColor();
         Console.WriteLine();
     }

@@ -62,6 +62,12 @@ internal static class CommandParser
                 case "-o":
                     opts = opts with { OpenBrowser = true };
                     break;
+                case "--spa":
+                    opts = opts with { SPA = true };
+                    break;
+                case "--dir":
+                    opts = opts with { DirectoryListing = true };
+                    break;
                 default:
                     throw new ArgumentException($"Unknown option: {args[i]}");
             }
@@ -97,6 +103,20 @@ internal static class CommandParser
                 case "--open":
                 case "-o":
                     opts = opts with { OpenBrowser = true };
+                    break;
+                case "--watch":
+                case "-w":
+                    opts = opts with { Watch = true };
+                    break;
+                case "--livereload":
+                case "-l":
+                    opts = opts with { LiveReload = true };
+                    break;
+                case "--spa":
+                    opts = opts with { SPA = true };
+                    break;
+                case "--dir":
+                    opts = opts with { DirectoryListing = true };
                     break;
                 default:
                     throw new ArgumentException($"Unknown option: {args[i]}");
@@ -176,6 +196,8 @@ internal static class CommandParser
         LogWriter.WriteInfo("  --port, -p PORT     Dev server port (default: 8080)");
         LogWriter.WriteInfo("  --host HOST         Bind to host (default: localhost)");
         LogWriter.WriteInfo("  --open, -o          Open browser on start");
+        LogWriter.WriteInfo("  --spa               SPA mode: fallback to index.html for all routes");
+        LogWriter.WriteInfo("  --dir               Enable directory listing");
         LogWriter.WriteInfo("  --verbose, -v       Show detailed FSI output");
         LogWriter.WriteInfo("  --quiet, -q         Suppress INFO logs");
         LogWriter.WriteInfo("  --help, -h          Show this help");
@@ -191,12 +213,17 @@ internal static class CommandParser
         Console.WriteLine();
 
         LogWriter.WriteDim("  Preview the built _site/ directory (no build triggered).");
+        LogWriter.WriteDim("  Use --watch for auto-rebuild or --livereload for live reload.");
         Console.WriteLine();
 
         LogWriter.WriteSection("Options");
         LogWriter.WriteInfo("  --port, -p PORT     Preview server port (default: 8080)");
         LogWriter.WriteInfo("  --host HOST         Bind to host (default: localhost)");
         LogWriter.WriteInfo("  --open, -o          Open browser on start");
+        LogWriter.WriteInfo("  --watch, -w         Watch files and auto-rebuild");
+        LogWriter.WriteInfo("  --livereload, -l    Enable live reload (WebSocket)");
+        LogWriter.WriteInfo("  --spa               SPA mode: fallback to index.html for all routes");
+        LogWriter.WriteInfo("  --dir               Enable directory listing");
         LogWriter.WriteInfo("  --verbose, -v       Enable Debug-level logging");
         LogWriter.WriteInfo("  --quiet, -q         Suppress Info-level logs");
         LogWriter.WriteInfo("  --help, -h          Show this help");

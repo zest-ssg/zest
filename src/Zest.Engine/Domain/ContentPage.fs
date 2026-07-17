@@ -3,7 +3,7 @@ namespace Zest.Engine
 open System.Collections.Generic
 
 /// <summary>
-/// A page produced by a .zpage.fsx template, ready for layout wrapping and output.
+/// A page produced by a .zest.fsx template, ready for layout wrapping and output.
 /// </summary>
 type ContentPage = {
     /// URL path, e.g. "/" or "/posts/hello-world/"

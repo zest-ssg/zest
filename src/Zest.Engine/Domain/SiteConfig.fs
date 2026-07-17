@@ -25,7 +25,7 @@ type SiteConfig = {
     /// Root directory for content discovery.
     /// When set to "." or empty, uses the project root directly.
     /// When not specified, defaults to "content" (implicit content directory).
-    /// This allows index.zpage.fsx to be placed at the project root.
+    /// This allows index.zest.fsx to be placed at the project root.
     RootDir: string
     ContentDir: string
     OutputDir: string
@@ -53,7 +53,7 @@ type SiteConfig = {
     // Author / social (surfaced from _data but can be inlined in _config)
     Author: string
     Language: string
-    /// Template engine: "native" (default, {{ }} placeholders) or "znjk"
+    /// Template engine: "native" (default, {{ }} placeholders) or "nunjucks" (Nunjucks-compatible)
     TemplateEngine: string
 }
 with
