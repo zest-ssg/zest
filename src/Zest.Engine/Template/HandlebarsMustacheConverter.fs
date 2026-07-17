@@ -23,7 +23,9 @@ module HandlebarsMustacheConverter =
                 let listExpr2 =
                     if listExpr.Contains(" as ") then
                         let parts = listExpr.Split([|" as "|], StringSplitOptions.None)
-                        if parts.Length >= 2 then sprintf "%s in %s" (parts.[1].Trim()) (parts.[0].Trim())
+                        if parts.Length >= 2 then
+                            let varName = parts.[1].Trim().Trim('|')
+                            sprintf "%s in %s" varName (parts.[0].Trim())
                         else listExpr
                     else sprintf "item in %s" listExpr
                 sprintf "{%% for %s %%}" listExpr2)
@@ -57,8 +59,13 @@ module HandlebarsMustacheConverter =
             result <- Regex(@"\{\{\s*@first\s*\}\}").Replace(result, "{{ loop.first }}")
             result <- Regex(@"\{\{\s*@last\s*\}\}").Replace(result, "{{ loop.last }}")
 
-            // {{this}} → {{ item }}
-            result <- Regex(@"\{\{\s*this\s*\}\}").Replace(result, "{{ item }}")
+            // {{this}} → {{ item }} and this.prop → item.prop
+            result <- Regex(@"\{\{\s*this(\.[a-zA-Z_][a-zA-Z0-9_]*)?\s*\}\}").Replace(result,
+                fun (m: Match) ->
+                    let suffix = if m.Groups.[1].Success then m.Groups.[1].Value else ""
+                    sprintf "{{ item%s }}" suffix)
+            // Also handle this inside expression context (after conversions)
+            result <- Regex(@"\{\{\s*this\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}").Replace(result, "{{ item.$1 }}")
 
             // {{log "msg"}} → {# msg #}
             result <- Regex(@"\{\{\s*log\s+([^}]+?)\s*\}\}").Replace(result,
@@ -79,16 +86,16 @@ module HandlebarsMustacheConverter =
         else
             let mutable result = template
 
-            // {{#section}} → {% block section %}
-            result <- Regex(@"\{\{\s*#(\w+)\s*\}\}").Replace(result,
-                fun (m: Match) -> sprintf "{%% block %s %%}" m.Groups.[1].Value)
-
-            // {{/section}} → {% endblock %}
-            result <- Regex(@"\{\{\s*/\w+\s*\}\}").Replace(result, "{% endblock %}")
-
             // {{^inverted}} → {% if not inverted %}
             result <- Regex(@"\{\{\s*\^(\w+)\s*\}\}").Replace(result,
                 fun (m: Match) -> sprintf "{%% if not %s %%}" m.Groups.[1].Value)
+
+            // {{#section}} → {% if section %}
+            result <- Regex(@"\{\{\s*#(\w+)\s*\}\}").Replace(result,
+                fun (m: Match) -> sprintf "{%% if %s %%}" m.Groups.[1].Value)
+
+            // {{/section}} → {% endif %}
+            result <- Regex(@"\{\{\s*/\w+\s*\}\}").Replace(result, "{% endif %}")
 
             // {{> partial}} → {% include "partial" %}
             result <- Regex(@"\{\{\s*>\s*([^}]+?)\s*\}\}").Replace(result,

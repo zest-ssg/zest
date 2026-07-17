@@ -44,7 +44,7 @@ module PugConverter =
             let expression = Regex(@"^\s*=\s+", RegexOptions.Compiled)
             let silentCode = Regex(@"^\s*-\s+", RegexOptions.Compiled)
             let pipeText   = Regex(@"^\s*\|\s*", RegexOptions.Compiled)
-            let pugTag     = Regex(@"^\s*(?<tag>[a-zA-Z][a-zA-Z0-9]*)?(\#(?<id>[a-zA-Z][a-zA-Z0-9\-_]*))?(\.(?<cls>[a-zA-Z][a-zA-Z0-9\-_]+))*(\((?<attrs>[^\)]*)\))?(?<rest>.*)$", RegexOptions.Compiled)
+            let pugTag     = Regex(@"^\s*(?<tag>[a-zA-Z][a-zA-Z0-9]*)?(\#(?<id>[a-zA-Z][a-zA-Z0-9\-_]*))?((?:\.[a-zA-Z][a-zA-Z0-9\-_]+)*)(\((?<attrs>[^\)]*)\))?(?<rest>.*)$", RegexOptions.Compiled)
 
             let indentOf (line: string) =
                 let mutable n = 0
@@ -79,9 +79,17 @@ module PugConverter =
                     if m.Success then
                         let tagRaw = if m.Groups.["tag"].Success then m.Groups.["tag"].Value else ""
                         let id     = if m.Groups.["id"].Success  then m.Groups.["id"].Value  else ""
-                        let cls    = if m.Groups.["cls"].Success then m.Groups.["cls"].Value else ""
                         let attrs  = if m.Groups.["attrs"].Success then m.Groups.["attrs"].Value else ""
                         let rest   = if m.Groups.["rest"].Success then m.Groups.["rest"].Value.Trim() else ""
+
+                        // Extract all dot-separated classes
+                        let cls =
+                            let clsMatch = Regex.Match(line.TrimStart(), @"^(?:[a-zA-Z][a-zA-Z0-9]*)?(?:\#[a-zA-Z][a-zA-Z0-9\-_]*)?((?:\.[a-zA-Z][a-zA-Z0-9\-_]+)*)")
+                            if clsMatch.Success && clsMatch.Groups.[1].Success then
+                                let rawCls = clsMatch.Groups.[1].Value
+                                rawCls.Split('.', System.StringSplitOptions.RemoveEmptyEntries)
+                                |> String.concat " "
+                            else ""
 
                         // If no tag specified but there's a class or id, default to div
                         let tag = if tagRaw = "" && (id <> "" || cls <> "") then "div"
@@ -97,8 +105,7 @@ module PugConverter =
                             sb.Append(tag) |> ignore
                             if id <> "" then sb.Append(sprintf " id=\"%s\"" id) |> ignore
                             if cls <> "" then
-                                let clsNormalized = cls.Replace(".", " ")
-                                sb.Append(sprintf " class=\"%s\"" clsNormalized) |> ignore
+                                sb.Append(sprintf " class=\"%s\"" cls) |> ignore
                             if attrs <> "" then
                                 // Parse Pug attributes: key=value or key="value with spaces"
                                 let attrRegex = Regex(@"(?<key>\w+)=(""|'|)(?<value>.*?)\2(?=\s|$)", RegexOptions.Compiled)

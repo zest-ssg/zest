@@ -24,6 +24,11 @@ module private NunjucksImpl =
     // ── Custom filter registry (extensible by Zest engine) ──
     let customFilters = Dictionary<string, FilterFn>()
 
+    // ── Safe string wrapper (bypasses auto-escaping) ──
+    type SafeString(s: string) =
+        member _.Value = s
+        override _.ToString() = s
+
     // ── Token types ────────────────────────────────────────
     type Token =
         | TextToken of string
@@ -64,7 +69,18 @@ module private NunjucksImpl =
                         let parts = raw.Split([|' ';'\n';'\t';'\r'|], StringSplitOptions.RemoveEmptyEntries)
                         let tag = if parts.Length > 0 then parts.[0] else ""
                         let args = if parts.Length > 1 then parts.[1..] |> Array.toList else []
-                        tokens.Add(TagToken(tag, args)); i <- e + 2
+                        // raw tag: capture everything until {% endraw %} as literal text
+                        if tag = "raw" then
+                            let rawEnd = text.IndexOf("{% endraw %}", e+2)
+                            if rawEnd >= e+2 then
+                                let rawContent = text.Substring(e+2, rawEnd - (e+2))
+                                tokens.Add(TextToken(rawContent))
+                                i <- rawEnd + 13  // skip past "{% endraw %}"
+                            else
+                                tokens.Add(TagToken(tag, args))
+                                i <- e + 2
+                        else
+                            tokens.Add(TagToken(tag, args)); i <- e + 2
                 else sb.Append(c) |> ignore; i <- i + 1
             else sb.Append(text.[i]) |> ignore; i <- i + 1
         flush()
@@ -274,7 +290,7 @@ module private NunjucksImpl =
         if t.StartsWith("(") && t.EndsWith(")") then evalExpr (t.[1..t.Length-2]) ctx else
         let tryLiteral (s: string) =
             let t = s.Trim()
-            if (t.StartsWith("\"") && t.EndsWith("\"")) || (t.StartsWith("'") && t.EndsWith("'")) then
+            if t.Length >= 2 && ((t.StartsWith("\"") && t.EndsWith("\"")) || (t.StartsWith("'") && t.EndsWith("'"))) then
                 Some(box(t.Substring(1, t.Length-2)))
             elif t = "true" then Some(box true)
             elif t = "false" then Some(box false)
@@ -296,7 +312,28 @@ module private NunjucksImpl =
                     else fp, ""
                 let fargs =
                     if fargsText = "" then []
-                    else fargsText.Split(',') |> Array.map (fun a -> evalExpr a ctx) |> Array.toList
+                    else
+                        // Parse filter arguments respecting quoted strings (comma is separator)
+                        let rec parseFilterArgs (rem: string) (acc: string list) =
+                            let rem = rem.TrimStart()
+                            if rem = "" then List.rev acc
+                            elif rem.[0] = '"' || rem.[0] = '\'' then
+                                let quote = rem.[0]
+                                let mutable i = 1
+                                while i < rem.Length && rem.[i] <> quote do i <- i + 1
+                                let arg = if i > 1 then rem.[1..i-1] else ""
+                                let rest = if i + 1 < rem.Length then rem.[i+1..] else ""
+                                let restTrimmed = rest.TrimStart()
+                                let rest2 = if restTrimmed.StartsWith(",") then restTrimmed.[1..] else restTrimmed
+                                parseFilterArgs rest2 (arg :: acc)
+                            else
+                                let commaIdx = rem.IndexOf(',')
+                                if commaIdx >= 0 then
+                                    let arg = rem.[..commaIdx-1].Trim()
+                                    parseFilterArgs rem.[commaIdx+1..] (arg :: acc)
+                                else
+                                    List.rev ((rem.Trim()) :: acc)
+                        parseFilterArgs fargsText [] |> List.map (fun s -> box s :> obj)
                 result <- applyFilter fname result fargs
             result
         else
@@ -318,8 +355,8 @@ module private NunjucksImpl =
         | "rstrip" -> box(s.TrimEnd())
         | "nl2br" -> box(s.Replace("\r\n", "\n").Replace("\n", "<br />\n"))
         | "string" | "str" -> box s
-        | "safe" -> value   // bypass auto-escape
-        | "escape" | "e" -> box(HtmlEncode(s))
+        | "safe" -> SafeString(s) :> obj  // bypass auto-escape
+        | "escape" | "e" -> SafeString(HtmlEncode(s)) :> obj
         | "striptags" -> box(Regex.Replace(s, @"<[^>]+>", "").Trim())
         | "truncate" ->
             let len = if args.Length > 0 then (try int(toStr args.[0]) with _ -> 255) else 255
@@ -613,15 +650,19 @@ module private NunjucksImpl =
     and findMatchingEnd (start: int) (tagName: string) (tokens: Token list) : int =
         let len = tokens.Length
         let mutable depth = 0
+        let mutable result = len
         let mutable i = start
         while i < len do
             match tokens.[i] with
             | TagToken(n, _) when n = tagName -> depth <- depth + 1; i <- i + 1
             | TagToken(n, _) when n = "end" + tagName ->
-                if depth = 0 then i <- len  // found it
+                if depth = 0 then result <- i; i <- len  // found it, save position
                 else depth <- depth - 1; i <- i + 1
             | _ -> i <- i + 1
-        i
+        result
+
+    // ── Block tags that require a closing end-tag ──────────
+    let blockTags = set ["if"; "for"; "block"; "macro"; "filter"; "call"]
 
     // ── RenderEnv ──────────────────────────────────────────
     type RenderEnv = {
@@ -647,25 +688,59 @@ module private NunjucksImpl =
             | CmtToken _ -> idx <- idx + 1
 
             | VarToken expr ->
-                let v = evalExpr expr env.Variables
-                // Auto-escape: only escape strings, not other types (safe filter bypasses this)
-                let html =
-                    match v with
-                    | :? string as sv -> HtmlEncode sv
-                    | null -> ""
-                    | _ -> toStr v
-                sb.Append(html) |> ignore; idx <- idx + 1
+                let exprTrim = expr.Trim()
+                // Check for macro call: macroName(args) — must be a function-like expr
+                let pOpen = exprTrim.IndexOf('(')
+                let mutable macroResult : string option = None
+                if pOpen > 0 && exprTrim.EndsWith(")") then
+                    let mName = exprTrim.[..pOpen-1].Trim()
+                    match env.Macros.TryGetValue mName with
+                    | true, (margNames, mbody) ->
+                        let argsText = exprTrim.[pOpen+1..exprTrim.Length-2].Trim()
+                        let argValues =
+                            if argsText = "" then []
+                            else argsText.Split(',') |> Array.map (fun a -> evalExpr a env.Variables) |> Array.toList
+                        // Build a new context with macro arguments
+                        let mCtx = Dictionary<string, obj>(env.Variables |> Seq.map (fun kv -> KeyValuePair(kv.Key, kv.Value)))
+                        let rec zipArgs (names: string list) (vals: obj list) =
+                            match names, vals with
+                            | n::ns, v::vs -> mCtx.[n] <- v; zipArgs ns vs
+                            | _ -> ()
+                        zipArgs margNames argValues
+                        match renderTokens mbody { env with Variables = mCtx :> IDictionary<string, obj> } with
+                        | Ok h -> macroResult <- Some h
+                        | Error e -> error <- Some e
+                    | _ -> ()
+                match macroResult with
+                | Some h ->
+                    sb.Append(h) |> ignore
+                | None ->
+                    let v = evalExpr expr env.Variables
+                    // Auto-escape: strings are escaped unless marked as safe
+                    let html =
+                        match v with
+                        | :? SafeString as ss -> ss.Value
+                        | :? string as sv -> HtmlEncode sv
+                        | null -> ""
+                        | _ -> toStr v
+                    sb.Append(html) |> ignore
+                idx <- idx + 1
 
             | TagToken(tag, args) ->
                 let arr = tokens |> Array.ofList
-                let endIdx = findMatchingEnd (idx+1) tag (arr |> Array.toList)
+                let isBlock = blockTags.Contains(tag)
+                let endIdx =
+                    if isBlock then findMatchingEnd (idx+1) tag (arr |> Array.toList)
+                    else idx
                 let bodyTokens =
-                    if endIdx > idx+1 then arr.[idx+1..endIdx-1] |> Array.toList
+                    if isBlock && endIdx > idx+1 then arr.[idx+1..endIdx-1] |> Array.toList
                     else []
                 let bodyHtml =
-                    match renderTokens bodyTokens env with
-                    | Ok h -> Some h
-                    | Error e -> error <- Some e; None
+                    if isBlock then
+                        match renderTokens bodyTokens env with
+                        | Ok h -> Some h
+                        | Error e -> error <- Some e; None
+                    else None
 
                 match tag with
                 | "if" ->
@@ -909,7 +984,7 @@ module private NunjucksImpl =
 
                 | _ -> ()  // unknown tag — silently ignore (Nunjucks behavior)
 
-                idx <- if endIdx >= idx then endIdx + 1 else idx + 1
+                idx <- if isBlock && endIdx > idx then endIdx + 1 else idx + 1
 
         match error with
         | Some e -> Error e

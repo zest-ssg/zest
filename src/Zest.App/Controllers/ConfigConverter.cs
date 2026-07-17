@@ -32,15 +32,16 @@ public static class ConfigConverter
             return 1;
         }
 
-        if (from == to)
+        // Normalize 'yml' → 'yaml' before comparison so that
+        // `zest convert-config yml yaml` is a same-format no-op.
+        var fromNorm = from == "yml" ? "yaml" : from;
+        var toNorm = to == "yml" ? "yaml" : to;
+
+        if (fromNorm == toNorm)
         {
             LogWriter.WriteWarning("  Source and target formats are identical; nothing to do.");
             return 0;
         }
-
-        // Normalize 'yml' → 'yaml'
-        var fromNorm = from == "yml" ? "yaml" : from;
-        var toNorm = to == "yml" ? "yaml" : to;
 
         var srcExt = fromNorm == "yaml" ? FileExtensions.Yaml : FileExtensions.Toml;
         var dstExt = toNorm == "yaml" ? FileExtensions.Yaml : FileExtensions.Toml;
