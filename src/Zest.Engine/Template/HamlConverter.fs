@@ -5,7 +5,7 @@ open System.Text
 open System.Text.RegularExpressions
 
 // ============================================================
-// HamlConverter — HAML → HTML 转换器 (实验性)
+// HamlConverter — HAML → HTML Converter
 // ============================================================
 // Converts HAML (indentation-based) syntax to HTML.
 // Covers the most common HAML features.
