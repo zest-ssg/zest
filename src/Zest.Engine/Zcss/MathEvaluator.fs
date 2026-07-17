@@ -29,8 +29,15 @@ module MathEvaluator =
             elif c = '(' then tokens.Add LParen; incr i
             elif c = ')' then tokens.Add RParen; incr i
             elif c = '+' || c = '-' || c = '*' || c = '/' then
-                // Distinguish unary minus from binary minus
-                if c = '-' && (tokens.Count = 0 || match tokens.[tokens.Count-1] with Op _ | LParen -> true | _ -> false) then
+                // A leading '-' is only a unary minus when it is immediately followed by a
+                // digit or dot. Otherwise it is a binary operator (e.g. `16px - 10px`) or a
+                // stray hyphen inside a word (e.g. `system-ui`), which must NOT be parsed as a
+                // negative number — doing so would call `float "-"` and throw a FormatException.
+                let isUnaryMinus =
+                    c = '-'
+                    && (tokens.Count = 0 || match tokens.[tokens.Count-1] with Op _ | LParen -> true | _ -> false)
+                    && (i.Value + 1 < s.Length && (Char.IsDigit s.[i.Value+1] || s.[i.Value+1] = '.'))
+                if isUnaryMinus then
                     // Part of a number
                     let sb = Text.StringBuilder("-")
                     incr i
@@ -74,15 +81,18 @@ module MathEvaluator =
             match vars.TryGetValue(m.Groups.[1].Value) with
             | true, v -> v | _ -> m.Value)
 
-        // Check if this looks like a math expression (contains +, -, *, / outside of function calls)
-        let hasMathOps =
-            resolved.ToCharArray()
-            |> Array.exists (fun c -> c = '+' || c = '*' || c = '/')
-            || (resolved.Contains("-") && not (resolved.StartsWith("-") && not (resolved.Substring(1).Contains("-"))))
+        // Guard: a value is only evaluated as a math expression when it is composed
+        // solely of numbers, operators, parentheses, variables ($), units (letters/%)
+        // and whitespace. Values containing other characters — notably commas in CSS
+        // `font` shorthands such as `16px/1.65 system-ui, -apple-system` — are passed
+        // through unchanged, so we never corrupt real CSS or trip the tokenizer on a
+        // stray hyphen.
+        let nonMathCharPattern = Regex(@"[^0-9.+*/()$%a-zA-Z\s-]", RegexOptions.Compiled)
+        let looksLikeMath = mathPattern.IsMatch resolved && not (nonMathCharPattern.IsMatch resolved)
 
         // Simple heuristic: only evaluate if there are math operators and numbers
         // Match numbers with optional units (e.g., 16px, 0.5r, 100%)
-        if not (mathPattern.IsMatch resolved) then resolved
+        if not looksLikeMath then resolved
         else
             let tokens = tokenize resolved
             // Simple recursive descent parser
