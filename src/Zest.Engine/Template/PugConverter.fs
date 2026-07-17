@@ -37,7 +37,7 @@ module PugConverter =
         else
             let lines = pug.Replace("\r\n", "\n").Split('\n')
             let sb = StringBuilder()
-            let mutable indentStack: int list = []
+            let mutable indentStack: (int * string) list = []
 
             let emptyLine  = Regex(@"^\s*$", RegexOptions.Compiled)
             let comment    = Regex(@"^\s*//-?\s*", RegexOptions.Compiled)
@@ -52,9 +52,10 @@ module PugConverter =
                 n
 
             let closeUntil (targetIndent: int) =
-                while indentStack.Length > 0 && indentStack.Head > targetIndent do
+                while indentStack.Length > 0 && (fst indentStack.Head) > targetIndent do
+                    let (_, closeTag) = indentStack.Head
                     indentStack <- indentStack.Tail
-                    sb.Append("</div>") |> ignore
+                    sb.Append(sprintf "</%s>" closeTag) |> ignore
 
             for line in lines do
                 if emptyLine.IsMatch(line) then
@@ -100,6 +101,9 @@ module PugConverter =
                             // Plain text
                             let text = line.Trim()
                             if text <> "" then sb.AppendLine(text) |> ignore
+                        elif tag = "doctype" then
+                            // Doctype is special: emit a proper DOCTYPE declaration.
+                            sb.AppendLine("<!DOCTYPE html>") |> ignore
                         else
                             sb.Append('<') |> ignore
                             sb.Append(tag) |> ignore
@@ -108,28 +112,36 @@ module PugConverter =
                                 sb.Append(sprintf " class=\"%s\"" cls) |> ignore
                             if attrs <> "" then
                                 // Parse Pug attributes: key=value or key="value with spaces"
-                                let attrRegex = Regex(@"(?<key>\w+)=(""|'|)(?<value>.*?)\2(?=\s|$)", RegexOptions.Compiled)
+                                let attrRegex = Regex(@"\s*(?<key>\w+)=(?<value>(?:""[^""]*""|'[^']*'|[^\s)]+))", RegexOptions.Compiled)
                                 for am in attrRegex.Matches(attrs) do
                                     let ak = am.Groups.["key"].Value
-                                    let av = am.Groups.["value"].Value
+                                    let av = am.Groups.["value"].Value.Trim('"', '\'')
                                     sb.Append(sprintf " %s=\"%s\"" ak av) |> ignore
+
+                            // Inline expression: tag= expr  →  <tag>{{ expr }}</tag>
+                            let content =
+                                if rest.StartsWith("=") then
+                                    sprintf "{{ %s }}" (rest.Substring(1).Trim())
+                                else
+                                    rest
 
                             let voidTags = set ["br"; "hr"; "img"; "input"; "meta"; "link"; "area"; "base"; "col"; "embed"; "source"; "track"; "wbr"]
                             if voidTags.Contains(tag) then
                                 sb.AppendLine(" />") |> ignore
-                            elif rest <> "" then
+                            elif content <> "" then
                                 sb.Append('>') |> ignore
-                                sb.Append(rest) |> ignore
+                                sb.Append(content) |> ignore
                                 sb.Append(sprintf "</%s>" tag) |> ignore
                                 sb.AppendLine() |> ignore
                             else
                                 sb.AppendLine(">") |> ignore
-                                indentStack <- indent :: indentStack
+                                indentStack <- (indent, tag) :: indentStack
                     else
                         sb.AppendLine(line.Trim()) |> ignore
 
             while indentStack.Length > 0 do
+                let (_, closeTag) = indentStack.Head
                 indentStack <- indentStack.Tail
-                sb.Append("</div>") |> ignore
+                sb.Append(sprintf "</%s>" closeTag) |> ignore
 
             sb.ToString().TrimEnd()
