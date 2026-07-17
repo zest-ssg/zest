@@ -36,16 +36,24 @@ module TemplateManager =
         Filters = []
     }
 
-    /// Initialize a template engine by name.
-    let initEngine (name: string) (config: TemplateConfig) : ITemplateEngine option =
-        match name with
+    /// Build an engine instance for the given engine type name.
+    let private createEngineInstance (engineType: string) (config: TemplateConfig) : ITemplateEngine option =
+        match engineType with
         | "nunjucks" | "njk" ->
             let engine = NunjucksEngine()
             for (fnName, fn) in config.Filters do
                 (engine :> ITemplateEngine).RegisterFilter fnName fn
-            engines.[name] <- engine
             Some (engine :> ITemplateEngine)
         | _ ->
+            None
+
+    /// Initialize a template engine by name.
+    let initEngine (name: string) (config: TemplateConfig) : ITemplateEngine option =
+        match createEngineInstance name config with
+        | Some engine ->
+            engines.[name] <- engine
+            Some engine
+        | None ->
             None
 
     /// Get a registered engine by name.
@@ -58,7 +66,13 @@ module TemplateManager =
     let getOrCreateEngine (name: string) (config: TemplateConfig) : ITemplateEngine option =
         match engines.TryGetValue name with
         | true, e -> Some e
-        | _ -> initEngine name config
+        | _ ->
+            match createEngineInstance config.Engine config with
+            | Some engine ->
+                engines.[name] <- engine
+                Some engine
+            | None ->
+                None
 
     /// Render a template with the given engine.
     let render (engine: string) (templateText: string) (variables: IDictionary<string, obj>) : Result<string, TemplateError> =

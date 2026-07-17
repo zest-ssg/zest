@@ -37,7 +37,7 @@ module HamlConverter =
         else
             let lines = haml.Replace("\r\n", "\n").Split('\n')
             let sb = StringBuilder()
-            let mutable indentStack: int list = []
+            let mutable indentStack: (int * string) list = []
 
             // Regex patterns (compiled once)
             let emptyLine   = Regex(@"^\s*$", RegexOptions.Compiled)
@@ -55,9 +55,10 @@ module HamlConverter =
                 n
 
             let closeUntil (targetIndent: int) =
-                while indentStack.Length > 0 && indentStack.Head > targetIndent do
+                while indentStack.Length > 0 && (fst indentStack.Head) > targetIndent do
+                    let (_, closeTag) = indentStack.Head
                     indentStack <- indentStack.Tail
-                    sb.Append("</div>") |> ignore
+                    sb.Append(sprintf "</%s>" closeTag) |> ignore
 
             for line in lines do
                 if emptyLine.IsMatch(line) then
@@ -84,7 +85,7 @@ module HamlConverter =
 
                         // Extract all dot-separated classes from the line (before attrs/rest)
                         let cls =
-                            let clsMatch = Regex.Match(line.TrimStart(), @"^%(?:[a-zA-Z][a-zA-Z0-9]*)?(?:\#[a-zA-Z][a-zA-Z0-9\-_]*)?((?:\.[a-zA-Z][a-zA-Z0-9\-_]+)*)")
+                            let clsMatch = Regex.Match(line.TrimStart(), @"^(?:%[a-zA-Z][a-zA-Z0-9]*)?(?:\#[a-zA-Z][a-zA-Z0-9\-_]*)?((?:\.[a-zA-Z][a-zA-Z0-9\-_]+)*)")
                             if clsMatch.Success && clsMatch.Groups.[1].Success then
                                 let rawCls = clsMatch.Groups.[1].Value
                                 rawCls.Split('.', System.StringSplitOptions.RemoveEmptyEntries)
@@ -94,44 +95,57 @@ module HamlConverter =
                         let tag = if tagRaw = "" && (id <> "" || cls <> "") then "div"
                                   elif tagRaw = "" then "" else tagRaw
 
-                        let attrsRaw = if m.Groups.["attrs"].Success then m.Groups.["attrs"].Value else ""
-                        let attrs = if attrsRaw.Length >= 2 then attrsRaw.Substring(1, attrsRaw.Length - 2) else attrsRaw
-
-                        // Build opening tag
-                        sb.Append('<') |> ignore
-                        sb.Append(tag) |> ignore
-                        if id <> "" then sb.Append(sprintf " id=\"%s\"" id) |> ignore
-                        if cls <> "" then sb.Append(sprintf " class=\"%s\"" cls) |> ignore
-                        // Parse inline attributes {key: value, key: value}
-                        if attrs <> "" then
-                            let attrPairs = attrs.Split(',')
-                            for pair in attrPairs do
-                                let parts = pair.Trim().Split(':')
-                                if parts.Length >= 2 then
-                                    let key = parts.[0].Trim()
-                                    let value = parts.[1..] |> String.concat ":" |> (fun s -> s.Trim().Trim('"', '\''))
-                                    sb.Append(sprintf " %s=\"%s\"" key value) |> ignore
-
-                        // Self-closing tags
-                        let voidTags = set ["br"; "hr"; "img"; "input"; "meta"; "link"; "area"; "base"; "col"; "embed"; "source"; "track"; "wbr"]
-                        if voidTags.Contains(tag) then
-                            sb.AppendLine(" />") |> ignore
-                        elif rest <> "" then
-                            sb.Append('>') |> ignore
-                            sb.Append(rest) |> ignore
-                            sb.Append(sprintf "</%s>" tag) |> ignore
-                            sb.AppendLine() |> ignore
+                        if tag = "" then
+                            // No tag/id/class on the line → emit it as plain text.
+                            let plainText = line.Trim()
+                            if plainText <> "" then sb.AppendLine(plainText) |> ignore
                         else
-                            sb.AppendLine(">") |> ignore
-                            indentStack <- indent :: indentStack
+                            let attrsRaw = if m.Groups.["attrs"].Success then m.Groups.["attrs"].Value else ""
+                            let attrs = if attrsRaw.Length >= 2 then attrsRaw.Substring(1, attrsRaw.Length - 2) else attrsRaw
+
+                            // Build opening tag
+                            sb.Append('<') |> ignore
+                            sb.Append(tag) |> ignore
+                            if id <> "" then sb.Append(sprintf " id=\"%s\"" id) |> ignore
+                            if cls <> "" then sb.Append(sprintf " class=\"%s\"" cls) |> ignore
+                            // Parse inline attributes {key: value, key: value}
+                            if attrs <> "" then
+                                let attrPairs = attrs.Split(',')
+                                for pair in attrPairs do
+                                    let parts = pair.Trim().Split(':')
+                                    if parts.Length >= 2 then
+                                        let key = parts.[0].Trim()
+                                        let value = parts.[1..] |> String.concat ":" |> (fun s -> s.Trim().Trim('"', '\''))
+                                        sb.Append(sprintf " %s=\"%s\"" key value) |> ignore
+
+                            // Inline expression: tag= expr  →  <tag>{{ expr }}</tag>
+                            let content =
+                                if rest.StartsWith("=") then
+                                    sprintf "{{ %s }}" (rest.Substring(1).Trim())
+                                else
+                                    rest
+
+                            // Self-closing tags
+                            let voidTags = set ["br"; "hr"; "img"; "input"; "meta"; "link"; "area"; "base"; "col"; "embed"; "source"; "track"; "wbr"]
+                            if voidTags.Contains(tag) then
+                                sb.AppendLine(" />") |> ignore
+                            elif content <> "" then
+                                sb.Append('>') |> ignore
+                                sb.Append(content) |> ignore
+                                sb.Append(sprintf "</%s>" tag) |> ignore
+                                sb.AppendLine() |> ignore
+                            else
+                                sb.AppendLine(">") |> ignore
+                                indentStack <- (indent, tag) :: indentStack
 
                     else
-                        // Plain text line
+                        // Plain text line (no HAML token matched)
                         sb.AppendLine(line.Trim()) |> ignore
 
             // Close remaining open tags
             while indentStack.Length > 0 do
+                let (_, closeTag) = indentStack.Head
                 indentStack <- indentStack.Tail
-                sb.Append("</div>") |> ignore
+                sb.Append(sprintf "</%s>" closeTag) |> ignore
 
             sb.ToString().TrimEnd()
