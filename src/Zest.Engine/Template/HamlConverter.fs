@@ -46,7 +46,8 @@ module HamlConverter =
             let expression  = Regex(@"^\s*=\s+", RegexOptions.Compiled)
             let filterStart = Regex(@"^\s*:(css|javascript|js|coffee|markdown|plain)\s*$", RegexOptions.Compiled)
             // Minimal HAML tag: %tagname or .class or #id
-            let hamlTag     = Regex(@"^\s*(%(?<tag>[a-zA-Z][a-zA-Z0-9]*)|\#(?<id>[a-zA-Z][a-zA-Z0-9\-_]*)\.?(?<cls1>[a-zA-Z][a-zA-Z0-9\-_]*)?|\.(?<cls2>[a-zA-Z][a-zA-Z0-9\-_]*))(?<attrs>\{[^\}]*\})?(?<rest>.*)$", RegexOptions.Compiled)
+            // Supports combined: %tag#id.class, #id.class, .class
+            let hamlTag     = Regex(@"^\s*(%(?<tag>[a-zA-Z][a-zA-Z0-9]*))?(\#(?<id>[a-zA-Z][a-zA-Z0-9\-_]*))?(\.(?<cls>[a-zA-Z][a-zA-Z0-9\-_]+))*(?<attrs>\{[^\}]*\})?(?<rest>.*)$", RegexOptions.Compiled)
 
             let indentOf (line: string) =
                 let mutable n = 0
@@ -77,22 +78,24 @@ module HamlConverter =
 
                     let m = hamlTag.Match(line)
                     if m.Success then
-                        let tag, id, cls =
-                            if m.Groups.["tag"].Success then
-                                (m.Groups.["tag"].Value,
-                                 (if m.Groups.["id"].Success then m.Groups.["id"].Value else ""),
-                                 (if m.Groups.["cls1"].Success then m.Groups.["cls1"].Value else ""))
-                            elif m.Groups.["id"].Success then
-                                ("div", m.Groups.["id"].Value,
-                                 (if m.Groups.["cls1"].Success then m.Groups.["cls1"].Value else ""))
-                            elif m.Groups.["cls2"].Success then
-                                ("div", "", m.Groups.["cls2"].Value)
-                            else
-                                ("div", "", "")
+                        let tagRaw = if m.Groups.["tag"].Success then m.Groups.["tag"].Value else ""
+                        let id     = if m.Groups.["id"].Success  then m.Groups.["id"].Value  else ""
+                        let rest   = if m.Groups.["rest"].Success then m.Groups.["rest"].Value.Trim() else ""
+
+                        // Extract all dot-separated classes from the line (before attrs/rest)
+                        let cls =
+                            let clsMatch = Regex.Match(line.TrimStart(), @"^%(?:[a-zA-Z][a-zA-Z0-9]*)?(?:\#[a-zA-Z][a-zA-Z0-9\-_]*)?((?:\.[a-zA-Z][a-zA-Z0-9\-_]+)*)")
+                            if clsMatch.Success && clsMatch.Groups.[1].Success then
+                                let rawCls = clsMatch.Groups.[1].Value
+                                rawCls.Split('.', System.StringSplitOptions.RemoveEmptyEntries)
+                                |> String.concat " "
+                            else ""
+
+                        let tag = if tagRaw = "" && (id <> "" || cls <> "") then "div"
+                                  elif tagRaw = "" then "" else tagRaw
 
                         let attrsRaw = if m.Groups.["attrs"].Success then m.Groups.["attrs"].Value else ""
                         let attrs = if attrsRaw.Length >= 2 then attrsRaw.Substring(1, attrsRaw.Length - 2) else attrsRaw
-                        let rest = if m.Groups.["rest"].Success then m.Groups.["rest"].Value.Trim() else ""
 
                         // Build opening tag
                         sb.Append('<') |> ignore
