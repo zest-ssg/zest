@@ -157,6 +157,25 @@ module ColorPipeline =
                 if lightPct > 0 then lighten scaled lightPct
                 else darken scaled (-lightPct)
 
+    /// Scale a color's lightness by an amount in [-100, 100]. Positive
+    /// lightens toward white, negative darkens toward black. This is the
+    /// single-argument form matching the spec's `scale-color($color, $amount)`.
+    let scaleColorByAmount (hex: string) (amount: int) =
+        if amount > 0 then lighten hex amount
+        elif amount < 0 then darken hex (-amount)
+        else hex
+
+    /// Return a high-contrast foreground color (black or white) for the
+    /// given background. Uses perceived luminance; backgrounds brighter
+    /// than the midpoint get `#000`, others get `#fff`.
+    let contrastColor (hex: string) =
+        match hexToRgb hex with
+        | None -> hex
+        | Some(r, g, b) ->
+            // Perceived brightness (Rec. 601 luma weights)
+            let luma = int (float r * 0.299 + float g * 0.587 + float b * 0.114)
+            if luma > 128 then "#000000" else "#ffffff"
+
     // ── Regex-based function resolution ──
 
     let private fnPatterns =
@@ -195,6 +214,10 @@ module ColorPipeline =
                 (fun (m: Match) -> hsla (float m.Groups.[1].Value) (float m.Groups.[2].Value) (float m.Groups.[3].Value) (float m.Groups.[4].Value))
             Regex(@"hsl\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*\)", RegexOptions.Compiled),
                 (fun (m: Match) -> hsl (float m.Groups.[1].Value) (float m.Groups.[2].Value) (float m.Groups.[3].Value))
+            Regex(@"contrast-color\(\s*(#[0-9a-fA-F]+|\w+)\s*\)", RegexOptions.Compiled),
+                (fun (m: Match) -> contrastColor m.Groups.[1].Value)
+            Regex(@"scale-color\(\s*(#[0-9a-fA-F]+|\w+)\s*,\s*(-?\d+)\s*\)", RegexOptions.Compiled),
+                (fun (m: Match) -> scaleColorByAmount m.Groups.[1].Value (int m.Groups.[2].Value))
         |]
 
     let resolve (value: string) : string =

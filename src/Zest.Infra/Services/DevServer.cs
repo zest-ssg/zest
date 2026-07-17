@@ -78,7 +78,7 @@ public class DevServer : HttpServer
 
     protected override async Task<bool> TryHandleSpecialFile(HttpListenerContext ctx, string filePath, string ext)
     {
-        if (ext != ".zcss") return false;
+        if (ext != FileExtensions.Zcss) return false;
 
         await ServeZcssFile(ctx, filePath);
         return true;
@@ -106,11 +106,9 @@ public class DevServer : HttpServer
     }
 
     /// Directories whose contents should NOT trigger rebuilds.
-    private static readonly HashSet<string> IgnoredDirNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "_site", ".git", ".svn", ".hg",
-        "bin", "obj", "node_modules", "packages", ".vs"
-    };
+    /// Initialized from <see cref="ExcludedPaths.For"/> in the constructor so
+    /// the configured <c>OutputDir</c> (default <c>_site</c>) is respected.
+    private readonly HashSet<string> _ignoredDirNames;
 
     private void StartFileWatcher()
     {
@@ -138,7 +136,7 @@ public class DevServer : HttpServer
                 // Only check the LAST directory component (the file's parent dir)
                 if (i == parts.Length - 2)
                 {
-                    if (IgnoredDirNames.Contains(p))
+                    if (_ignoredDirNames.Contains(p))
                         return;
                 }
                 else if (p.StartsWith('.'))
@@ -152,7 +150,7 @@ public class DevServer : HttpServer
             if (!WatchConstants.Extensions.Contains(ext)) return;
 
             // Track whether this change batch is CSS-only
-            var isCss = ext is ".css" or ".zcss";
+            var isCss = ext is FileExtensions.Css or FileExtensions.Zcss;
             lock (_changeLock)
             {
                 if (!isCss) _cssOnlyChanges = false;

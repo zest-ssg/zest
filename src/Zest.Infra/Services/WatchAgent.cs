@@ -11,14 +11,12 @@ public static class WatchConstants
 {
     public static readonly HashSet<string> Extensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".fsx", ".zest.fsx", ".md", ".markdown",
-        ".html", ".css", ".zcss", ".js", ".toml",
-        ".png", ".jpg", ".jpeg", ".svg", ".gif", ".webp"
-    };
-
-    public static readonly HashSet<string> ExcludedDirs = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "_site", ".git", "node_modules", "bin", "obj", "packages"
+        FileExtensions.FSharpScript, FileExtensions.ZestScript,
+        FileExtensions.Markdown, FileExtensions.MarkdownLong,
+        FileExtensions.Html, FileExtensions.Css, FileExtensions.Zcss,
+        FileExtensions.JavaScript, FileExtensions.Toml,
+        FileExtensions.Png, FileExtensions.Jpg, FileExtensions.Jpeg,
+        FileExtensions.Svg, FileExtensions.Gif, FileExtensions.Webp
     };
 }
 
@@ -30,6 +28,7 @@ public static class WatchAgent
 {
     public static void StartWatcher(SiteConfig config)
     {
+        var excludedDirs = ExcludedPaths.For(config);
         var contentDir = Path.GetFullPath(Path.Combine(
             Directory.GetCurrentDirectory(), config.EffectiveContentDir.TrimStart('.', '\\', '/')));
 
@@ -59,7 +58,7 @@ public static class WatchAgent
 
         void OnChange(object sender, FileSystemEventArgs e)
         {
-            if (!ShouldWatchFile(e.FullPath, e.Name))
+            if (!ShouldWatchFile(e.FullPath, e.Name, excludedDirs))
                 return;
 
             debounceTimer.Stop();
@@ -77,7 +76,7 @@ public static class WatchAgent
         evt.Wait();
     }
 
-    private static bool ShouldWatchFile(string fullPath, string? fileName)
+    private static bool ShouldWatchFile(string fullPath, string? fileName, HashSet<string> excludedDirs)
     {
         if (string.IsNullOrEmpty(fileName))
             return false;
@@ -90,7 +89,7 @@ public static class WatchAgent
         for (int i = 0; i < parts.Length - 1; i++)
         {
             var p = parts[i];
-            if (WatchConstants.ExcludedDirs.Contains(p) || p.StartsWith('_') || p.StartsWith('.'))
+            if (excludedDirs.Contains(p) || p.StartsWith('_') || p.StartsWith('.'))
                 return false;
         }
 

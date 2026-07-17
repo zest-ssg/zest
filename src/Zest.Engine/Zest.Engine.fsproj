@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <!-- Domain types (ordered by dependency) -->
+    <Compile Include="Domain/FileExtensions.fs" />
     <Compile Include="Domain/HtmlNodes.fs" />
     <Compile Include="Domain/ContentPage.fs" />
     <Compile Include="Domain/PageGroup.fs" />
@@ -22,6 +23,7 @@
     <Compile Include="Zcss/ZcssParser.fs" />
     <Compile Include="Zcss/BuiltinStyles.fs" />
     <Compile Include="Zcss/ZcssUtilities.fs" />
+    <Compile Include="Zcss/ZcssModules.fs" />
     <Compile Include="Zcss/ZcssCompiler.fs" />
     <Compile Include="Zcss/ZcssProcessor.fs" />
     <Compile Include="Zcss/ZcssCompletions.fs" />
@@ -69,6 +71,8 @@
     <!-- Build pipeline (depends on everything above) -->
     <Compile Include="Build/PathResolver.fs" />
     <Compile Include="Build/BuildCache.fs" />
+    <Compile Include="Build/IncrementalBuilder.fs" />
+    <Compile Include="Build/BuildScheduler.fs" />
     <Compile Include="Build/BuildData.fs" />
     <Compile Include="Build/BuildAssets.fs" />
     <Compile Include="Build/LayoutEngine.fs" />

@@ -92,6 +92,46 @@ public static class ConfigLoader
             var logTimestamps        = TomlReader.GetBool  (model, "log_timestamps", config.LogTimestamps);
             var templateEngine       = TomlReader.GetString(model, "template_engine", config.TemplateEngine);
 
+            // ── Parse [compat] table: SSG-specific behavior flags ──
+            // Example:
+            //   [compat]
+            //   jekyll = true
+            //   hexo   = false
+            var compatJekyll  = config.CompatJekyll;
+            var compatHexo    = config.CompatHexo;
+            var compatHugo    = config.CompatHugo;
+            var compatEleventy = config.CompatEleventy;
+            if (model.TryGetValue("compat", out var compatObj) && compatObj is Tomlyn.Model.TomlTable compatTbl)
+            {
+                compatJekyll   = TomlReader.GetBool(compatTbl, "jekyll",   compatJekyll);
+                compatHexo     = TomlReader.GetBool(compatTbl, "hexo",     compatHexo);
+                compatHugo     = TomlReader.GetBool(compatTbl, "hugo",     compatHugo);
+                compatEleventy = TomlReader.GetBool(compatTbl, "eleventy", compatEleventy);
+            }
+
+            // ── Parse [template] table: engine + nunjucks compatibility mode ──
+            // Example:
+            //   [template]
+            //   engine = "native"
+            //   [template.nunjucks]
+            //   compatibility = "zest"   # "strict" | "zest"
+            //
+            // [template].engine overrides the top-level `template_engine` key
+            // when present, so users can group template config in one table.
+            var nunjucksCompat = config.NunjucksCompatibility;
+            if (model.TryGetValue("template", out var tplObj) && tplObj is Tomlyn.Model.TomlTable tplTbl)
+            {
+                var tplEngine = TomlReader.GetString(tplTbl, "engine", templateEngine);
+                if (!string.IsNullOrEmpty(tplEngine)) templateEngine = tplEngine;
+                // Flat form: template.nunjucks_compatibility = "zest"
+                nunjucksCompat = TomlReader.GetString(tplTbl, "nunjucks_compatibility", nunjucksCompat);
+                // Nested form: [template.nunjucks] compatibility = "zest"
+                if (tplTbl.TryGetValue("nunjucks", out var njObj) && njObj is Tomlyn.Model.TomlTable njTbl)
+                {
+                    nunjucksCompat = TomlReader.GetString(njTbl, "compatibility", nunjucksCompat);
+                }
+            }
+
             // Parse [[taxonomies]] array
             var taxonomies = config.Taxonomies;
             if (model.TryGetValue("taxonomies", out var taxObj) && taxObj is Tomlyn.Model.TomlTableArray taxArr)
@@ -152,7 +192,12 @@ public static class ConfigLoader
                 logLevel: logLevel,
                 logToFile: logToFile,
                 logTimestamps: logTimestamps,
-                templateEngine: templateEngine
+                templateEngine: templateEngine,
+                compatJekyll: compatJekyll,
+                compatHexo: compatHexo,
+                compatHugo: compatHugo,
+                compatEleventy: compatEleventy,
+                nunjucksCompatibility: nunjucksCompat
             );
             return _cachedConfig;
         }

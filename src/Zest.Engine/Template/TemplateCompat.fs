@@ -1,12 +1,17 @@
 namespace Zest.Engine.Template
 
 open System
+open Zest.Engine
 
 // ============================================================
 // TemplateCompat — Template Language Compatibility Registry
 // ============================================================
 // Registers all 11ty-compatible template language extensions
 // and maps them to Zest's processing pipeline.
+//
+// In `native` template mode (the default), HTML files are routed
+// through the Nunjucks compat layer so `{{ }}` / `{% %}` syntax
+// works in plain HTML, and `.zest.fsx` files may serve as templates.
 //
 // Extension  │ Processing Strategy              │ Status
 // ────────────────────────────────────────────────────────────
@@ -17,7 +22,8 @@ open System
 // .webc     │ WebC SSR preprocessor + Nunjucks  │ Full
 // .haml     │ HamlConverter → HTML → Nunjucks   │ Full
 // .pug      │ PugConverter → HTML → Nunjucks    │ Full
-// .html     │ Nunjucks preprocessor (11ty mode) │ Full
+// .html     │ Nunjucks compat layer (native)    │ Full
+// .zest.fsx │ F# HTML DSL (native template)     │ Full
 // .md       │ Markdown → HTML                   │ Full
 // ============================================================
 
@@ -29,8 +35,11 @@ type TemplateStrategy =
     | ConvertThenNunjucks
     /// Markdown processing only (no template engine).
     | MarkdownOnly
-    /// HTML passthrough (can optionally apply Nunjucks preprocessing).
+    /// HTML passthrough routed through the Nunjucks compat layer
+    /// (native mode — `{{ }}` / `{% %}` work in plain HTML).
     | HtmlOnly
+    /// F# HTML DSL template (evaluated as a .zest.fsx script).
+    | NativeScript
 
 /// Template language compatibility registry.
 module TemplateCompat =
@@ -38,17 +47,19 @@ module TemplateCompat =
     /// Mapping from file extension to template strategy.
     let private strategyMap =
         Map.ofList [
-            ".njk",      Nunjucks
-            ".liquid",   Nunjucks
-            ".hbs",      Nunjucks
-            ".mustache", Nunjucks
-            ".haml",     ConvertThenNunjucks
-            ".pug",      ConvertThenNunjucks
-            ".webc",     Nunjucks
-            ".html",     HtmlOnly
-            ".htm",      HtmlOnly
-            ".md",       MarkdownOnly
-            ".markdown", MarkdownOnly
+            FileExtensions.Nunjucks,      Nunjucks
+            FileExtensions.Liquid,        Nunjucks
+            FileExtensions.Handlebars,    Nunjucks
+            FileExtensions.Mustache,      Nunjucks
+            FileExtensions.Haml,          ConvertThenNunjucks
+            FileExtensions.Pug,           ConvertThenNunjucks
+            FileExtensions.WebC,          Nunjucks
+            FileExtensions.Html,          HtmlOnly
+            FileExtensions.HtmlLong,      HtmlOnly
+            FileExtensions.ZestScript,    NativeScript
+            FileExtensions.FSharpScript,  NativeScript
+            FileExtensions.Markdown,      MarkdownOnly
+            FileExtensions.MarkdownLong,  MarkdownOnly
         ]
 
     /// Get the template strategy for a given file extension.
@@ -81,7 +92,7 @@ module TemplateCompat =
         match strategyFor ext with
         | Some ConvertThenNunjucks ->
             match ext.ToLowerInvariant() with
-            | ".haml" -> HamlConverter.convert body
-            | ".pug"  -> PugConverter.convert body
+            | FileExtensions.Haml -> HamlConverter.convert body
+            | FileExtensions.Pug  -> PugConverter.convert body
             | _       -> body
         | _ -> body

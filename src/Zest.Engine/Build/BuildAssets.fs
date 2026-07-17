@@ -28,8 +28,8 @@ module BuildAssets =
                 let ext = Path.GetExtension(file).ToLowerInvariant()
                 let rel = Path.GetRelativePath(src, file)
                 let srcLastWrite = File.GetLastWriteTimeUtc(file)
-                if ext = ".zcss" then
-                    let target = Path.Combine(dst, Path.ChangeExtension(rel, ".css"))
+                if ext = FileExtensions.Zcss then
+                    let target = Path.Combine(dst, Path.ChangeExtension(rel, FileExtensions.Css))
                     ensureDir target
                     if not (File.Exists target) || srcLastWrite > File.GetLastWriteTimeUtc(target) then
                         Processor.processFileTo file target |> ignore

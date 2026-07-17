@@ -119,3 +119,31 @@ module Dsl =
     let showIf cond ch = if cond then ch else ""
     let hideIf cond ch = if cond then "" else ch
     let render (nodes: string list) = printf "%s" (String.concat "\n" nodes)
+
+    // ---- Safety helpers ──────────────────────────────────────────
+    // `htmlSafe` escapes text for insertion into HTML element content.
+    // `attrSafe` additionally escapes single quotes so the value is safe
+    // inside both single- and double-quoted attribute values.
+
+    /// HTML-escape text for safe insertion into element content.
+    /// Escapes &, <, > (and " for attribute compatibility).
+    let htmlSafe (s: string) = htmlEncode s
+
+    /// Escape a value for safe use inside an HTML attribute value.
+    /// Escapes &, <, >, " and '.
+    let attrSafe (s: string) =
+        s.Replace("&", "&amp;")
+         .Replace("<", "&lt;")
+         .Replace(">", "&gt;")
+         .Replace("\"", "&quot;")
+         .Replace("'", "&#39;")
+
+    /// URL-encode a value for use in href / query strings.
+    let urlSafe (s: string) = Uri.EscapeDataString(s)
+
+    /// Escape text for safe insertion into a <script> JSON context.
+    /// Escapes </, <, U+2028, U+2029 which break inline scripts.
+    let jsSafe (s: string) =
+        s.Replace("</", "<\\/")
+         .Replace("\u2028", "\\u2028")
+         .Replace("\u2029", "\\u2029")

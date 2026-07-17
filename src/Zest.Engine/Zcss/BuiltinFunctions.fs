@@ -85,6 +85,23 @@ module BuiltinFunctions =
                                 if mv.Success then Some(float mv.Groups.[1].Value) else None)
                             if nums.Length > 0 then string (Array.max nums) else arg
                         else arg
+                    // env-color("primary") → var(--primary)
+                    // Generates a CSS custom-property reference, useful for
+                    // theming and runtime variable overrides.
+                    | "env-color" ->
+                        let name = arg.Trim('"', '\'')
+                        sprintf "var(--%s)" name
+                    // env("name") — alias for env-color, mirroring CSS env()
+                    | "env" ->
+                        let name = arg.Trim('"', '\'')
+                        sprintf "var(--%s)" name
+                    // cssvar("name", fallback) → var(--name, fallback)
+                    | "cssvar" ->
+                        let parts = arg.Split(',') |> Array.map (fun s -> s.Trim())
+                        if parts.Length >= 2 then
+                            sprintf "var(--%s, %s)" (parts.[0].Trim('"','\'')) parts.[1]
+                        else
+                            sprintf "var(--%s)" (parts.[0].Trim('"','\''))
                     | _ -> null
                 if replacement <> null then
                     result <- result.Substring(0, m.Index) + replacement + result.Substring(m.Index + m.Length)

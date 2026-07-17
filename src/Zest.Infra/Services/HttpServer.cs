@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Net;
 using System.Text;
+using Zest.Engine;
 
 #nullable enable
 
@@ -197,7 +198,7 @@ public abstract class HttpServer : IDisposable
                     var indexPath = Path.Combine(outputDir, "index.html");
                     if (File.Exists(indexPath))
                     {
-                        await WriteFileResponse(ctx, indexPath, ".html");
+                        await WriteFileResponse(ctx, indexPath, FileExtensions.Html);
                         if (method == "HEAD")
                             ctx.Response.OutputStream.Close();
                         Interlocked.Increment(ref _totalRequests);
@@ -289,7 +290,7 @@ public abstract class HttpServer : IDisposable
         var compressionMethod = GetCompressionMethod(request.Headers["Accept-Encoding"], response.ContentType, fileInfo.Length);
 
         // Inject live-reload script into HTML if needed
-        if (ext == ".html" && script != null)
+        if (ext == FileExtensions.Html && script != null)
         {
             var html = await File.ReadAllTextAsync(filePath);
             html = html.Replace("</body>", script + "\n</body>");

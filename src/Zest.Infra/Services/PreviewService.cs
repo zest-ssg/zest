@@ -32,6 +32,7 @@ public class PreviewService : HttpServer
         : base(host, openBrowser)
     {
         _config = config;
+        _ignoredDirNames = ExcludedPaths.For(config);
         _port = port;
         _watch = watch;
         _liveReload = liveReload;
@@ -90,11 +91,10 @@ public class PreviewService : HttpServer
         LogWriter.Info($"Total requests: {TotalRequests}, rebuilds: {_rebuildCount}");
     }
 
-    private static readonly HashSet<string> IgnoredDirNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "_site", ".git", ".svn", ".hg",
-        "bin", "obj", "node_modules", "packages", ".vs"
-    };
+    /// Directories whose contents should NOT trigger rebuilds.
+    /// Initialized from <see cref="ExcludedPaths.For"/> in the constructor so
+    /// the configured <c>OutputDir</c> (default <c>_site</c>) is respected.
+    private readonly HashSet<string> _ignoredDirNames;
 
     private void StartFileWatcher()
     {
@@ -119,7 +119,7 @@ public class PreviewService : HttpServer
                 var p = parts[i];
                 if (i == parts.Length - 2)
                 {
-                    if (IgnoredDirNames.Contains(p))
+                    if (_ignoredDirNames.Contains(p))
                         return;
                 }
                 else if (p.StartsWith('.'))
@@ -131,7 +131,7 @@ public class PreviewService : HttpServer
             var ext = Path.GetExtension(e.Name!)?.ToLowerInvariant() ?? "";
             if (!WatchConstants.Extensions.Contains(ext)) return;
 
-            var isCss = ext is ".css" or ".zcss";
+            var isCss = ext is FileExtensions.Css or FileExtensions.Zcss;
             lock (_changeLock)
             {
                 if (!isCss) _cssOnlyChanges = false;

@@ -59,3 +59,42 @@ module DslSeo =
     /// Generate a single hreflang <link> tag for multilingual pages.
     let hreflang_tag (lang: string) (url: string) =
         sprintf """<link rel="alternate" hreflang="%s" href="%s" />""" (ae lang) (ae url)
+
+    // ── Page-object convenience APIs ───────────────────────────────────
+    // These accept a page-like record (url, title, description, date, slug,
+    // tags) and return a ready-to-paste HTML string block.
+
+    /// A minimal page shape accepted by the SEO helpers below.
+    type SeoPage = {
+        url: string
+        title: string
+        description: string
+        image: string
+        ``type``: string      // og:type, e.g. "article" / "website"
+        siteName: string
+    }
+
+    /// Generate a complete Open Graph tag block as a single HTML string.
+    /// `openGraphHtml(page)` matches the spec's page-object signature.
+    let openGraphHtml (page: SeoPage) =
+        open_graph_tags page.title page.description page.url page.image page.``type``
+        |> String.concat "\n"
+
+    /// Generate a complete Twitter Card tag block as a single HTML string.
+    /// `twitterCardHtml(page, cardType)` — cardType is "summary" or
+    /// "summary_large_image".
+    let twitterCardHtml (page: SeoPage) (cardType: string) =
+        twitter_card_tags cardType page.title page.description page.image page.siteName
+        |> String.concat "\n"
+
+    /// Generate a canonical URL <link> tag from a page object.
+    let canonicalUrl (page: SeoPage) = canonical_url page.url
+
+    /// Generate the full SEO <head> block (meta + OG + Twitter + canonical)
+    /// for a page, ready to drop into a <head> element.
+    let seoHead (page: SeoPage) (siteName: string) =
+        [ yield! meta_tags page.title page.description page.url page.image siteName
+          yield openGraphHtml page
+          yield twitterCardHtml page "summary_large_image"
+          yield canonicalUrl page ]
+        |> String.concat "\n"

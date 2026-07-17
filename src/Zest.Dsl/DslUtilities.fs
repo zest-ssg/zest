@@ -2,6 +2,8 @@ namespace Zest.Dsl
 
 open System
 open System.Text.RegularExpressions
+open Tomlyn
+open Tomlyn.Model
 
 // ============================================================
 // DslUtilities — Control flow, string interp, collections, math
@@ -87,3 +89,79 @@ module DslUtilities =
 
     let min_val (items: int list) = items |> List.min
     let max_val (items: int list) = items |> List.max
+
+    // ── File I/O helpers ─────────────────────────────────────────
+    // Thin wrappers so FSI scripts can read/write files without opening
+    // System.IO explicitly.
+
+    /// Read all text from a file path. Returns "" if the file is missing.
+    let readAllText (path: string) =
+        if IO.File.Exists path then IO.File.ReadAllText(path) else ""
+
+    /// Write text to a file path, creating parent directories as needed.
+    let writeAllText (path: string) (content: string) =
+        let dir = IO.Path.GetDirectoryName(path)
+        if not (String.IsNullOrEmpty dir) then IO.Directory.CreateDirectory(dir) |> ignore
+        IO.File.WriteAllText(path, content)
+
+    /// Read all lines from a file. Returns empty list if missing.
+    let readAllLines (path: string) =
+        if IO.File.Exists path then IO.File.ReadAllLines(path) |> List.ofArray else []
+
+    // ── Config loaders ───────────────────────────────────────────
+
+    /// Parse a flat YAML mapping (key: value per line) into a Map.
+    /// Handles the common frontmatter shape; nested mappings are flattened
+    /// with dotted keys (e.g. `author:\n  name: x` → "author.name" → "x").
+    let parseYaml (text: string) : Map<string, string> =
+        let lines = text.Split('\n') |> Array.map (fun l -> l.TrimEnd('\r'))
+        let result = ResizeArray<string * string>()
+        let mutable prefixStack : (string * int) list = []
+        for raw in lines do
+            if raw.TrimStart().StartsWith("#") || String.IsNullOrWhiteSpace raw then () else
+            // Leading-space count = indentation depth (cheap, allocation-free).
+            let indent = raw.Length - raw.TrimStart(' ').Length
+            // pop stack entries deeper than current indent
+            while prefixStack.Length > 0 && (snd prefixStack.[0]) >= indent do
+                prefixStack <- prefixStack.Tail
+            let line = raw.Trim()
+            let colon = line.IndexOf(':')
+            if colon < 0 then () else
+            let key = line.[..colon-1].Trim()
+            let rest = line.[colon+1..].Trim().Trim('"', '\'')
+            let fullKey =
+                if prefixStack.IsEmpty then key
+                else (fst prefixStack.[0]) + "." + key
+            if rest = "" then
+                // begins a nested block
+                prefixStack <- (fullKey, indent) :: prefixStack
+            else
+                result.Add(fullKey, rest)
+        Map.ofSeq result
+
+    /// Load a YAML file into a Map<string, string>.
+    let loadYaml (path: string) = readAllText path |> parseYaml
+
+    /// Parse a TOML document into a Map<string, string> using Tomlyn.
+    /// Nested tables are flattened to dotted keys.
+    let parseToml (text: string) : Map<string, string> =
+        let result = ResizeArray<string * string>()
+        let rec walk (prefix: string) (tbl: TomlTable) =
+            for kv in tbl do
+                let key = if prefix = "" then kv.Key else prefix + "." + kv.Key
+                match kv.Value with
+                | :? TomlTable as nested -> walk key nested
+                | :? TomlArray as arr ->
+                    let vals = arr |> Seq.map (fun v -> v.ToString()) |> String.concat ","
+                    result.Add(key, vals)
+                | v -> result.Add(key, v.ToString())
+        let model = Toml.ToModel(text)
+        walk "" model
+        Map.ofSeq result
+
+    /// Load a TOML file into a Map<string, string>.
+    let loadToml (path: string) = readAllText path |> parseToml
+
+    /// Get a value from a Map with a default.
+    let configGet (key: string) (defaultValue: string) (cfg: Map<string, string>) =
+        match cfg.TryFind key with Some v -> v | None -> defaultValue

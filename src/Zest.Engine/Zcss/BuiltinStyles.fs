@@ -561,3 +561,73 @@ $bg-alt:     #f9fafb !default
 .gap-2 { column-gap: 0.5rem }
 .gap-3 { column-gap: 1rem }
 """
+
+    /// Layout mixins: `@include responsive-container` and `@include grid-auto`.
+    /// Used via `@use "zest:layout"` then `@include responsive-container`.
+    let layoutMixins = """
+// ── Layout Mixins ────────────────────────────────────────
+// responsive-container: a fluid container that clamps width at
+// common breakpoints and centers itself with responsive padding.
+@mixin responsive-container {
+  width: 100%
+  margin-inline: auto
+  padding-inline: 1rem
+  @media (min-width: 640px)  { max-width: 640px; padding-inline: 1.5rem }
+  @media (min-width: 768px)  { max-width: 768px }
+  @media (min-width: 1024px) { max-width: 1024px; padding-inline: 2rem }
+  @media (min-width: 1280px) { max-width: 1280px }
+  @media (min-width: 1536px) { max-width: 1536px }
+}
+
+// grid-auto: an auto-flowing responsive grid. Pass the minimum
+// column width to size columns; the browser auto-fits columns.
+@mixin grid-auto($min: 16rem) {
+  display: grid
+  grid-template-columns: repeat(auto-fit, minmax($min, 1fr))
+  gap: 1.5rem
+}
+"""
+
+    /// Composition utilities (Tailwind-style shortcuts that combine
+    /// several primitives). Accessed as plain classes after
+    /// `@use "zest:utilities"`.
+    let compositionUtilities = """
+// ── Composition Utilities ────────────────────────────────
+.flex-center        { display: flex; align-items: center; justify-content: center }
+.flex-between       { display: flex; align-items: center; justify-content: space-between }
+.flex-around        { display: flex; align-items: center; justify-content: space-around }
+.flex-evenly        { display: flex; align-items: center; justify-content: space-evenly }
+.flex-start         { display: flex; align-items: center; justify-content: flex-start }
+.flex-end           { display: flex; align-items: center; justify-content: flex-end }
+.flex-col-center    { display: flex; flex-direction: column; align-items: center; justify-content: center }
+.flex-col-start     { display: flex; flex-direction: column; align-items: flex-start }
+.flex-col-end       { display: flex; flex-direction: column; align-items: flex-end }
+.inline-flex-center { display: inline-flex; align-items: center; justify-content: center }
+
+// Visually hidden but accessible to screen readers
+.visually-hidden {
+  position: absolute
+  width: 1px
+  height: 1px
+  padding: 0
+  margin: -1px
+  overflow: hidden
+  clip: rect(0, 0, 0, 0)
+  white-space: nowrap
+  border: 0
+}
+
+// Truncate text with ellipsis
+.text-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+// Clamp to N lines (line-clamp utility)
+.text-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden }
+.text-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden }
+.text-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden }
+
+// Spacing scale helpers (combine into a single class)
+.stack > * + * { margin-top: 1rem }
+.stack-sm > * + * { margin-top: 0.5rem }
+.stack-lg > * + * { margin-top: 2rem }
+.cluster { display: flex; flex-wrap: wrap; gap: 0.5rem }
+"""
+

@@ -1,9 +1,11 @@
 # ─── Zest CLI Metadata ────────────────────────────────
 # This file defines the CLI branding, version, and help text.
-# Read by Zest.App.CommandLine.HelpRenderer at startup.
+# Embedded as a manifest resource (LogicalName="zest.toml")
+# and read by Zest.App.CommandLine.HelpRenderer at startup.
+# During local development, HelpRenderer falls back to this file on disk.
 
 [meta]
-version    = "0.1.0"
+version    = "0.2.0"
 header     = "Zest v{0} — Zealous Efficient Static Toolkit"
 ecosystem  = "Ecosystem: .zest.fsx + .zcss"
 

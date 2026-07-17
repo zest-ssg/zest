@@ -55,6 +55,18 @@ type SiteConfig = {
     Language: string
     /// Template engine: "native" (default, {{ }} placeholders) or "nunjucks" (Nunjucks-compatible)
     TemplateEngine: string
+    // ── Compatibility flags (enable SSG-specific behaviors) ──
+    /// Enable Jekyll-compatible behavior (permalink style, default layout, etc.)
+    CompatJekyll: bool
+    /// Enable Hexo-compatible behavior.
+    CompatHexo: bool
+    /// Enable Hugo-compatible behavior.
+    CompatHugo: bool
+    /// Enable 11ty-compatible behavior (collections API shape, etc.).
+    CompatEleventy: bool
+    // ── Nunjucks compatibility mode ──
+    /// "strict" = match official Nunjucks exactly; "zest" = Zest extensions enabled.
+    NunjucksCompatibility: string
 }
 with
     /// Create a copy with a different dev server port.
@@ -100,4 +112,11 @@ module SiteConfigDefaults =
           Menus = dict []
           Author = ""
           Language = "en"
-          TemplateEngine = "native" }
+          TemplateEngine = "native"
+          // Compat flags default off — users opt in via [compat] table.
+          CompatJekyll = false
+          CompatHexo = false
+          CompatHugo = false
+          CompatEleventy = false
+          // "zest" mode enables Zest's extended filters/macros on top of Nunjucks.
+          NunjucksCompatibility = "zest" }

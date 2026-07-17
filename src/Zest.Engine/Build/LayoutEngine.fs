@@ -13,7 +13,19 @@ open Zest.Engine.Template
 /// Optimized with static Regex, single-pass directory traversal, HashSet-based key lookup, and filter registration caching.
 module LayoutEngine =
 
-    let private allowedLayoutExts = set [".html"; ".htm"; ".njk"; ".liquid"; ".hbs"; ".mustache"; ".zest.fsx"; ".fsx"]
+    let private allowedLayoutExts =
+        set [ FileExtensions.Html; FileExtensions.HtmlLong
+              FileExtensions.Nunjucks; FileExtensions.Liquid
+              FileExtensions.Handlebars; FileExtensions.Mustache
+              FileExtensions.ZestScript; FileExtensions.FSharpScript ]
+
+    /// Extensions routed through the Nunjucks compat layer in native mode.
+    /// Excludes .haml / .pug (those convert-then-render via ScriptEvaluator).
+    let private nunjucksRenderExts =
+        [ FileExtensions.Nunjucks; FileExtensions.Liquid
+          FileExtensions.Handlebars; FileExtensions.Mustache
+          FileExtensions.Html; FileExtensions.HtmlLong
+          FileExtensions.WebC ]
 
     let private layoutCache2 = ConcurrentDictionary<string, struct(DateTime * Map<string, string * string>)>()
     let internal loadLayouts (layoutsDir: string) =
@@ -139,17 +151,22 @@ module LayoutEngine =
         match layouts.TryFind name with
         | None -> content
         | Some (path, layoutText) ->
-            let isNunjucks = path.EndsWith(".njk", StringComparison.OrdinalIgnoreCase)
-                            || path.EndsWith(".liquid", StringComparison.OrdinalIgnoreCase)
-                            || path.EndsWith(".hbs", StringComparison.OrdinalIgnoreCase)
-                            || path.EndsWith(".mustache", StringComparison.OrdinalIgnoreCase)
+            // In native mode, HTML layouts are routed through the Nunjucks
+            // compat layer so `{{ }}` / `{% %}` syntax works in plain HTML.
+            // `.zest.fsx`/`.fsx` layouts are F# and stay on the placeholder
+            // path (their HTML output is produced by the script evaluator).
+            // Nunjucks also handles the legacy `{{ page.title }}` placeholder
+            // syntax, so this is a strict compatibility improvement.
+            let isNunjucks =
+                nunjucksRenderExts
+                |> List.exists (fun e -> path.EndsWith(e, StringComparison.OrdinalIgnoreCase))
 
             let rendered =
                 if isNunjucks then
                     let engine = TemplateManager.getOrCreateEngine "nunjucks" {
                         Engine = "nunjucks"
                         EnableCache = true
-                        Extension = ".njk"
+                        Extension = FileExtensions.Nunjucks
                         Filters = []
                     }
                     match engine with

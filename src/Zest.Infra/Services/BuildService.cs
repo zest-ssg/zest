@@ -27,6 +27,14 @@ public class BuildService
     public BuildResult? LastResult => _lastResult;
 
     /// <summary>
+    /// Clear the in-process build cache (mtime index, content hashes, and the
+    /// page→dependency graph). Used by `zest clean --cache`. On-disk cache
+    /// files (.zest-cache.json / .zest-deps.json) are removed separately by
+    /// the CleanController.
+    /// </summary>
+    public static void ClearCache() => BuildCache.clearCache();
+
+    /// <summary>
     /// Print build result to console using the LogWriter.
     /// </summary>
     public static void PrintResult(BuildResult result, SiteConfig config)
