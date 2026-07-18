@@ -291,6 +291,22 @@ img [
   ]
 ]
 
+// ── 404 page ───────────────────────────────────────
+.notfound [
+  text-align = center
+  padding = 3r 0
+]
+.notfound__code [
+  margin = 0
+  font-size = 4.5r
+  line-height = 1
+  color = primary
+]
+.notfound__lead [
+  margin = 0.5r 0 1.5r
+  color = muted
+]
+
 // ── Responsive ─────────────────────────────────────
 @media (max-width: 600px) [
   html [

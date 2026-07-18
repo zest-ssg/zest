@@ -91,11 +91,23 @@
     <EmbeddedResource Include="Starters\assets\css\main.zcss">
       <LogicalName>Zest.App.Starters.assets\css\main.zcss</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="Starters\assets\favicon.svg">
+      <LogicalName>Zest.App.Starters.assets\favicon.svg</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="Starters\content\index.zest.fsx">
       <LogicalName>Zest.App.Starters.content\index.zest.fsx</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="Starters\content\about.zest.fsx">
       <LogicalName>Zest.App.Starters.content\about.zest.fsx</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\content\rss.zest.fsx">
+      <LogicalName>Zest.App.Starters.content\rss.zest.fsx</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\content\sitemap.zest.fsx">
+      <LogicalName>Zest.App.Starters.content\sitemap.zest.fsx</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\content\404.zest.fsx">
+      <LogicalName>Zest.App.Starters.content\404.zest.fsx</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="Starters\content\posts\index.zest.fsx">
       <LogicalName>Zest.App.Starters.content\posts\index.zest.fsx</LogicalName>
