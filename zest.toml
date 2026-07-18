@@ -5,7 +5,7 @@
 # During local development, HelpRenderer falls back to this file on disk.
 
 [meta]
-version    = "0.2.0"
+version    = "0.2.1"
 header     = "Zest v{0} — Zealous Efficient Static Toolkit"
 ecosystem  = "Ecosystem: .zest.fsx + .zcss"
 
