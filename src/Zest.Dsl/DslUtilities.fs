@@ -165,3 +165,13 @@ module DslUtilities =
     /// Get a value from a Map with a default.
     let configGet (key: string) (defaultValue: string) (cfg: Map<string, string>) =
         match cfg.TryFind key with Some v -> v | None -> defaultValue
+
+    // ── Inline Markdown ────────────────────────────────────────
+
+    /// Render an inline Markdown string to an HTML string, so Markdown content
+    /// can be mixed directly into the (string-based) F# DSL tree. Returns a
+    /// plain `string`, identical in kind to everything else the DSL emits, so it
+    /// drops straight into a `render [ ... ]` block. Delegates to
+    /// `Zest.Engine.Html.MarkdownEngine.toHtml`.
+    let md (markdownText: string) : string =
+        Zest.Engine.Html.MarkdownEngine.toHtml markdownText

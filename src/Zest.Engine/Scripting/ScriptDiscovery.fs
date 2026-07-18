@@ -48,8 +48,9 @@ module ScriptDiscovery =
             dslDllPath <- result
             result
 
-    /// Cached DLL isolation — copies Zest.Dsl.dll to a temp directory
-    /// to avoid FSharp.Core version conflicts with FSI.
+    /// Cached DLL isolation — copies Zest.Dsl.dll (and its sibling
+    /// dependencies) to a temp directory to avoid FSharp.Core version
+    /// conflicts with FSI.
     let private dslDllCache = Dictionary<string, string>()
 
     let getIsolatedDslDll () : string =
@@ -64,8 +65,18 @@ module ScriptDiscovery =
         | false, _ ->
             let tempDir = Path.Combine(Path.GetTempPath(), "zest-dsl-" + srcHash)
             Directory.CreateDirectory(tempDir) |> ignore
+            // Isolate the full dependency set (Zest.Dsl + Zest.Engine + third-party
+            // deps) into one folder so FSI resolves a single, consistent
+            // Zest.Engine assembly — Zest.Dsl now references it for the native
+            // `md` Markdown helper. FSharp.Core is deliberately NOT copied: it
+            // stays resolved from the app base, so only one copy is loaded
+            // (avoids FS0001 / version conflicts). The FSI↔app boundary is a
+            // plain string (the script's rendered output), so two physical
+            // copies of these assemblies cause no type-identity issues.
+            if not (File.Exists(Path.Combine(tempDir, "Zest.Dsl.dll"))) then
+                for f in Directory.GetFiles(Path.GetDirectoryName(srcPath), "*.dll") do
+                    if not (String.Equals(Path.GetFileName(f), "FSharp.Core.dll", StringComparison.OrdinalIgnoreCase)) then
+                        File.Copy(f, Path.Combine(tempDir, Path.GetFileName(f)), true)
             let destPath = Path.Combine(tempDir, "Zest.Dsl.dll")
-            if not (File.Exists destPath) then
-                File.Copy(srcPath, destPath, true)
             dslDllCache.[srcHash] <- destPath
             destPath
