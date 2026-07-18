@@ -17,11 +17,9 @@ let postList =
         ulC "post-list" [
             for p in posts ->
                 liC "post-list__item" [
-                    articleC "post-card" [
-                        h2C "post-card__title" [ aHref p.url p.title ]
-                        (if p.date <> "" then pC "post-card__date" [ text p.date ] else "")
-                        (if p.description <> "" then pC "post-card__excerpt" [ text p.description ] else "")
-                    ]
+                    h2C "post-list__title" [ aHref p.url p.title ]
+                    (if p.date <> "" then pC "post-list__meta" [ text p.date ] else "")
+                    (if p.description <> "" then pC "post-list__excerpt" [ text p.description ] else "")
                 ]
         ]
 

@@ -1,42 +1,65 @@
-// main.zcss — Zest blog theme
+// main.zcss — Zest blog theme (minima-inspired, deliberately plain)
 // ZCSS F#-style syntax: `[]` delimit nested blocks (F# list literals),
 // `let` declares design tokens, `=` separates property/value, and `|>`
 // pipes values through color functions — syntax that mirrors the host
 // language (F#) rather than SCSS. Nested blocks are written on their own
 // lines (no inline-nested `&:hover [ ... ]`) so the brace parser handles
 // them as proper rule sets.
+//
+// ── Authoring conventions (read before editing) ─────
+// 1. ROOT FONT-SIZE MUST BE ABSOLUTE. The `r` unit shorthand compiles to
+//    `rem`, which is relative to the root element's own font-size. Using
+//    `font-size = Nr` on `html` therefore produces `Nrem` that multiplies
+//    the default (16px) — e.g. 17r → 17rem → 272px, blowing up every
+//    rem-based size. Always write the root as an absolute unit
+//    (`17px`, or `106.25%`) and let all other `r` → `rem` sizes scale from it.
+// 2. EXTERNAL RESOURCES / CDN.
+//    - F#-style `open` directives can ONLY reference in-process functions from
+//      internal DLLs; they cannot reach an external CDN, so there is no risk of
+//      a live network pull through `open`.
+//    - `@import` is native CSS and is fully compatible — using it is fine.
+//    - If you need an external stylesheet, prefer downloading it locally with
+//      `curl` and referencing the local copy; a native CSS `@import` of a
+//      local/relative path is also acceptable. Do NOT hand-write live
+//      third-party CDN `<link>`/URLs into the theme.
+//
+// Design intent: return to the basics. Plain system typography, one muted
+// link colour, a single hairline border, generous whitespace. No gradients,
+// shadows, transforms, or decorative chrome — content first.
 
 // ── Design tokens ──────────────────────────────────
-let primary   = #4f46e5          // indigo
-let primaryD  = primary |> darken(8%)
-let heroAccent = primary |> lighten(22%)   // gradient accent (computed up-front)
-let ink       = #1f2430          // near-black text
-let muted     = #6b7280          // secondary text
-let line      = #e7e7ee          // hairline borders
-let paper     = #ffffff          // card / surface
-let bg        = #f7f7fb          // page background
-let codeBg    = #f3f3f7
+let text      = #333333          // body text
+let heading   = #111111          // headings / titles
+let muted     = #828282          // secondary text, meta
+let border    = #e8e8e8          // hairline rules
+let link      = #2a7ae2          // restrained link blue
+let linkHover = #1756a9          // darker on hover
+let codeBg    = #f5f5f5          // inline/block code background
+let bg        = #ffffff          // page background
 
 // ── Reset & base ───────────────────────────────────
 * [
   box-sizing = border-box
 ]
 html [
-  font-size = 17r
+  // The root font-size must be an absolute unit (px), NOT `r`/`rem`:
+  // `rem` is relative to this very value, so `17r` would compile to
+  // `17rem` (17 × the default 16px) and blow up every rem-based size.
+  font-size = 17px
   -webkit-text-size-adjust = 100%
 ]
 body [
   margin = 0
   background = bg
-  color = ink
-  font-family = "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
+  color = text
+  font-family = -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif
   line-height = 1.7
 ]
 a [
-  color = primary
+  color = link
   text-decoration = none
   &:hover [
-    color = primaryD
+    color = linkHover
     text-decoration = underline
   ]
 ]
@@ -46,34 +69,31 @@ img [
 ]
 
 // ── Layout container ───────────────────────────────
+// A single, calm reading measure. Minima-style ~640–720px column.
 .container [
   width = 100%
-  max-width = 46r
+  max-width = 44r
   margin = 0 auto
   padding = 0 1.25r
 ]
 
 // ── Header ─────────────────────────────────────────
+// Plain, static, hairline rule — no sticky / blur / accent fill.
 .site-header [
-  position = sticky
-  top = 0
-  z-index = 10
-  background = rgba(255, 255, 255, 0.85)
-  backdrop-filter = saturate(180%) blur(8px)
-  border-bottom = 1px solid line
+  border-bottom = 1px solid border
 ]
 .site-header__inner [
   display = flex
   align-items = center
   justify-content = space-between
-  height = 4r
+  height = 3.5r
 ]
 .site-header__brand [
   font-weight = 700
-  font-size = 1.2r
-  color = ink
+  font-size = 1.15r
+  color = heading
   &:hover [
-    color = primary
+    color = heading
     text-decoration = none
   ]
 ]
@@ -83,9 +103,9 @@ img [
 ]
 .site-nav__link [
   color = muted
-  font-weight = 500
+  font-size = 0.95r
   &:hover [
-    color = primary
+    color = link
     text-decoration = none
   ]
 ]
@@ -95,122 +115,86 @@ img [
   padding = 2.5r 0 4r
 ]
 
-// ── Hero ───────────────────────────────────────────
-.hero [
-  background = linear-gradient(135deg, primary, heroAccent)
-  color = #fff
-  border-radius = 1r
-  padding = 2.5r 2r
+// ── Home intro ─────────────────────────────────────
+// No banner box — just a quiet heading and lead paragraph.
+.intro [
   margin-bottom = 2.5r
-  box-shadow = 0 12px 30px rgba(79, 70, 229, 0.25)
 ]
-.hero__title [
+.intro__title [
   margin = 0 0 0.5r
-  font-size = 2r
+  font-size = 1.9r
+  line-height = 1.25
+  color = heading
 ]
-.hero__lead [
-  margin = 0 0 1.25r
+.intro__lead [
+  margin = 0
+  color = muted
   font-size = 1.05r
-  opacity = 0.95
-]
-.hero__lead code [
-  background = rgba(255, 255, 255, 0.18)
-  padding = 0.1r 0.35r
-  border-radius = 0.35r
-]
-.hero__cta .button [
-  display = inline-block
-  background = #fff
-  color = primary
-  font-weight = 600
-  padding = 0.6r 1.1r
-  border-radius = 0.6r
-  &:hover [
-    text-decoration = none
-    background = #f0f0ff
-  ]
 ]
 
-// ── Section headings ───────────────────────────────
-.posts h2 [
-  font-size = 1.4r
+// ── Section heading ────────────────────────────────
+section h2 [
+  font-size = 1.3r
   margin = 0 0 1r
+  color = heading
 ]
 
-// ── Post list & cards ──────────────────────────────
+// ── Post list (plain, separated by hairlines) ──────
 .post-list [
   list-style = none
   margin = 0
   padding = 0
-  display = grid
-  gap = 1.25r
 ]
-.post-card [
-  background = paper
-  border = 1px solid line
-  border-radius = 0.9r
-  padding = 1.4r 1.5r
-  transition = transform 0.15s ease, box-shadow 0.15s ease
-  &:hover [
-    transform = translateY(-3px)
-    box-shadow = 0 10px 24px rgba(31, 36, 48, 0.10)
+.post-list__item [
+  padding = 1.25r 0
+  border-bottom = 1px solid border
+  &:last-child [
+    border-bottom = none
   ]
 ]
-.post-card__title [
-  margin = 0 0 0.35r
-  font-size = 1.25r
-]
-.post-card__title a [
-  color = ink
-  &:hover [
-    color = primary
-    text-decoration = none
+.post-list__title [
+  margin = 0 0 0.25r
+  font-size = 1.3r
+  line-height = 1.3
+  a [
+    color = heading
+    &:hover [
+      color = link
+      text-decoration = none
+    ]
   ]
 ]
-.post-card__date [
-  margin = 0 0 0.5r
+.post-list__meta [
+  margin = 0 0 0.4r
   color = muted
   font-size = 0.85r
 ]
-.post-card__excerpt [
-  margin = 0 0 0.6r
-  color = #374151
-]
-.post-card__tags [
+.post-list__excerpt [
   margin = 0
-  color = primary
-  font-size = 0.82r
+  color = text
 ]
 
 // ── Post (single) ──────────────────────────────────
-.post [
-  background = paper
-  border = 1px solid line
-  border-radius = 1r
-  padding = 2.5r 2r
+.post__header [
+  margin-bottom = 1.75r
 ]
 .post__title [
   margin = 0 0 0.5r
-  font-size = 2.1r
+  font-size = 2r
   line-height = 1.2
+  color = heading
 ]
 .post__meta [
-  margin = 0 0 1.75r
-  padding-bottom = 1.25r
-  border-bottom = 1px solid line
+  margin = 0
   color = muted
   font-size = 0.9r
-  display = flex
-  flex-wrap = wrap
-  gap = 0.75r
-  align-items = center
+]
+.post__tags [
+  margin-left = 0.5r
 ]
 .post__tag [
-  background = primary |> lighten(38%)
-  color = primaryD
-  padding = 0.1r 0.55r
-  border-radius = 999px
-  font-size = 0.8r
+  color = muted
+  // plain text, no pill — just a muted #hash
 ]
 .post__body [
   font-size = 1.02r
@@ -221,10 +205,12 @@ img [
 .post__body h2 [
   margin = 2r 0 0.75r
   font-size = 1.5r
+  color = heading
 ]
 .post__body h3 [
   margin = 1.5r 0 0.6r
   font-size = 1.2r
+  color = heading
 ]
 .post__body ul, .post__body ol [
   margin = 0 0 1.1r
@@ -236,30 +222,30 @@ img [
 .post__body code [
   background = codeBg
   padding = 0.12r 0.4r
-  border-radius = 0.35r
+  border-radius = 3px
   font-size = 0.9em
-  font-family = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+  font-family = ui-monospace, SFMono-Regular, Menlo, Consolas, monospace
 ]
 .post__body pre [
-  background = #1f2430
-  color = #e6e6f0
+  background = codeBg
+  color = heading
   padding = 1r 1.1r
-  border-radius = 0.6r
+  border = 1px solid border
+  border-radius = 3px
   overflow-x = auto
   margin = 0 0 1.2r
 ]
 .post__body pre code [
   background = transparent
   padding = 0
+  border = none
   color = inherit
 ]
 .post__body blockquote [
   margin = 0 0 1.2r
-  padding = 0.6r 1.1r
-  border-left = 4px solid primary
-  background = primary |> lighten(42%)
-  border-radius = 0 0.5r 0.5r 0
-  color = #374151
+  padding = 0 1.1r
+  border-left = 4px solid border
+  color = muted
 ]
 .post__body a [
   text-decoration = underline
@@ -267,11 +253,10 @@ img [
 
 // ── Footer ─────────────────────────────────────────
 .site-footer [
-  border-top = 1px solid line
-  background = paper
+  border-top = 1px solid border
   padding = 1.75r 0
   color = muted
-  font-size = 0.9r
+  font-size = 0.85r
 ]
 .site-footer__inner [
   display = flex
@@ -280,6 +265,9 @@ img [
   align-items = center
   justify-content = space-between
 ]
+.site-footer__copy [
+  margin = 0
+]
 .site-footer__links [
   display = flex
   gap = 1r
@@ -287,38 +275,34 @@ img [
 .site-footer__links a [
   color = muted
   &:hover [
-    color = primary
+    color = link
   ]
 ]
 
 // ── 404 page ───────────────────────────────────────
 .notfound [
   text-align = center
-  padding = 3r 0
+  padding = 2.5r 0
 ]
 .notfound__code [
-  margin = 0
-  font-size = 4.5r
+  margin = 0 0 0.5r
+  font-size = 3r
   line-height = 1
-  color = primary
+  font-weight = 700
+  color = heading
 ]
 .notfound__lead [
-  margin = 0.5r 0 1.5r
+  margin = 0
   color = muted
 ]
 
 // ── Responsive ─────────────────────────────────────
 @media (max-width: 600px) [
   html [
-    font-size = 16r
-  ]
-  .hero [
-    padding = 2r 1.25r
-  ]
-  .post [
-    padding = 1.75r 1.25r
+    // Same rule as the root: use an absolute unit, not `r`/`rem`.
+    font-size = 16px
   ]
   .site-header__inner [
-    height = 3.5r
+    height = 3r
   ]
 ]

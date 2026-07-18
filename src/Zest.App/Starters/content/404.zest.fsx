@@ -11,7 +11,10 @@ open Zest.Dsl
 render [
     divC "notfound" [
         h1C "notfound__code" [ text "404" ]
-        pC "notfound__lead" [ text "Sorry, the page you were looking for doesn’t exist." ]
-        p [ aHref "/" "← Back to home" ]
+        md """
+**Sorry, the page you were looking for doesn’t exist.**
+
+[← Back to home](/)
+"""
     ]
 ]
