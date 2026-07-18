@@ -287,6 +287,20 @@ module ``Tags - for`` =
         let r = renderOk "{% for item in items %}x{% else %}empty{% endfor %}" ["items", box [||]]
         Assert.Equal("empty", r)
 
+    [<Fact>]
+    let ``range with single arg generates 0..n-1`` () =
+        Assert.Equal("012", renderOk "{% for i in range(3) %}{{ i }}{% endfor %}" [])
+
+    [<Fact>]
+    let ``range with start and stop`` () =
+        Assert.Equal("123", renderOk "{% for i in range(1, 4) %}{{ i }}{% endfor %}" [])
+
+    [<Fact>]
+    let ``range with start, stop and step`` () =
+        Assert.Equal("0246", renderOk "{% for i in range(0, 8, 2) %}{{ i }}{% endfor %}" [])
+        Assert.Equal("3210", renderOk "{% for i in range(3, -1, -1) %}{{ i }}{% endfor %}" [])
+
+
 module ``Tags - set`` =
 
     [<Fact>]
@@ -356,3 +370,107 @@ module ``Error cases`` =
     let ``nonexistent variable renders empty`` () =
         let r = renderOk "{{ nonexistent_var }}" []
         Assert.Equal("", r)
+
+// A simple POCO used to verify reflection-based property access.
+type User() =
+    member val Name = "John" with get, set
+    member val Age = 30 with get, set
+
+// Local engine with an in-memory loader for inheritance/import tests.
+let private memEngine (files: (string * string) list) =
+    let e = NunjucksEngine()
+    e.SetLoadFile(fun p ->
+        let hit = files |> List.tryFind (fun (name, _) -> p.Contains(name))
+        match hit with Some(_, txt) -> Ok txt | None -> Error(sprintf "not found: %s" p))
+    e
+
+module ``New features and compatibility`` =
+
+    [<Fact>]
+    let ``power operator**`` () =
+        Assert.Equal("1024", renderOk "{{ 2 ** 10 }}" [])
+        Assert.Equal("8", renderOk "{{ 2 ** 3 }}" [])
+
+    [<Fact>]
+    let ``whitespace control strips around tags`` () =
+        Assert.Equal("AXB", renderOk "A  {{- x -}}  B" ["x", box "X"])
+
+    [<Fact>]
+    let ``safe filter preserves safe-ness through transforms`` () =
+        // safe -> SafeString, upper must keep it safe (no double escaping)
+        Assert.Equal("<B>", renderOk "{{ x | safe | upper }}" ["x", box "<b>"])
+
+    [<Fact>]
+    let ``poco property access via reflection`` () =
+        let u = User()
+        Assert.Equal("John", renderOk "{{ user.Name }}" ["user", box u])
+        Assert.Equal("30", renderOk "{{ user.Age }}" ["user", box u])
+
+    [<Fact>]
+    let ``set block assignment`` () =
+        Assert.Equal("Hello", renderOk "{% set greeting %}Hello{% endset %}{{ greeting }}" [])
+
+    [<Fact>]
+    let ``loop previtem nextitem depth`` () =
+        let r = renderOk "{% for i in items %}{{ loop.index }}:{{ loop.previtem }}{{ loop.nextitem }} {% endfor %}" ["items", box [|1;2;3|]]
+        Assert.Equal("1:2 2:13 3:2 ", r)
+
+    [<Fact>]
+    let ``super renders parent block content`` () =
+        let e = memEngine [ "parent.njk", "{% block content %}PARENT{% endblock %}" ]
+        let r = (e :> ITemplateEngine).Render "{% extends \"parent.njk\" %}{% block content %}{{ super() }}-CHILD{% endblock %}" (ctx [])
+        match r with Ok s -> Assert.Equal("PARENT-CHILD", s) | Error er -> failwithf "%A" er
+
+    [<Fact>]
+    let ``import registers callable macros`` () =
+        let e = memEngine [ "macros.njk", "{% macro hi(n) %}Hi {{ n }}{% endmacro %}" ]
+        let r = (e :> ITemplateEngine).Render "{% import \"macros.njk\" as m %}{{ m.hi('Bob') }}" (ctx [])
+        match r with Ok s -> Assert.Equal("Hi Bob", s) | Error er -> failwithf "%A" er
+
+    [<Fact>]
+    let ``from imports a named macro`` () =
+        let e = memEngine [ "macros.njk", "{% macro hi(n) %}Hi {{ n }}{% endmacro %}" ]
+        let r = (e :> ITemplateEngine).Render "{% from \"macros.njk\" import hi %}{{ hi('Bob') }}" (ctx [])
+        match r with Ok s -> Assert.Equal("Hi Bob", s) | Error er -> failwithf "%A" er
+
+    [<Fact>]
+    let ``caller is callable inside a macro`` () =
+        let r = renderOk "{% macro wrap() %}BEFORE{{ caller() }}AFTER{% endmacro %}{% call wrap() %}INSIDE{% endcall %}" []
+        Assert.Equal("BEFOREINSIDEAFTER", r)
+
+    [<Fact>]
+    let ``tojson filter`` () =
+        Assert.Equal("[1,2,3]", renderOk "{{ items | tojson }}" ["items", box [|1;2;3|]])
+
+    [<Fact>]
+    let ``filesizeformat filter`` () =
+        Assert.Equal("2.0 KB", renderOk "{{ 2048 | filesizeformat }}" [])
+
+    [<Fact>]
+    let ``loop.cycle alternates values`` () =
+        Assert.Equal("abc", renderOk "{% for i in items %}{{ loop.cycle('a', 'b', 'c') }}{% endfor %}" ["items", box [|1;2;3|]])
+        Assert.Equal("abcab", renderOk "{% for i in items %}{{ loop.cycle('a', 'b', 'c') }}{% endfor %}" ["items", box [|1;2;3;4;5|]])
+
+    [<Fact>]
+    let ``loop.changed returns true on new value`` () =
+        let r = renderOk "{% for i in items %}{% if loop.changed(i) %}{{ i }};{% endif %}{% endfor %}" ["items", box [|1;1;2;2;3|]]
+        Assert.Equal("1;2;3;", r)
+
+    [<Fact>]
+    let ``nested comments are supported`` () =
+        Assert.Equal("AB", renderOk "A{# x {# y #} z #}B" [])
+        Assert.Equal("Hello World", renderOk "Hello{# a {# b #} c #} World" [])
+
+    [<Fact>]
+    let ``unclosed block reports line number`` () =
+        match render "{% if x %}yes" [] with
+        | Ok _ -> failwith "expected error for unclosed block"
+        | Error (TemplateError.RuntimeError(_, line)) -> Assert.Equal(1, line)
+        | Error _ -> failwith "unexpected error kind"
+
+    [<Fact>]
+    let ``unbalanced parentheses report error with line`` () =
+        match render "line1\n{{ (1 + 2 }}" [] with
+        | Ok _ -> failwith "expected error for unbalanced expression"
+        | Error (TemplateError.RuntimeError(_, line)) -> Assert.Equal(2, line)
+        | Error _ -> failwith "unexpected error kind"
