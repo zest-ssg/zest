@@ -1,0 +1,308 @@
+// main.zcss — Zest blog theme
+// ZCSS F#-style syntax: `[]` delimit nested blocks (F# list literals),
+// `let` declares design tokens, `=` separates property/value, and `|>`
+// pipes values through color functions — syntax that mirrors the host
+// language (F#) rather than SCSS. Nested blocks are written on their own
+// lines (no inline-nested `&:hover [ ... ]`) so the brace parser handles
+// them as proper rule sets.
+
+// ── Design tokens ──────────────────────────────────
+let primary   = #4f46e5          // indigo
+let primaryD  = primary |> darken(8%)
+let heroAccent = primary |> lighten(22%)   // gradient accent (computed up-front)
+let ink       = #1f2430          // near-black text
+let muted     = #6b7280          // secondary text
+let line      = #e7e7ee          // hairline borders
+let paper     = #ffffff          // card / surface
+let bg        = #f7f7fb          // page background
+let codeBg    = #f3f3f7
+
+// ── Reset & base ───────────────────────────────────
+* [
+  box-sizing = border-box
+]
+html [
+  font-size = 17r
+  -webkit-text-size-adjust = 100%
+]
+body [
+  margin = 0
+  background = bg
+  color = ink
+  font-family = "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
+  line-height = 1.7
+]
+a [
+  color = primary
+  text-decoration = none
+  &:hover [
+    color = primaryD
+    text-decoration = underline
+  ]
+]
+img [
+  max-width = 100%
+  height = auto
+]
+
+// ── Layout container ───────────────────────────────
+.container [
+  width = 100%
+  max-width = 46r
+  margin = 0 auto
+  padding = 0 1.25r
+]
+
+// ── Header ─────────────────────────────────────────
+.site-header [
+  position = sticky
+  top = 0
+  z-index = 10
+  background = rgba(255, 255, 255, 0.85)
+  backdrop-filter = saturate(180%) blur(8px)
+  border-bottom = 1px solid line
+]
+.site-header__inner [
+  display = flex
+  align-items = center
+  justify-content = space-between
+  height = 4r
+]
+.site-header__brand [
+  font-weight = 700
+  font-size = 1.2r
+  color = ink
+  &:hover [
+    color = primary
+    text-decoration = none
+  ]
+]
+.site-nav [
+  display = flex
+  gap = 1.25r
+]
+.site-nav__link [
+  color = muted
+  font-weight = 500
+  &:hover [
+    color = primary
+    text-decoration = none
+  ]
+]
+
+// ── Main ───────────────────────────────────────────
+.site-main [
+  padding = 2.5r 0 4r
+]
+
+// ── Hero ───────────────────────────────────────────
+.hero [
+  background = linear-gradient(135deg, primary, heroAccent)
+  color = #fff
+  border-radius = 1r
+  padding = 2.5r 2r
+  margin-bottom = 2.5r
+  box-shadow = 0 12px 30px rgba(79, 70, 229, 0.25)
+]
+.hero__title [
+  margin = 0 0 0.5r
+  font-size = 2r
+]
+.hero__lead [
+  margin = 0 0 1.25r
+  font-size = 1.05r
+  opacity = 0.95
+]
+.hero__lead code [
+  background = rgba(255, 255, 255, 0.18)
+  padding = 0.1r 0.35r
+  border-radius = 0.35r
+]
+.hero__cta .button [
+  display = inline-block
+  background = #fff
+  color = primary
+  font-weight = 600
+  padding = 0.6r 1.1r
+  border-radius = 0.6r
+  &:hover [
+    text-decoration = none
+    background = #f0f0ff
+  ]
+]
+
+// ── Section headings ───────────────────────────────
+.posts h2 [
+  font-size = 1.4r
+  margin = 0 0 1r
+]
+
+// ── Post list & cards ──────────────────────────────
+.post-list [
+  list-style = none
+  margin = 0
+  padding = 0
+  display = grid
+  gap = 1.25r
+]
+.post-card [
+  background = paper
+  border = 1px solid line
+  border-radius = 0.9r
+  padding = 1.4r 1.5r
+  transition = transform 0.15s ease, box-shadow 0.15s ease
+  &:hover [
+    transform = translateY(-3px)
+    box-shadow = 0 10px 24px rgba(31, 36, 48, 0.10)
+  ]
+]
+.post-card__title [
+  margin = 0 0 0.35r
+  font-size = 1.25r
+]
+.post-card__title a [
+  color = ink
+  &:hover [
+    color = primary
+    text-decoration = none
+  ]
+]
+.post-card__date [
+  margin = 0 0 0.5r
+  color = muted
+  font-size = 0.85r
+]
+.post-card__excerpt [
+  margin = 0 0 0.6r
+  color = #374151
+]
+.post-card__tags [
+  margin = 0
+  color = primary
+  font-size = 0.82r
+]
+
+// ── Post (single) ──────────────────────────────────
+.post [
+  background = paper
+  border = 1px solid line
+  border-radius = 1r
+  padding = 2.5r 2r
+]
+.post__title [
+  margin = 0 0 0.5r
+  font-size = 2.1r
+  line-height = 1.2
+]
+.post__meta [
+  margin = 0 0 1.75r
+  padding-bottom = 1.25r
+  border-bottom = 1px solid line
+  color = muted
+  font-size = 0.9r
+  display = flex
+  flex-wrap = wrap
+  gap = 0.75r
+  align-items = center
+]
+.post__tag [
+  background = primary |> lighten(38%)
+  color = primaryD
+  padding = 0.1r 0.55r
+  border-radius = 999px
+  font-size = 0.8r
+]
+.post__body [
+  font-size = 1.02r
+]
+.post__body p [
+  margin = 0 0 1.1r
+]
+.post__body h2 [
+  margin = 2r 0 0.75r
+  font-size = 1.5r
+]
+.post__body h3 [
+  margin = 1.5r 0 0.6r
+  font-size = 1.2r
+]
+.post__body ul, .post__body ol [
+  margin = 0 0 1.1r
+  padding-left = 1.4r
+]
+.post__body li [
+  margin = 0.3r 0
+]
+.post__body code [
+  background = codeBg
+  padding = 0.12r 0.4r
+  border-radius = 0.35r
+  font-size = 0.9em
+  font-family = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+]
+.post__body pre [
+  background = #1f2430
+  color = #e6e6f0
+  padding = 1r 1.1r
+  border-radius = 0.6r
+  overflow-x = auto
+  margin = 0 0 1.2r
+]
+.post__body pre code [
+  background = transparent
+  padding = 0
+  color = inherit
+]
+.post__body blockquote [
+  margin = 0 0 1.2r
+  padding = 0.6r 1.1r
+  border-left = 4px solid primary
+  background = primary |> lighten(42%)
+  border-radius = 0 0.5r 0.5r 0
+  color = #374151
+]
+.post__body a [
+  text-decoration = underline
+]
+
+// ── Footer ─────────────────────────────────────────
+.site-footer [
+  border-top = 1px solid line
+  background = paper
+  padding = 1.75r 0
+  color = muted
+  font-size = 0.9r
+]
+.site-footer__inner [
+  display = flex
+  flex-wrap = wrap
+  gap = 0.75r
+  align-items = center
+  justify-content = space-between
+]
+.site-footer__links [
+  display = flex
+  gap = 1r
+]
+.site-footer__links a [
+  color = muted
+  &:hover [
+    color = primary
+  ]
+]
+
+// ── Responsive ─────────────────────────────────────
+@media (max-width: 600px) [
+  html [
+    font-size = 16r
+  ]
+  .hero [
+    padding = 2r 1.25r
+  ]
+  .post [
+    padding = 1.75r 1.25r
+  ]
+  .site-header__inner [
+    height = 3.5r
+  ]
+]

@@ -1,6 +1,7 @@
 namespace Zest.Engine.Zcss
 
 open System
+open System.Collections.Concurrent
 open System.Collections.Generic
 open System.Text.RegularExpressions
 
@@ -31,7 +32,7 @@ type CssValueType =
 module TypeChecker =
 
     /// Known CSS properties and their expected value types.
-    let private knownProperties = Dictionary<string, CssValueType>(StringComparer.OrdinalIgnoreCase)
+    let private knownProperties = ConcurrentDictionary<string, CssValueType>(StringComparer.OrdinalIgnoreCase)
 
     let private init() =
         if knownProperties.Count = 0 then

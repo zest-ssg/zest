@@ -58,6 +58,56 @@
     </EmbeddedResource>
   </ItemGroup>
 
+  <!-- Bundled `zest init` default starter site (mirrors the zest.toml
+       embedding above). LogicalName preserves the relative path (using
+       backslashes) so InitController can reconstruct file paths at runtime,
+       keeping the starter self-contained after `dotnet tool install`.
+       `Starters` holds the starter-project definitions copied out by init
+       (the default blog preset); it is NOT the runtime template engine
+       (which lives in Zest.Engine/Template). -->
+  <ItemGroup>
+    <None Remove="Starters\**\*" />
+    <EmbeddedResource Include="Starters\_config.toml">
+      <LogicalName>Zest.App.Starters._config.toml</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\_init.zest.fsx">
+      <LogicalName>Zest.App.Starters._init.zest.fsx</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\README.md">
+      <LogicalName>Zest.App.Starters.README.md</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\_layouts\default.html">
+      <LogicalName>Zest.App.Starters._layouts\default.html</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\_layouts\post.html">
+      <LogicalName>Zest.App.Starters._layouts\post.html</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\_includes\header.html">
+      <LogicalName>Zest.App.Starters._includes\header.html</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\_includes\footer.html">
+      <LogicalName>Zest.App.Starters._includes\footer.html</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\assets\css\main.zcss">
+      <LogicalName>Zest.App.Starters.assets\css\main.zcss</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\content\index.zest.fsx">
+      <LogicalName>Zest.App.Starters.content\index.zest.fsx</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\content\about.zest.fsx">
+      <LogicalName>Zest.App.Starters.content\about.zest.fsx</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\content\posts\index.zest.fsx">
+      <LogicalName>Zest.App.Starters.content\posts\index.zest.fsx</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\content\posts\welcome-to-zest.zest.fsx">
+      <LogicalName>Zest.App.Starters.content\posts\welcome-to-zest.zest.fsx</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\content\posts\building-sites-with-fsharp.zest.fsx">
+      <LogicalName>Zest.App.Starters.content\posts\building-sites-with-fsharp.zest.fsx</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <!-- Package icon + README at the nupkg root (NuGet metadata convention). -->
   <ItemGroup>
     <None Include="..\..\zest.png" Pack="true" PackagePath="\" />

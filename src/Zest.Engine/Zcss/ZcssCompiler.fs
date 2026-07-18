@@ -1,6 +1,7 @@
 namespace Zest.Engine.Zcss
 
 open System
+open System.Collections.Concurrent
 open System.Collections.Generic
 open System.Text
 open System.Text.RegularExpressions
@@ -76,7 +77,7 @@ module Compiler =
     // ── Utility class registry (for @apply) ─────────────────
 
     module UtilityRegistry =
-        let private classCache = Dictionary<string, Declaration list>()
+        let private classCache = ConcurrentDictionary<string, Declaration list>()
 
         let private parseUtilities () =
             let source = BuiltinStyles.builtinUtilities

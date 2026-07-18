@@ -66,30 +66,46 @@ public static class ConfigLoader
 
             var config = SiteConfigDefaults.create();
 
-            var title = TomlReader.GetString(model, "title", config.Title);
-            var baseUrl = TomlReader.GetString(model, "base_url", config.BaseUrl);
-            var description = TomlReader.GetString(model, "description", config.Description);
-            var defaultLayout = TomlReader.GetString(model, "default_layout", config.DefaultLayout);
-            var permalinkFormat = TomlReader.GetString(model, "permalink_format", config.PermalinkFormat);
-            var siteVersion = TomlReader.GetString(model, "site_version", config.SiteVersion);
-            var contentDir = TomlReader.GetString(model, "content_dir", config.ContentDir);
-            var outputDir = TomlReader.GetString(model, "output_dir", config.OutputDir);
-            var layoutsDir = TomlReader.GetString(model, "layouts_dir", config.LayoutsDir);
-            var includesDir = TomlReader.GetString(model, "includes_dir", config.IncludesDir);
-            var dataDir = TomlReader.GetString(model, "data_dir", config.DataDir);
-            var assetsDir = TomlReader.GetString(model, "assets_dir", config.AssetsDir);
-            var rootDir = TomlReader.GetString(model, "root_dir", config.RootDir);
-            var devServerPort = TomlReader.GetInt(model, "dev_server_port", config.DevServerPort);
-            var liveReloadPort = TomlReader.GetInt(model, "live_reload_port", config.LiveReloadPort);
-            var enableMinification    = TomlReader.GetBool(model, "enable_minification",     config.EnableMinification);
-            var enableCacheBusting   = TomlReader.GetBool(model, "enable_cache_busting",    config.EnableCacheBusting);
-            var enableParallel       = TomlReader.GetBool(model, "enable_parallel_build",   config.EnableParallelBuild);
-            var enableIncremental    = TomlReader.GetBool(model, "enable_incremental_build",config.EnableIncrementalBuild);
-            var author               = TomlReader.GetString(model, "author",   config.Author);
-            var language             = TomlReader.GetString(model, "language", config.Language);
-            var logLevel             = TomlReader.GetString(model, "log_level", config.LogLevel);
-            var logToFile            = TomlReader.GetBool  (model, "log_to_file", config.LogToFile);
-            var logTimestamps        = TomlReader.GetBool  (model, "log_timestamps", config.LogTimestamps);
+            // Support both root-level keys and the conventional [site] / [build]
+            // tables (e.g. `[site] title = "..."`, `[build] output = "_site"`).
+            // The tables take precedence when present; root-level keys remain a
+            // supported fallback so existing flat configs still work.
+            var siteTbl = (model.TryGetValue("site", out var siteObj) && siteObj is Tomlyn.Model.TomlTable st) ? st : null;
+            var buildTbl = (model.TryGetValue("build", out var buildObj) && buildObj is Tomlyn.Model.TomlTable bt) ? bt : null;
+
+            string FromSiteStr(string key, string fallback) =>
+                siteTbl != null ? TomlReader.GetString(siteTbl, key, fallback) : fallback;
+            int FromSiteInt(string key, int fallback) =>
+                siteTbl != null ? TomlReader.GetInt(siteTbl, key, fallback) : fallback;
+            bool FromSiteBool(string key, bool fallback) =>
+                siteTbl != null ? TomlReader.GetBool(siteTbl, key, fallback) : fallback;
+            string FromBuildStr(string key, string fallback) =>
+                buildTbl != null ? TomlReader.GetString(buildTbl, key, fallback) : fallback;
+
+            var title = FromSiteStr("title", TomlReader.GetString(model, "title", config.Title));
+            var baseUrl = FromSiteStr("url", TomlReader.GetString(model, "base_url", config.BaseUrl));
+            var description = FromSiteStr("description", TomlReader.GetString(model, "description", config.Description));
+            var defaultLayout = FromSiteStr("default_layout", TomlReader.GetString(model, "default_layout", config.DefaultLayout));
+            var permalinkFormat = FromSiteStr("permalink_format", TomlReader.GetString(model, "permalink_format", config.PermalinkFormat));
+            var siteVersion = FromSiteStr("site_version", TomlReader.GetString(model, "site_version", config.SiteVersion));
+            var contentDir = FromSiteStr("content_dir", TomlReader.GetString(model, "content_dir", config.ContentDir));
+            var outputDir = FromBuildStr("output", TomlReader.GetString(model, "output_dir", config.OutputDir));
+            var layoutsDir = FromBuildStr("layouts_dir", TomlReader.GetString(model, "layouts_dir", config.LayoutsDir));
+            var includesDir = FromBuildStr("includes_dir", TomlReader.GetString(model, "includes_dir", config.IncludesDir));
+            var dataDir = FromBuildStr("data_dir", TomlReader.GetString(model, "data_dir", config.DataDir));
+            var assetsDir = FromBuildStr("assets_dir", TomlReader.GetString(model, "assets_dir", config.AssetsDir));
+            var rootDir = FromSiteStr("root_dir", TomlReader.GetString(model, "root_dir", config.RootDir));
+            var devServerPort = FromSiteInt("dev_server_port", TomlReader.GetInt(model, "dev_server_port", config.DevServerPort));
+            var liveReloadPort = FromSiteInt("live_reload_port", TomlReader.GetInt(model, "live_reload_port", config.LiveReloadPort));
+            var enableMinification    = FromSiteBool("enable_minification",     TomlReader.GetBool(model, "enable_minification",     config.EnableMinification));
+            var enableCacheBusting   = FromSiteBool("enable_cache_busting",    TomlReader.GetBool(model, "enable_cache_busting",    config.EnableCacheBusting));
+            var enableParallel       = FromSiteBool("enable_parallel_build",   TomlReader.GetBool(model, "enable_parallel_build",   config.EnableParallelBuild));
+            var enableIncremental    = FromSiteBool("enable_incremental_build",TomlReader.GetBool(model, "enable_incremental_build",config.EnableIncrementalBuild));
+            var author               = FromSiteStr("author",   TomlReader.GetString(model, "author",   config.Author));
+            var language             = FromSiteStr("language", TomlReader.GetString(model, "language", config.Language));
+            var logLevel             = FromSiteStr("log_level", TomlReader.GetString(model, "log_level", config.LogLevel));
+            var logToFile            = FromSiteBool("log_to_file", TomlReader.GetBool  (model, "log_to_file", config.LogToFile));
+            var logTimestamps        = FromSiteBool("log_timestamps", TomlReader.GetBool  (model, "log_timestamps", config.LogTimestamps));
             var templateEngine       = TomlReader.GetString(model, "template_engine", config.TemplateEngine);
 
             // ── Parse [compat] table: SSG-specific behavior flags ──
