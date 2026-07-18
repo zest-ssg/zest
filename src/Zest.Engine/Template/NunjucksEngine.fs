@@ -1,8 +1,11 @@
 namespace Zest.Engine.Template
 
 open System
+open System.Collections.Concurrent
 open System.Collections.Generic
+open System.Globalization
 open System.IO
+open System.Reflection
 open System.Text
 open System.Text.RegularExpressions
 
@@ -22,67 +25,140 @@ open System.Text.RegularExpressions
 module private NunjucksImpl =
 
     // ── Custom filter registry (extensible by Zest engine) ──
-    let customFilters = Dictionary<string, FilterFn>()
+    // ConcurrentDictionary: filter registration may race with rendering under
+    // multi-threaded web servers, so a plain Dictionary is unsafe here.
+    let customFilters = ConcurrentDictionary<string, FilterFn>()
 
     // ── Safe string wrapper (bypasses auto-escaping) ──
     type SafeString(s: string) =
         member _.Value = s
         override _.ToString() = s
 
+    // ── Reflection cache for POCO property access ──
+    let private propCache = ConcurrentDictionary<string, PropertyInfo>()
+
+    // ── Precompiled regexes (avoid recompiling on every filter call) ──
+    let private reTitle   = Regex(@"\b\w", RegexOptions.Compiled)
+    let private reTags    = Regex(@"<[^>]+>", RegexOptions.Compiled)
+    let private reSlug    = Regex(@"[^a-z0-9]+", RegexOptions.Compiled)
+    let private reIndent  = Regex(@"^", RegexOptions.Compiled ||| RegexOptions.Multiline)
+    let private reUrl     = Regex(@"(https?://[^\s<>""']+)", RegexOptions.Compiled)
+
     // ── Token types ────────────────────────────────────────
+    // Each token carries its 1-based source line so runtime/syntax errors can
+    // be reported with a meaningful location instead of line 0.
     type Token =
-        | TextToken of string
-        | VarToken  of string      // {{ expr }}
-        | TagToken  of tag: string * args: string list  // {% tag args %}
-        | CmtToken  of string     // {# comment #}
+        | TextToken of string * int      // literal text, source line
+        | VarToken  of string * int      // {{ expr }}, source line
+        | TagToken  of string * string list * int  // {% tag args %}, source line
+        | CmtToken  of string * int      // {# comment #}, source line
 
     // ── Tokenizer (idempotent, cached) ─────────────────────
-    let tokenCache = Dictionary<string, struct(DateTime * Token list)>()
+    // ConcurrentDictionary: many threads may populate the cache for the same
+    // uncached template simultaneously; a plain Dictionary can corrupt/throw.
+    let tokenCache = ConcurrentDictionary<string, struct(DateTime * Token list)>()
 
     let tokenize (text: string) : Token list =
         let tokens = ResizeArray<Token>()
         let sb = StringBuilder()
         let len = text.Length
         let mutable i = 0
+        let mutable line = 1
+        let mutable stripLeftNext = false   // strip leading WS of the next text token (set by `-}}` / `-%}`)
+
+        // Helpers that track the current source line as characters are consumed.
+        let addChar (ch: char) =
+            if ch = '\n' then line <- line + 1
+            sb.Append(ch) |> ignore
+        let addStr (s: string) =
+            for ch in s do if ch = '\n' then line <- line + 1
+            sb.Append(s) |> ignore
+
+        // Remove trailing whitespace from the last emitted text token (for `{{-` / `{%-`).
+        let removeTrailingWs () =
+            if tokens.Count > 0 then
+                match tokens.[tokens.Count - 1] with
+                | TextToken(t, l) ->
+                    if t.Length > 0 && (t |> Seq.forall Char.IsWhiteSpace) then tokens.RemoveAt(tokens.Count - 1)
+                    else
+                        let trimmed = t.TrimEnd()
+                        if trimmed <> t then tokens.[tokens.Count - 1] <- TextToken(trimmed, l)
+                | _ -> ()
+
         let flush () =
-            if sb.Length > 0 then tokens.Add(TextToken(sb.ToString())); sb.Clear() |> ignore
+            if sb.Length > 0 then
+                let t = if stripLeftNext then (stripLeftNext <- false; sb.ToString().TrimStart()) else sb.ToString()
+                tokens.Add(TextToken(t, line)); sb.Clear() |> ignore
 
         while i < len do
             if i + 2 < len then
                 let c = text.[i]
-                if c = '{' && text.[i+1] = '#' then               // {# comment #}
+                if c = '{' && text.[i+1] = '#' then               // {# comment #} (supports nesting)
                     flush()
-                    let e = text.IndexOf("#}", i+2)
-                    if e < 0 then i <- len
-                    else tokens.Add(CmtToken(text.Substring(i+2, e-i-2))); i <- e + 2
-                elif c = '{' && text.[i+1] = '{' then              // {{ var }}
-                    flush()
-                    let e = text.IndexOf("}}", i+2)
-                    if e < 0 then sb.Append(text.Substring(i)) |> ignore; i <- len
-                    else tokens.Add(VarToken(text.Substring(i+2, e-i-2).Trim())); i <- e + 2
-                elif c = '{' && text.[i+1] = '%' then              // {% tag %}
-                    flush()
-                    let e = text.IndexOf("%}", i+2)
-                    if e < 0 then sb.Append(text.Substring(i)) |> ignore; i <- len
+                    let cl = line
+                    let mutable j = i + 2
+                    let mutable depth = 1
+                    let mutable endPos = -1
+                    while j + 1 < len && endPos < 0 do
+                        if text.[j] = '{' && text.[j+1] = '#' then depth <- depth + 1; j <- j + 2
+                        elif text.[j] = '#' && text.[j+1] = '}' then
+                            depth <- depth - 1
+                            if depth = 0 then endPos <- j else j <- j + 2
+                        else j <- j + 1
+                    if endPos < 0 then addStr (text.Substring(i)); i <- len
                     else
-                        let raw = text.Substring(i+2, e-i-2).Trim()
+                        let commentText = text.Substring(i+2, endPos - (i+2))
+                        // advance the line counter over any newlines inside the comment
+                        for ch in commentText do if ch = '\n' then line <- line + 1
+                        tokens.Add(CmtToken(commentText, cl)); i <- endPos + 2
+                elif c = '{' && text.[i+1] = '{' then              // {{ var }} / {{- var -}}
+                    flush()
+                    let cl = line
+                    let mutable lstrip = false
+                    let mutable ci = i + 2
+                    if ci < len && text.[ci] = '-' then lstrip <- true; ci <- ci + 1
+                    let e = text.IndexOf("}}", ci)
+                    if e < 0 then addStr (text.Substring(i)); i <- len
+                    else
+                        let mutable rstrip = false
+                        let innerEnd = if e >= 1 && text.[e-1] = '-' then (rstrip <- true; e - 1) else e
+                        let expr = if innerEnd > ci then text.Substring(ci, innerEnd - ci).Trim() else ""
+                        if lstrip then removeTrailingWs ()
+                        tokens.Add(VarToken(expr, cl))
+                        if rstrip then stripLeftNext <- true
+                        i <- e + 2
+                elif c = '{' && text.[i+1] = '%' then              // {% tag %} / {%- tag -%}
+                    flush()
+                    let cl = line
+                    let mutable lstrip = false
+                    let mutable ci = i + 2
+                    if ci < len && text.[ci] = '-' then lstrip <- true; ci <- ci + 1
+                    let e = text.IndexOf("%}", ci)
+                    if e < 0 then addStr (text.Substring(i)); i <- len
+                    else
+                        let mutable rstrip = false
+                        let innerEnd = if e >= 1 && text.[e-1] = '-' then (rstrip <- true; e - 1) else e
+                        let raw = if innerEnd > ci then text.Substring(ci, innerEnd - ci).Trim() else ""
                         let parts = raw.Split([|' ';'\n';'\t';'\r'|], StringSplitOptions.RemoveEmptyEntries)
                         let tag = if parts.Length > 0 then parts.[0] else ""
                         let args = if parts.Length > 1 then parts.[1..] |> Array.toList else []
+                        // Left-strip before emitting this tag's token.
+                        if lstrip then removeTrailingWs ()
                         // raw tag: capture everything until {% endraw %} as literal text
                         if tag = "raw" then
                             let rawEnd = text.IndexOf("{% endraw %}", e+2)
                             if rawEnd >= e+2 then
                                 let rawContent = text.Substring(e+2, rawEnd - (e+2))
-                                tokens.Add(TextToken(rawContent))
-                                i <- rawEnd + 13  // skip past "{% endraw %}"
+                                tokens.Add(TextToken(rawContent, cl))
+                                i <- rawEnd + "{% endraw %}".Length
                             else
-                                tokens.Add(TagToken(tag, args))
+                                tokens.Add(TagToken(tag, args, cl))
                                 i <- e + 2
                         else
-                            tokens.Add(TagToken(tag, args)); i <- e + 2
-                else sb.Append(c) |> ignore; i <- i + 1
-            else sb.Append(text.[i]) |> ignore; i <- i + 1
+                            tokens.Add(TagToken(tag, args, cl)); i <- e + 2
+                        if rstrip then stripLeftNext <- true
+                else addChar c; i <- i + 1
+            else addChar text.[i]; i <- i + 1
         flush()
         Seq.toList tokens
 
@@ -109,7 +185,14 @@ module private NunjucksImpl =
         | :? IDictionary<string, obj> as d -> match d.TryGetValue key with true, v -> v | _ -> null
         | :? IDictionary<string, string> as d -> match d.TryGetValue key with true, v -> box v | _ -> null
         | :? IDictionary<string, int> as d -> match d.TryGetValue key with true, v -> box v | _ -> null
-        | _ -> null
+        | _ ->
+            // POCO property access via reflection (case-insensitive, public instance).
+            // Essential for things like `{{ user.Name }}` where user is a plain CLR object.
+            let t = v.GetType()
+            let cacheKey = t.FullName + "|" + key.ToLowerInvariant()
+            let prop = propCache.GetOrAdd(cacheKey, fun _ ->
+                t.GetProperty(key, BindingFlags.Public ||| BindingFlags.Instance ||| BindingFlags.IgnoreCase))
+            if prop <> null && prop.CanRead then prop.GetValue(v) else null
     let seqOf (v: obj) =
         match v with
         | null -> Seq.empty
@@ -179,9 +262,54 @@ module private NunjucksImpl =
             else i <- i + 1
         best
 
+    /// Split a comma-separated argument list at top level, respecting quotes
+    /// and nested parentheses/brackets. Used by loop.cycle / loop.changed.
+    let private splitTopLevelArgs (s: string) : string list =
+        let res = ResizeArray<string>()
+        let sb = StringBuilder()
+        let mutable inS = false
+        let mutable inD = false
+        let mutable depth = 0
+        let mutable i = 0
+        let n = s.Length
+        while i < n do
+            let c = s.[i]
+            if inS then (if c = '\'' then inS <- false); sb.Append(c) |> ignore; i <- i + 1
+            elif inD then (if c = '"' then inD <- false); sb.Append(c) |> ignore; i <- i + 1
+            elif c = '\'' then inS <- true; sb.Append(c) |> ignore; i <- i + 1
+            elif c = '"' then inD <- true; sb.Append(c) |> ignore; i <- i + 1
+            elif c = '(' || c = '[' then depth <- depth + 1; sb.Append(c) |> ignore; i <- i + 1
+            elif c = ')' || c = ']' then depth <- depth - 1; sb.Append(c) |> ignore; i <- i + 1
+            elif c = ',' && depth = 0 then (res.Add(sb.ToString().Trim()); sb.Clear() |> ignore; i <- i + 1)
+            else sb.Append(c) |> ignore; i <- i + 1
+        if sb.Length > 0 then res.Add(sb.ToString().Trim())
+        List.ofSeq res
+
+    /// Validate that an expression's parentheses/brackets are balanced.
+    /// Throws on imbalance so the error surfaces with a source line.
+    let private checkBalanced (s: string) =
+        let n = s.Length
+        let mutable inS = false
+        let mutable inD = false
+        let mutable depth = 0
+        let mutable i = 0
+        while i < n do
+            let c = s.[i]
+            if inS then (if c = '\'' then inS <- false); i <- i + 1
+            elif inD then (if c = '"' then inD <- false); i <- i + 1
+            elif c = '\'' then inS <- true; i <- i + 1
+            elif c = '"' then inD <- true; i <- i + 1
+            elif c = '(' || c = '[' then depth <- depth + 1; i <- i + 1
+            elif c = ')' || c = ']' then depth <- depth - 1; if depth < 0 then i <- n else i <- i + 1
+            else i <- i + 1
+        if depth <> 0 then
+            raise (Exception(sprintf "Unbalanced parentheses/brackets in expression: %s" s))
+
     let rec evalExpr (exprText: string) (ctx: IDictionary<string, obj>) : obj =
         let text = exprText.Trim()
-        if text = "" then box "" else evalOr text ctx
+        if text = "" then box "" else
+        checkBalanced text
+        evalOr text ctx
 
     and evalOr (text: string) ctx : obj =
         match findTopOp text [ "or" ] with
@@ -237,11 +365,15 @@ module private NunjucksImpl =
         | _ -> evalMul text ctx
 
     and evalMul (text: string) ctx : obj =
-        match findTopOp text [ "*"; "/"; "%" ] with
+        match findTopOp text [ "**"; "*"; "/"; "%" ] with
         | Some(i, op) when text.[..i-1].Trim() <> "" ->
             let l = toNum (evalMul (text.[..i-1]) ctx)
             let r = toNum (evalAtom (text.[i+op.Length..]) ctx)
-            box (match op with "*" -> l * r | "/" -> (if r = 0.0 then 0.0 else l / r) | _ -> (if r = 0.0 then 0.0 else l % r))
+            box (match op with
+                  | "**" -> Math.Pow(l, r)
+                  | "*" -> l * r
+                  | "/" -> (if r = 0.0 then 0.0 else l / r)
+                  | _ -> (if r = 0.0 then 0.0 else l % r))
         | _ -> evalAtom text ctx
 
     /// Resolve a dotted/bracketed path like `a.b[0].c['x']` against the context.
@@ -283,9 +415,59 @@ module private NunjucksImpl =
                     | _ -> cur <- propGet cur seg
         cur
 
+    /// Built-in `range([start], stop, [step])` generator (Nunjucks-compatible).
+    /// Returns an obj[] of integers so it is directly iterable by `for` and `seqOf`.
+    and evalRange (inner: string) (ctx: IDictionary<string, obj>) : obj =
+        let parts = splitTopLevelArgs inner |> List.map (fun a -> evalExpr a ctx)
+        let toI (v: obj) = match v with :? int as i -> i | _ -> int(toNum v)
+        let arr =
+            match parts with
+            | [stop] ->
+                [| for i in 0 .. toI stop - 1 -> box i |]
+            | [start; stop] ->
+                [| for i in toI start .. toI stop - 1 -> box i |]
+            | [start; stop; step] ->
+                let s = toI start
+                let e = toI stop
+                let st = toI step
+                if st = 0 then [||]
+                else
+                    [| let mutable i = s
+                       while (if st > 0 then i < e else i > e) do
+                           yield box i
+                           i <- i + st |]
+            | _ -> [||]
+        arr :> obj
+
     and evalAtom (text: string) (ctx: IDictionary<string, obj>) : obj =
         let t = text.Trim()
         if t = "" then box "" else
+        // range([start], stop, [step]) — built-in global generator function.
+        if t.StartsWith("range(") && t.EndsWith(")") then
+            let inner = t.[6..t.Length-2].Trim()
+            evalRange inner ctx
+        // loop.cycle(...) / loop.changed(...) — function-like access on the loop object.
+        elif t.StartsWith("loop.cycle(") && t.EndsWith(")") then
+            let inner = t.[11..t.Length-2].Trim()
+            let vals = splitTopLevelArgs inner |> List.map (fun a -> evalExpr a ctx)
+            match ctx.TryGetValue "loop" with
+            | true, (:? IDictionary<string, obj> as ld) ->
+                let idx0 = match ld.TryGetValue "index0" with true, v -> (try int(toStr v) with _ -> 0) | _ -> 0
+                if vals.Length > 0 then box vals.[idx0 % vals.Length] else box ""
+            | _ -> box ""
+        elif t.StartsWith("loop.changed(") && t.EndsWith(")") then
+            let inner = t.[13..t.Length-2].Trim()
+            let valNow = evalExpr inner ctx
+            match ctx.TryGetValue "loop" with
+            | true, (:? IDictionary<string, obj> as ld) ->
+                // state lives on the (stable) loop dictionary so it persists across iterations
+                match ld.TryGetValue "__changed__" with
+                | true, prev ->
+                    if valuesEqual prev valNow then box false
+                    else ld.["__changed__"] <- valNow; box true
+                | _ -> ld.["__changed__"] <- valNow; box true
+            | _ -> box false
+        else
         // Parenthesized sub-expression
         if t.StartsWith("(") && t.EndsWith(")") then evalExpr (t.[1..t.Length-2]) ctx else
         let tryLiteral (s: string) =
@@ -333,7 +515,7 @@ module private NunjucksImpl =
                                     parseFilterArgs rem.[commaIdx+1..] (arg :: acc)
                                 else
                                     List.rev ((rem.Trim()) :: acc)
-                        parseFilterArgs fargsText [] |> List.map (fun s -> box s :> obj)
+                        parseFilterArgs fargsText [] |> List.map (fun s -> box s)
                 result <- applyFilter fname result fargs
             result
         else
@@ -343,37 +525,54 @@ module private NunjucksImpl =
 
     and applyFilter (name: string) (value: obj) (args: obj list) : obj =
         let s = toStr value
+        // Preserve safe-ness: if the input was already marked safe, string
+        // transforms must keep it safe so it is not double-escaped downstream.
+        let isSafe = value :? SafeString
+        let ret (str: string) = if isSafe then SafeString(str) :> obj else box str
         match name.ToLowerInvariant() with
         // String filters
-        | "capitalize" -> if s.Length > 0 then box(s.[0..0].ToUpper() + s.[1..]) else box s
-        | "lower" | "lowercase" -> box(s.ToLowerInvariant())
-        | "upper" | "uppercase" -> box(s.ToUpperInvariant())
-        | "title" -> box(Regex.Replace(s.ToLower(), @"\b\w", fun m -> m.Value.ToUpper()))
-        | "trim" -> box(s.Trim())
-        | "strip" -> box(s.Trim())
-        | "lstrip" -> box(s.TrimStart())
-        | "rstrip" -> box(s.TrimEnd())
-        | "nl2br" -> box(s.Replace("\r\n", "\n").Replace("\n", "<br />\n"))
-        | "string" | "str" -> box s
+        | "capitalize" -> if s.Length > 0 then ret(s.[0..0].ToUpper() + s.[1..]) else ret s
+        | "lower" | "lowercase" -> ret(s.ToLowerInvariant())
+        | "upper" | "uppercase" -> ret(s.ToUpperInvariant())
+        | "title" -> ret(reTitle.Replace(s.ToLower(), fun m -> m.Value.ToUpper()))
+        | "trim" -> ret(s.Trim())
+        | "strip" -> ret(s.Trim())
+        | "lstrip" -> ret(s.TrimStart())
+        | "rstrip" -> ret(s.TrimEnd())
+        | "nl2br" -> ret(s.Replace("\r\n", "\n").Replace("\n", "<br />\n"))
+        | "string" | "str" -> ret s
         | "safe" -> SafeString(s) :> obj  // bypass auto-escape
         | "escape" | "e" -> SafeString(HtmlEncode(s)) :> obj
-        | "striptags" -> box(Regex.Replace(s, @"<[^>]+>", "").Trim())
+        | "striptags" -> ret(reTags.Replace(s, "").Trim())
         | "truncate" ->
             let len = if args.Length > 0 then (try int(toStr args.[0]) with _ -> 255) else 255
-            if s.Length > len then box(s.[..len-1] + "...") else box s
+            if s.Length > len then ret(s.[..len-1] + "...") else ret s
         | "wordcount" -> box(s.Split([|' ';'\n';'\t'|], StringSplitOptions.RemoveEmptyEntries).Length)
-        | "replace" -> if args.Length >= 2 then box(s.Replace(toStr args.[0], toStr args.[1])) else value
-        | "slugify" -> box(Regex.Replace(s.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-'))
-        | "urlencode" -> box(Uri.EscapeDataString(s))
+        | "replace" -> if args.Length >= 2 then ret(s.Replace(toStr args.[0], toStr args.[1])) else value
+        | "slugify" -> ret(reSlug.Replace(s.ToLowerInvariant(), "-").Trim('-'))
+        | "urlencode" -> ret(Uri.EscapeDataString(s))
+        | "filesizeformat" ->
+            let n = try float s with _ -> 0.0
+            if n < 1024.0 then ret(sprintf "%.0f B" n)
+            elif n < 1048576.0 then ret(sprintf "%.1f KB" (n / 1024.0))
+            elif n < 1073741824.0 then ret(sprintf "%.1f MB" (n / 1048576.0))
+            else ret(sprintf "%.1f GB" (n / 1073741824.0))
+        | "random" ->
+            match value with
+            | :? System.Collections.IEnumerable as ie ->
+                let arr = ie |> Seq.cast<obj> |> Array.ofSeq
+                if arr.Length > 0 then arr.[System.Random().Next(arr.Length)] else value
+            | _ -> value
+        | "tojson" -> box(System.Text.Json.JsonSerializer.Serialize(value))
         | "format" ->
-            if args.Length > 0 then box(String.Format(s, args |> List.map toStr |> Array.ofList))
+            if args.Length > 0 then ret(String.Format(s, args |> List.map toStr |> Array.ofList))
             else value
         | "indent" ->
             let w = if args.Length > 0 then (try int(toStr args.[0]) with _ -> 4) else 4
-            box(Regex.Replace(s, "^", String(' ', w), RegexOptions.Multiline))
+            ret(reIndent.Replace(s, String(' ', w)))
         | "center" ->
             let w = if args.Length > 0 then (try int(toStr args.[0]) with _ -> 80) else 80
-            box(s.PadLeft((w + s.Length) / 2).PadRight(w))
+            ret(s.PadLeft((w + s.Length) / 2).PadRight(w))
 
         // Numeric filters
         | "int" -> box(try int s with _ -> 0)
@@ -575,39 +774,38 @@ module private NunjucksImpl =
             let dt = match value with
                      | :? DateTime as d -> d
                      | :? string as sv ->
-                         match DateTime.TryParse sv with
+                         match DateTime.TryParse(sv, CultureInfo.InvariantCulture, DateTimeStyles.None) with
                          | true, d -> d
                          | _ -> DateTime.Now
                      | _ -> DateTime.Now
-            box(dt.ToString(fmt))
+            box(dt.ToString(fmt, CultureInfo.InvariantCulture))
 
         // Zest-specific date filters (SEO / RSS)
         | "dateiso" ->
             let dt = match value with
                      | :? DateTime as d -> d
-                     | :? string as sv -> (match DateTime.TryParse sv with true, d -> d | _ -> DateTime.Now)
+                     | :? string as sv -> (match DateTime.TryParse(sv, CultureInfo.InvariantCulture, DateTimeStyles.None) with true, d -> d | _ -> DateTime.Now)
                      | _ -> DateTime.Now
             box(dt.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"))
         | "daterfc822" | "daterss" ->
             let dt = match value with
                      | :? DateTime as d -> d
-                     | :? string as sv -> (match DateTime.TryParse sv with true, d -> d | _ -> DateTime.Now)
+                     | :? string as sv -> (match DateTime.TryParse(sv, CultureInfo.InvariantCulture, DateTimeStyles.None) with true, d -> d | _ -> DateTime.Now)
                      | _ -> DateTime.Now
-            box(dt.ToUniversalTime().ToString("ddd, dd MMM yyyy HH:mm:ss", Globalization.CultureInfo.InvariantCulture) + " GMT")
+            box(dt.ToUniversalTime().ToString("ddd, dd MMM yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT")
 
         // Zest-specific slug / text filters
         | "slugize" ->
-            box(Regex.Replace(s.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-'))
+            box(reSlug.Replace(s.ToLowerInvariant(), "-").Trim('-'))
         | "slugizepath" ->
-            let segs = s.Split('/') |> Array.map (fun seg -> Regex.Replace(seg.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-'))
+            let segs = s.Split('/') |> Array.map (fun seg -> reSlug.Replace(seg.ToLowerInvariant(), "-").Trim('-'))
             box(String.Join("/", segs))
         | "totext" ->
-            box(Regex.Replace(s, @"<[^>]+>", "").Trim())
+            box(reTags.Replace(s, "").Trim())
 
         // URL filter
         | "urlize" ->
-            box(Regex.Replace(s, @"(https?://[^\s<>""']+)",
-                              fun m -> sprintf "<a href=\"%s\">%s</a>" m.Value m.Value))
+            box(reUrl.Replace(s, fun m -> sprintf "<a href=\"%s\">%s</a>" m.Value m.Value))
 
         // Custom registered filters (from Zest)
         | _ ->
@@ -634,7 +832,7 @@ module private NunjucksImpl =
         let mutable i = 0
         while i < len do
             match arr.[i] with
-            | TagToken("block", args) when args.Length > 0 ->
+            | TagToken("block", args, _) when args.Length > 0 ->
                 let name = args.[0].Trim('"', '\'')
                 let endIdx = findMatchingEnd (i+1) "block" (arr |> Array.toList)
                 if endIdx > i then
@@ -642,7 +840,7 @@ module private NunjucksImpl =
                     blocks.[name] <- body
                     i <- endIdx + 1
                 else i <- i + 1
-            | TagToken("extends", _) | TagToken("macro", _) ->
+            | TagToken("extends", _, _) | TagToken("macro", _, _) ->
                 i <- i + 1
             | _ -> i <- i + 1
         blocks :> IDictionary<string, Token list>
@@ -654,12 +852,39 @@ module private NunjucksImpl =
         let mutable i = start
         while i < len do
             match tokens.[i] with
-            | TagToken(n, _) when n = tagName -> depth <- depth + 1; i <- i + 1
-            | TagToken(n, _) when n = "end" + tagName ->
+            | TagToken(n, _, _) when n = tagName -> depth <- depth + 1; i <- i + 1
+            | TagToken(n, _, _) when n = "end" + tagName ->
                 if depth = 0 then result <- i; i <- len  // found it, save position
                 else depth <- depth - 1; i <- i + 1
             | _ -> i <- i + 1
         result
+
+    /// Collect all top-level `{% macro name(args) %}...{% endmacro %}` definitions
+    /// from a token array. Returns (name, args, body) tuples so they can be
+    /// registered into the macro table (used by import / from).
+    let collectMacroDefs (tsArr: Token []) : (string * string list * Token list) list =
+        let mutable result = []
+        let mutable i = 0
+        let n = tsArr.Length
+        while i < n do
+            match tsArr.[i] with
+            | TagToken("macro", a, _) when a.Length > 0 ->
+                let macroText = a |> String.concat " "
+                let pIdx = macroText.IndexOf('(')
+                let mname, margs =
+                    if pIdx >= 0 then
+                        let name = macroText.[..pIdx-1].Trim()
+                        let cp = macroText.IndexOf(')', pIdx)
+                        let argsPart = if cp >= pIdx then macroText.[pIdx+1..cp-1].Trim() else ""
+                        let pargs = if argsPart = "" then [] else argsPart.Split(',') |> Array.map (fun x -> x.Trim()) |> Array.toList
+                        name, pargs
+                    else macroText.Trim(), []
+                let eIdx = findMatchingEnd (i+1) "macro" (tsArr |> Array.toList)
+                let body = if eIdx > i+1 then tsArr.[i+1..eIdx-1] |> Array.toList else []
+                result <- (mname, margs, body) :: result
+                i <- if eIdx > i then eIdx + 1 else i + 1
+            | _ -> i <- i + 1
+        List.rev result
 
     // ── Block tags that require a closing end-tag ──────────
     let blockTags = set ["if"; "for"; "block"; "macro"; "filter"; "call"]
@@ -672,6 +897,11 @@ module private NunjucksImpl =
         BlockStack: string list                        // currently active block names
         Depth: int
         Macros: IDictionary<string, (string list * Token list)>   // macro name → (args, body)
+        Blocks: IDictionary<string, Token list>        // this template's own block defs (for super())
+        CurrentBlock: string option                    // block being rendered (for super())
+        CallerBody: Token list option                  // captured {% call %} body (for caller())
+        LoopNesting: int                               // current for-loop nesting depth
+        LastLine: int ref                              // most recently processed source line (for errors)
     }
 
     // ── Main renderer ──────────────────────────────────────
@@ -682,56 +912,87 @@ module private NunjucksImpl =
         let mutable error: string option = None
 
         while idx < len && error.IsNone do
+            let curLine =
+                match tokens.[idx] with
+                | TextToken(_, l) | VarToken(_, l) | TagToken(_, _, l) | CmtToken(_, l) -> l
+            env.LastLine.Value <- curLine
+
             match tokens.[idx] with
-            | TextToken t -> sb.Append(t) |> ignore; idx <- idx + 1
+            | TextToken(t, _) -> sb.Append(t) |> ignore; idx <- idx + 1
 
             | CmtToken _ -> idx <- idx + 1
 
-            | VarToken expr ->
+            | VarToken(expr, _) ->
                 let exprTrim = expr.Trim()
-                // Check for macro call: macroName(args) — must be a function-like expr
-                let pOpen = exprTrim.IndexOf('(')
-                let mutable macroResult : string option = None
-                if pOpen > 0 && exprTrim.EndsWith(")") then
-                    let mName = exprTrim.[..pOpen-1].Trim()
-                    match env.Macros.TryGetValue mName with
-                    | true, (margNames, mbody) ->
-                        let argsText = exprTrim.[pOpen+1..exprTrim.Length-2].Trim()
-                        let argValues =
-                            if argsText = "" then []
-                            else argsText.Split(',') |> Array.map (fun a -> evalExpr a env.Variables) |> Array.toList
-                        // Build a new context with macro arguments
-                        let mCtx = Dictionary<string, obj>(env.Variables |> Seq.map (fun kv -> KeyValuePair(kv.Key, kv.Value)))
-                        let rec zipArgs (names: string list) (vals: obj list) =
-                            match names, vals with
-                            | n::ns, v::vs -> mCtx.[n] <- v; zipArgs ns vs
-                            | _ -> ()
-                        zipArgs margNames argValues
-                        match renderTokens mbody { env with Variables = mCtx :> IDictionary<string, obj> } with
-                        | Ok h -> macroResult <- Some h
+                // {{ super() }} — render the parent's version of the current block.
+                if exprTrim.StartsWith("super(") then
+                    match env.CurrentBlock with
+                    | Some name ->
+                        match env.Blocks.TryGetValue name with
+                        | true, parentBody ->
+                            match renderTokens parentBody { env with CurrentBlock = Some name } with
+                            | Ok h -> sb.Append(h) |> ignore
+                            | Error e -> error <- Some e
+                        | _ -> ()
+                    | None -> ()
+                    idx <- idx + 1
+                // {{ caller() }} — render the captured {% call %} body.
+                elif exprTrim.StartsWith("caller(") then
+                    match env.CallerBody with
+                    | Some body ->
+                        match renderTokens body env with
+                        | Ok h -> sb.Append(h) |> ignore
                         | Error e -> error <- Some e
-                    | _ -> ()
-                match macroResult with
-                | Some h ->
-                    sb.Append(h) |> ignore
-                | None ->
-                    let v = evalExpr expr env.Variables
-                    // Auto-escape: strings are escaped unless marked as safe
-                    let html =
-                        match v with
-                        | :? SafeString as ss -> ss.Value
-                        | :? string as sv -> HtmlEncode sv
-                        | null -> ""
-                        | _ -> toStr v
-                    sb.Append(html) |> ignore
-                idx <- idx + 1
+                    | None -> ()
+                    idx <- idx + 1
+                else
+                    // Check for macro call: macroName(args) — must be a function-like expr
+                    let pOpen = exprTrim.IndexOf('(')
+                    let mutable macroResult : string option = None
+                    if pOpen > 0 && exprTrim.EndsWith(")") then
+                        let mName = exprTrim.[..pOpen-1].Trim()
+                        match env.Macros.TryGetValue mName with
+                        | true, (margNames, mbody) ->
+                            let argsText = exprTrim.[pOpen+1..exprTrim.Length-2].Trim()
+                            let argValues =
+                                if argsText = "" then []
+                                else argsText.Split(',') |> Array.map (fun a -> evalExpr a env.Variables) |> Array.toList
+                            // Build a new context with macro arguments
+                            let mCtx = Dictionary<string, obj>(env.Variables |> Seq.map (fun kv -> KeyValuePair(kv.Key, kv.Value)))
+                            let rec zipArgs (names: string list) (vals: obj list) =
+                                match names, vals with
+                                | n::ns, v::vs -> mCtx.[n] <- v; zipArgs ns vs
+                                | _ -> ()
+                            zipArgs margNames argValues
+                            match renderTokens mbody { env with Variables = mCtx :> IDictionary<string, obj> } with
+                            | Ok h -> macroResult <- Some h
+                            | Error e -> error <- Some e
+                        | _ -> ()
+                    match macroResult with
+                    | Some h ->
+                        sb.Append(h) |> ignore
+                    | None ->
+                        let v = evalExpr expr env.Variables
+                        // Auto-escape: strings are escaped unless marked as safe
+                        let html =
+                            match v with
+                            | :? SafeString as ss -> ss.Value
+                            | :? string as sv -> HtmlEncode sv
+                            | null -> ""
+                            | _ -> toStr v
+                        sb.Append(html) |> ignore
+                    idx <- idx + 1
 
-            | TagToken(tag, args) ->
+            | TagToken(tag, args, _) ->
                 let arr = tokens |> Array.ofList
                 let isBlock = blockTags.Contains(tag)
                 let endIdx =
                     if isBlock then findMatchingEnd (idx+1) tag (arr |> Array.toList)
                     else idx
+                // A block tag whose matching end was not found: report a precise error.
+                if isBlock && endIdx >= len && len > idx then
+                    error <- Some(sprintf "Unclosed block tag '{%% %s %%}'" tag)
+                else
                 let bodyTokens =
                     if isBlock && endIdx > idx+1 then arr.[idx+1..endIdx-1] |> Array.toList
                     else []
@@ -774,8 +1035,13 @@ module private NunjucksImpl =
                     // Support "key, value" destructuring for dict/pair iteration.
                     let varNames = loopVar.Split(',') |> Array.map (fun v -> v.Trim())
                     if iter.Length > 0 then
+                        // Reuse a single context + a single loop dictionary across all
+                        // iterations to avoid per-iteration heap allocations (perf).
+                        let loopDict = Dictionary<string, obj>()
+                        loopDict.Remove("__changed__") |> ignore   // reset loop.changed() state
+                        let ctx = Dictionary<string, obj>(env.Variables |> Seq.map (fun kv -> KeyValuePair(kv.Key, kv.Value)))
+                        ctx.["loop"] <- loopDict
                         for idxItem, item in iter |> Array.indexed do
-                            let ctx = Dictionary<string, obj>(env.Variables |> Seq.map (fun kv -> KeyValuePair(kv.Key, kv.Value)))
                             if varNames.Length = 2 then
                                 match item with
                                 | :? IDictionary<string, obj> as kv ->
@@ -787,13 +1053,16 @@ module private NunjucksImpl =
                                 | _ -> ctx.[loopVar] <- item
                             else
                                 ctx.[loopVar] <- item
-                            ctx.["loop"] <- box(dict [
-                                "index", box(idxItem+1); "index0", box idxItem
-                                "revindex", box(iter.Length-idxItem); "revindex0", box(iter.Length-idxItem-1)
-                                "first", box(idxItem=0); "last", box(idxItem=iter.Length-1)
-                                "length", box iter.Length
-                            ])
-                            match renderTokens loopTokens { env with Variables = ctx :> IDictionary<string, obj> } with
+                            let prev = if idxItem > 0 then box iter.[idxItem-1] else null
+                            let nxt = if idxItem < iter.Length - 1 then box iter.[idxItem+1] else null
+                            loopDict.["index"] <- box(idxItem+1); loopDict.["index0"] <- box idxItem
+                            loopDict.["revindex"] <- box(iter.Length-idxItem); loopDict.["revindex0"] <- box(iter.Length-idxItem-1)
+                            loopDict.["first"] <- box(idxItem=0); loopDict.["last"] <- box(idxItem=iter.Length-1)
+                            loopDict.["length"] <- box iter.Length
+                            loopDict.["depth"] <- box(env.LoopNesting + 1)
+                            loopDict.["depth0"] <- box env.LoopNesting
+                            loopDict.["previtem"] <- prev; loopDict.["nextitem"] <- nxt
+                            match renderTokens loopTokens { env with Variables = ctx :> IDictionary<string, obj>; LoopNesting = env.LoopNesting + 1 } with
                             | Ok h -> sb.Append(h) |> ignore
                             | Error e -> error <- Some e
                     else
@@ -809,7 +1078,7 @@ module private NunjucksImpl =
                     match env.ChildBlocks.TryGetValue name with
                     | true, childBody when not (env.BlockStack |> List.contains name) ->
                         // Render child's block content (which may itself extend further)
-                        let childEnv = { env with BlockStack = name :: env.BlockStack }
+                        let childEnv = { env with BlockStack = name :: env.BlockStack; CurrentBlock = Some name }
                         match renderTokens childBody childEnv with
                         | Ok h -> sb.Append(h) |> ignore
                         | Error e -> error <- Some e
@@ -822,16 +1091,21 @@ module private NunjucksImpl =
                     match env.LoadTemplate (path, env.Depth + 1) with
                     | Ok txt ->
                         let parentTokens = tokenize txt
-                        // Collect blocks from child (the current template's tokens)
+                        // Collect blocks from the parent (for super()) and the child
+                        let parentBlocks = collectBlocks parentTokens
                         let childBlocks = collectBlocks tokens
                         // Render parent with child blocks available for override
                         let parentEnv = { env with
                                             ChildBlocks = childBlocks
+                                            Blocks = parentBlocks
                                             Depth = env.Depth + 1
                                             BlockStack = [] }
                         match renderTokens parentTokens parentEnv with
                         | Ok h -> sb.Append(h) |> ignore
                         | Error e -> error <- Some e
+                        // extends replaces the whole template: stop rendering the
+                        // child's own (already-inherited) tokens.
+                        idx <- len
                     | Error e -> error <- Some e
 
                 | "include" ->
@@ -852,8 +1126,17 @@ module private NunjucksImpl =
                         let sname = setText.[..eqIdx-1].Trim()
                         let sval = evalExpr setText.[eqIdx+1..] env.Variables
                         env.Variables.[sname] <- sval
-                    ()
-
+                    else
+                        // Block assignment: {% set name %}...{% endset %}
+                        let sname = setText.Trim().Trim('"', '\'')
+                        let endIdx = findMatchingEnd (idx+1) "set" (arr |> Array.toList)
+                        if endIdx > idx then
+                            let body = arr.[idx+1..endIdx-1] |> Array.toList
+                            match renderTokens body env with
+                            | Ok h -> env.Variables.[sname] <- box h
+                            | Error e -> error <- Some e
+                            idx <- endIdx   // consumed; default increment advances past {% endset %}
+                        ()
                 | "macro" ->
                     if args.Length > 0 then
                         let macroText = args |> String.concat " "
@@ -879,23 +1162,32 @@ module private NunjucksImpl =
                     let mname =
                         if pIdx >= 0 then macroText.[..pIdx-1].Trim()
                         else macroText.Trim()
+                    let callArgs =
+                        if pIdx >= 0 then
+                            let at = macroText.[pIdx+1..macroText.Length-2].Trim()
+                            if at = "" then [] else at.Split(',') |> Array.map (fun a -> evalExpr a env.Variables) |> Array.toList
+                        else []
                     match env.Macros.TryGetValue mname with
                     | true, (margs, mbody) ->
-                        // Build a context with macro args + caller block
-                        let ctx = Dictionary<string, obj>(env.Variables |> Seq.map (fun kv -> KeyValuePair(kv.Key, kv.Value)))
-                        // Pass caller content as the body
+                        let mCtx = Dictionary<string, obj>(env.Variables |> Seq.map (fun kv -> KeyValuePair(kv.Key, kv.Value)))
+                        // Bind positional macro arguments
+                        let rec zipArgs (names: string list) (vals: obj list) =
+                            match names, vals with
+                            | n::ns, v::vs -> mCtx.[n] <- v; zipArgs ns vs
+                            | _ -> ()
+                        zipArgs margs callArgs
+                        // Make the captured body available as caller() (also kept as
+                        // a string for backwards compatibility with {{ caller }}).
                         match bodyHtml with
-                        | Some h -> ctx.["caller"] <- box h
+                        | Some h -> mCtx.["caller"] <- box h
                         | None -> ()
-                        match renderTokens mbody { env with Variables = ctx :> IDictionary<string, obj> } with
+                        let callEnv = { env with
+                                            Variables = (mCtx :> IDictionary<string, obj>)
+                                            CallerBody = if bodyHtml.IsSome then Some bodyTokens else None }
+                        match renderTokens mbody callEnv with
                         | Ok h -> sb.Append(h) |> ignore
                         | Error e -> error <- Some e
                     | _ -> ()
-                    // Remove from variables if it's a call target, not an output
-                    if mname.Length > 0 then
-                        match env.Variables.TryGetValue mname with
-                        | true, _ -> ()  // keep it
-                        | _ -> ()
 
                 | "import" ->
                     let importText = args |> String.concat " "
@@ -907,24 +1199,12 @@ module private NunjucksImpl =
                         else importText.Trim().Trim('"', '\''), ""
                     match env.LoadTemplate (path, env.Depth + 1) with
                     | Ok txt ->
-                        let importTokens = tokenize txt
-                        // Collect macros from imported file
-                        let importMacros = Dictionary<string, obj>()
-                        let rec collectMacros (ts: Token list) =
-                            for t in ts do
-                                match t with
-                                | TagToken("macro", a) when a.Length > 0 ->
-                                    let mn = a |> String.concat " "
-                                    let p2 = mn.IndexOf('(')
-                                    let mname = if p2 >= 0 then mn.[..p2-1].Trim() else mn.Trim()
-                                    importMacros.[mname] <- box(sprintf "<macro:%s from %s>" mname path)
-                                | _ -> ()
-                        collectMacros importTokens
-                        if asName <> "" then
-                            env.Variables.[asName] <- box importMacros
-                        else
-                            for kv in importMacros do
-                                env.Variables.[kv.Key] <- kv.Value
+                        let importTokens = tokenize txt |> Array.ofList
+                        // Register every macro from the imported file as a callable.
+                        let defs = collectMacroDefs importTokens
+                        for (mname, margs, body) in defs do
+                            let key = if asName <> "" then asName + "." + mname else mname
+                            env.Macros.[key] <- (margs, body)
                     | Error e -> error <- Some e
 
                 | "from" ->
@@ -941,33 +1221,12 @@ module private NunjucksImpl =
                         else imports.Trim(), ""
                     match env.LoadTemplate (path, env.Depth + 1) with
                     | Ok txt ->
-                        let importTokens = tokenize txt
-                        // Find the macro definition
-                        let mutable body = []
-                        let rec findMacro (tsArr: Token []) =
-                            let mutable result = None
-                            let mutable i = 0
-                            while i < tsArr.Length && Option.isNone result do
-                                match tsArr.[i] with
-                                | TagToken("macro", a) when a.Length > 0 ->
-                                    let mn = a |> String.concat " "
-                                    let p2 = mn.IndexOf('(')
-                                    let mname = if p2 >= 0 then mn.[..p2-1].Trim() else mn.Trim()
-                                    let eIdx = findMatchingEnd (i+1) "macro" (tsArr |> Array.toList)
-                                    if mname = importName then
-                                        let bd = if eIdx > i+1 then tsArr.[i+1..eIdx-1] |> Array.toList else []
-                                        result <- Some bd
-                                    i <- eIdx + 1
-                                | _ -> i <- i + 1
-                            result
-                        match findMacro (importTokens |> Array.ofList) with
-                        | Some b -> body <- b
+                        let defs = collectMacroDefs (tokenize txt |> Array.ofList)
+                        match defs |> List.tryFind (fun (mname, _, _) -> mname = importName) with
+                        | Some(_, margs, body) ->
+                            let key = if asName <> "" then asName else importName
+                            env.Macros.[key] <- (margs, body)
                         | None -> ()
-                        // Store rendered macro in variables
-                        let finalName = if asName <> "" then asName else importName
-                        match renderTokens body { env with Depth = env.Depth + 1 } with
-                        | Ok h -> env.Variables.[finalName] <- box h
-                        | Error e -> error <- Some e
                     | Error e -> error <- Some e
 
                 | "raw" ->
@@ -1003,12 +1262,12 @@ module private NunjucksImpl =
         let mutable i = 0
         while i < n do
             match arr.[i] with
-            | TagToken(("if" | "for"), _) -> depth <- depth + 1; cur.Add arr.[i]
-            | TagToken(("endif" | "endfor"), _) -> depth <- depth - 1; cur.Add arr.[i]
-            | TagToken(("elif" | "elseif"), a) when depth = 0 ->
+            | TagToken(("if" | "for"), _, _) -> depth <- depth + 1; cur.Add arr.[i]
+            | TagToken(("endif" | "endfor"), _, _) -> depth <- depth - 1; cur.Add arr.[i]
+            | TagToken(("elif" | "elseif"), a, _) when depth = 0 ->
                 branches.Add(curCond, List.ofSeq cur); cur.Clear()
                 curCond <- Some(a |> String.concat " ")
-            | TagToken("else", _) when depth = 0 ->
+            | TagToken("else", _, _) when depth = 0 ->
                 branches.Add(curCond, List.ofSeq cur); cur.Clear()
                 curCond <- None
             | t -> cur.Add t
@@ -1026,9 +1285,9 @@ module private NunjucksImpl =
         let mutable i = 0
         while i < n && elseIdx < 0 do
             match arr.[i] with
-            | TagToken(("if" | "for"), _) -> depth <- depth + 1
-            | TagToken(("endif" | "endfor"), _) -> depth <- depth - 1
-            | TagToken("else", _) when depth = 0 -> elseIdx <- i
+            | TagToken(("if" | "for"), _, _) -> depth <- depth + 1
+            | TagToken(("endif" | "endfor"), _, _) -> depth <- depth - 1
+            | TagToken("else", _, _) when depth = 0 -> elseIdx <- i
             | _ -> ()
             i <- i + 1
         if elseIdx >= 0 && elseIdx + 1 < n then arr.[elseIdx+1..] |> Array.toList else []
@@ -1042,9 +1301,9 @@ module private NunjucksImpl =
         let mutable i = 0
         while i < n && elseIdx < 0 do
             match arr.[i] with
-            | TagToken(("if" | "for"), _) -> depth <- depth + 1
-            | TagToken(("endif" | "endfor"), _) -> depth <- depth - 1
-            | TagToken("else", _) when depth = 0 -> elseIdx <- i
+            | TagToken(("if" | "for"), _, _) -> depth <- depth + 1
+            | TagToken(("endif" | "endfor"), _, _) -> depth <- depth - 1
+            | TagToken("else", _, _) when depth = 0 -> elseIdx <- i
             | _ -> ()
             i <- i + 1
         if elseIdx >= 0 then arr.[..elseIdx-1] |> Array.toList else tokens
@@ -1054,7 +1313,7 @@ module private NunjucksImpl =
 
 type NunjucksEngine() =
 
-    let templateCache = Dictionary<string, struct(DateTime * string)>()
+    let templateCache = ConcurrentDictionary<string, struct(DateTime * string)>()
     let mutable loadFileFn: string -> Result<string, string> = fun path ->
         try Ok(File.ReadAllText(path))
         with :? FileNotFoundException -> Error(sprintf "Template not found: %s" path)
@@ -1066,6 +1325,7 @@ type NunjucksEngine() =
         member _.Name = "nunjucks"
 
         member _.Render(templateText: string) (variables: IDictionary<string, obj>) : Result<string, TemplateError> =
+            let lastLine = ref 0
             try
                 let tokens = NunjucksImpl.tokenize templateText
                 let env: NunjucksImpl.RenderEnv = {
@@ -1080,11 +1340,16 @@ type NunjucksEngine() =
                     BlockStack = []
                     Depth = 0
                     Macros = Dictionary<string, (string list * NunjucksImpl.Token list)>()
+                    Blocks = dict [] :> IDictionary<_, _>
+                    CurrentBlock = None
+                    CallerBody = None
+                    LoopNesting = 0
+                    LastLine = lastLine
                 }
                 match NunjucksImpl.renderTokens tokens env with
                 | Ok s -> Ok s
-                | Error msg -> Error(TemplateError.RuntimeError(msg, 0))
-            with ex -> Error(TemplateError.RuntimeError(ex.Message, 0))
+                | Error msg -> Error(TemplateError.RuntimeError(msg, !lastLine))
+            with ex -> Error(TemplateError.RuntimeError(ex.Message, !lastLine))
 
         member this.RenderFile(filePath: string) (variables: IDictionary<string, obj>) : Result<string, TemplateError> =
             try
