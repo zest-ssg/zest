@@ -147,7 +147,8 @@ module LayoutEngine =
     let mutable private registeredLayoutEngines = HashSet<string>()
 
     let rec internal applyLayout (name: string) (content: string) (layouts: Map<string, string * string>)
-                                (replacements: IDictionary<string, string>) (includes: IDictionary<string, string>) =
+                                (replacements: IDictionary<string, string>) (includes: IDictionary<string, string>)
+                                (page: ContentPage) (config: SiteConfig) (globalData: IDictionary<string, obj>) =
         match layouts.TryFind name with
         | None -> content
         | Some (path, layoutText) ->
@@ -157,12 +158,23 @@ module LayoutEngine =
             // path (their HTML output is produced by the script evaluator).
             // Nunjucks also handles the legacy `{{ page.title }}` placeholder
             // syntax, so this is a strict compatibility improvement.
+            let isFsx =
+                path.EndsWith(FileExtensions.ZestScript, StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith(FileExtensions.FSharpScript, StringComparison.OrdinalIgnoreCase)
             let isNunjucks =
                 nunjucksRenderExts
                 |> List.exists (fun e -> path.EndsWith(e, StringComparison.OrdinalIgnoreCase))
 
             let rendered =
-                if isNunjucks then
+                if isFsx then
+                    // F# layouts are evaluated by FSI; `content`/`page`/`site`
+                    // are injected as top-level bindings (see ScriptRunner).
+                    match ScriptRunner.evaluateLayoutScript layoutText content page config globalData with
+                    | Ok html -> html
+                    | Error e ->
+                        eprintfn "[Zest] F# layout error in '%s': %s" name e
+                        sprintf "<!-- F# layout error: %s -->" e
+                elif isNunjucks then
                     let engine = TemplateManager.getOrCreateEngine "nunjucks" {
                         Engine = "nunjucks"
                         EnableCache = true
@@ -198,7 +210,11 @@ module LayoutEngine =
                         pairs.Add("tags", box (PageQuery.getTagsForNunjucks ()))
                         pairs.Add("collections", box (PageQuery.getCollectionsForNunjucks ()))
                         let ctx = TemplateManager.buildNestedContext pairs
-                        match e.Render layoutText ctx with
+                        // Process legacy `{{ include name }}` partials BEFORE
+                        // handing the merged text to Nunjucks so that includes
+                        // work in native (Nunjucks) mode.
+                        let layoutText' = applyLayoutCached path layoutText includes
+                        match e.Render layoutText' ctx with
                         | Ok html -> html
                         | Error err ->
                             eprintfn "[Zest] Nunjucks error in layout '%s': %O" name err
@@ -242,7 +258,10 @@ module LayoutEngine =
                 else
                     let m = nestedLayoutInfoPattern.Match(layoutText)
                     if m.Success then Some (m.Groups.[1].Value.Trim())
-                    else None
+                    else
+                        // F#-style layout front matter: `// @layout name`
+                        let fm = Regex.Match(layoutText, @"//\s*@layout\s+(\S+)")
+                        if fm.Success then Some (fm.Groups.[1].Value.Trim()) else None
             match nestedLayout with
-            | Some nl when nl <> name -> applyLayout nl rendered layouts replacements includes
+            | Some nl when nl <> name -> applyLayout nl rendered layouts replacements includes page config globalData
             | _ -> rendered

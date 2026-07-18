@@ -76,6 +76,9 @@ module Processor =
                     | ParserCore.IndentMode ->
                         let result, _ = ParserIndent.parseIndentBlock 0 lines 0 vars
                         result
+                    | ParserCore.BracketMode ->
+                        let result, _ = ParserBrace.parseBraceBlock 0 (ParserCore.toBraceLines lines) vars
+                        result
                 allNodes.AddRange(nodes)
             Seq.toList allNodes, (allVars :> IDictionary<string, string>)
 
@@ -133,6 +136,9 @@ module Processor =
                 result
             | ParserCore.IndentMode ->
                 let result, _ = ParserIndent.parseIndentBlock 0 userLines 0 mergedVars
+                result
+            | ParserCore.BracketMode ->
+                let result, _ = ParserBrace.parseBraceBlock 0 (ParserCore.toBraceLines userLines) mergedVars
                 result
 
         // Step 4: Merge ASTs — imports first, then user (so user overrides imports)

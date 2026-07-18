@@ -1,0 +1,15 @@
+# Zest site configuration
+[site]
+title = "My Zest Blog"
+description = "A fast, minimal blog built with Zest SSG."
+url = "https://example.com"
+author = "Zest User"
+language = "en"
+
+[template]
+# Native mode: .zest.fsx files are F# templates evaluated directly,
+# and .html layouts are processed by the Nunjucks engine.
+engine = "native"
+
+[build]
+output = "_site"

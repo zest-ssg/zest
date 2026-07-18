@@ -1,0 +1,9 @@
+<footer class="site-footer">
+    <div class="container site-footer__inner">
+        <p class="site-footer__copy">© {{ "now" | date("yyyy") }} {{ site.author | default(site.title) }}. Built with <a href="https://github.com/zest-ssg/zest">Zest</a>.</p>
+        <nav class="site-footer__links" aria-label="Social">
+            <a href="{{ site.social_github | default('https://github.com/zest-ssg') }}">GitHub</a>
+            <a href="https://twitter.com/{{ site.social_twitter | default('zest_ssg') }}">Twitter</a>
+        </nav>
+    </div>
+</footer>

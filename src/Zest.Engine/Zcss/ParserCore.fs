@@ -1,6 +1,7 @@
 namespace Zest.Engine.Zcss
 
 open System
+open System.Collections.Concurrent
 open System.Collections.Generic
 open System.Text.RegularExpressions
 
@@ -13,6 +14,7 @@ module ParserCore =
     type ParseMode =
         | BraceMode
         | IndentMode
+        | BracketMode
 
     type ZcssError = {
         Message: string
@@ -31,9 +33,9 @@ module ParserCore =
                 else ""
             sprintf "[ZCSS ERROR] %d:%d\n  %s\n%s" this.Line this.Col this.Message ctx
 
-    let errors = ResizeArray<ZcssError>()
-    let getErrors() = List.ofSeq errors
-    let clearErrors() = errors.Clear()
+    let mutable errors = ConcurrentBag<ZcssError>()
+    let getErrors() = Seq.toList errors
+    let clearErrors() = errors <- ConcurrentBag<ZcssError>()
 
     let stripComments (text: string) =
         // Remove // comments but preserve them in URLs (http://)
@@ -242,7 +244,25 @@ module ParserCore =
 
     let detectMode (lines: string array) : ParseMode =
         let hasBraces = lines |> Array.exists (fun l -> l.Contains("{"))
-        if hasBraces then BraceMode else IndentMode
+        if hasBraces then BraceMode
+        else
+            // F#-style bracket blocks: `selector [ ... ]`. A `[` opens a block
+            // only when preceded by whitespace (or at line start) and followed
+            // by whitespace or end-of-line — this avoids mistaking attribute
+            // selectors like `a[href]` for block delimiters.
+            let hasBlockBrackets =
+                lines |> Array.exists (fun l -> Regex.IsMatch(l, @"(\s)\[(\s|$)|^\[(\s|$)"))
+            if hasBlockBrackets then BracketMode else IndentMode
+
+    /// Convert F#-style `[]` block delimiters to `{}` so the brace parser can
+    /// process BracketMode sources. Only brackets preceded by whitespace (or at
+    /// line start) are converted, leaving attribute selectors like `a[href]`
+    /// untouched.
+    let toBraceLines (lines: string array) : string array =
+        lines
+        |> Array.map (fun l ->
+            Regex.Replace(l, @"(\s)\[|^\[", "{")
+            |> fun s -> Regex.Replace(s, @"(\s)\]|^\]", "}"))
 
     let getIndent (line: string) : int =
         let mutable n = 0

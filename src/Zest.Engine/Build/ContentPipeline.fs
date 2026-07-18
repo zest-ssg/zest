@@ -231,7 +231,7 @@ module ContentPipeline =
                 else
                     let replacements = BuildLayout.buildReplacements page config globalData
                     let layoutName   = page.Layout |> Option.defaultValue config.DefaultLayout
-                    let finalHtml    = BuildLayout.applyLayout layoutName page.Content layouts replacements includes
+                    let finalHtml    = BuildLayout.applyLayout layoutName page.Content layouts replacements includes page config globalData
                     // Record page→layout dependency so future layout changes
                     // trigger a rebuild of only the affected pages.
                     match layouts.TryFind layoutName with

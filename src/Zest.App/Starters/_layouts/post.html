@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="{{ site.language }}">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ page.title }} — {{ site.title }}</title>
+    <meta name="description" content="{{ page.description | default(site.description) }}" />
+    <link rel="stylesheet" href="/assets/css/main.css" />
+    <link rel="alternate" type="application/rss+xml" title="{{ site.title }}" href="/rss.xml" />
+</head>
+<body>
+    {{ include header.html }}
+    <main class="site-main">
+        <div class="container">
+            <article class="post">
+                <header class="post__header">
+                    <h1 class="post__title">{{ page.title }}</h1>
+                    <p class="post__meta">
+                        {% if page.date %}<time datetime="{{ page.date }}">{{ page.date | date("MMMM d, yyyy") }}</time>{% endif %}
+                        {% if page.tags %}
+                        <span class="post__tags">
+                            {% for tag in page.tags %}
+                            <span class="post__tag">#{{ tag }}</span>
+                            {% endfor %}
+                        </span>
+                        {% endif %}
+                    </p>
+                </header>
+                <div class="post__body">
+                    {{ content | safe }}
+                </div>
+            </article>
+        </div>
+    </main>
+    {{ include footer.html }}
+</body>
+</html>

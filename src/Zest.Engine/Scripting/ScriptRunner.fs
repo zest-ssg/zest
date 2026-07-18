@@ -171,6 +171,73 @@ module ScriptRunner =
                 || l.StartsWith("ul ") || l.StartsWith("ol "))
             |> Option.defaultValue false
 
+    // ── F# layout evaluation ───────────────────────────────────────────────
+    //   A `.zest.fsx`/`.fsx` layout is evaluated by FSI (just like a page
+    //   script). The page `content`, `page` metadata, and `site` config are
+    //   injected as top-level F# bindings via a generated `#load` data file so
+    //   the layout can compose the final document with the DSL builders and
+    //   `printf`/`render` the result to stdout (which becomes the rendered HTML).
+
+    let private buildLayoutPreamble (ctxFile: string) (dataFile: string) =
+        let dllPath = ScriptDiscovery.getIsolatedDslDll ()
+        let sb = Text.StringBuilder(1024)
+        sb.AppendLine("#r @\"" + dllPath + "\"") |> ignore
+        sb.AppendLine("#load @\"" + dataFile + "\"") |> ignore
+        sb.AppendLine("open System") |> ignore
+        sb.AppendLine("open System.Text.RegularExpressions") |> ignore
+        sb.AppendLine("open System.Collections.Generic") |> ignore
+        sb.AppendLine("open Zest.Dsl") |> ignore
+        sb.AppendLine("Zest.Dsl.Context.current <- Some (Zest.Dsl.ZestContext(@\"" + ctxFile + "\"))") |> ignore
+        sb.AppendLine("open Zest.Dsl.Dsl") |> ignore
+        sb.AppendLine("open Zest.Dsl.DslComponents") |> ignore
+        sb.AppendLine("open Zest.Dsl.DslSugar") |> ignore
+        sb.AppendLine("open Zest.Dsl.DslCollections") |> ignore
+        sb.AppendLine("open Zest.Dsl.DslUtilities") |> ignore
+        sb.AppendLine("open Zest.Dsl.DslSeo") |> ignore
+        sb.AppendLine("open Zest.Dsl.DslXml") |> ignore
+        sb.AppendLine("""let console_log (message: string) = eprintfn "[DEBUG] %s" message""") |> ignore
+        sb.ToString()
+
+    let evaluateLayoutScript (scriptText: string) (content: string)
+                              (page: ContentPage) (config: SiteConfig)
+                              (globalData: IDictionary<string, obj>) : Result<string, string> =
+        try
+            if String.IsNullOrEmpty ctxFilePath || not (File.Exists ctxFilePath) then resetSession ()
+
+            let date = page.Date |> Option.map (fun d -> d.ToString("yyyy-MM-dd")) |> Option.defaultValue ""
+            let desc = match page.Data.TryGetValue("description") with true, v -> v.ToString() | _ -> ""
+            let mutable gv = Unchecked.defaultof<obj>
+            let github  = if globalData.TryGetValue("social_github",  &gv) then gv.ToString() else ""
+            let twitter = if globalData.TryGetValue("social_twitter", &gv) then gv.ToString() else ""
+
+            let esc (s: string) =
+                s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", "\\n")
+
+            let tagsArr =
+                page.Tags
+                |> Seq.map (fun t -> "\"" + esc t + "\"")
+                |> String.concat "; "
+
+            let dataContent =
+                sprintf "let content = \"%s\"\n" (esc content)
+                + sprintf "let page = {| title = \"%s\"; url = \"%s\"; date = \"%s\"; slug = \"%s\"; description = \"%s\"; tags = [|%s|] |}\n"
+                    (esc page.Title) (esc page.Url) (esc date) (esc page.Slug) (esc desc) tagsArr
+                + sprintf "let site = {| title = \"%s\"; description = \"%s\"; author = \"%s\"; language = \"%s\"; social_github = \"%s\"; social_twitter = \"%s\" |}\n"
+                    (esc config.Title) (esc config.Description) (esc config.Author) (esc config.Language) (esc github) (esc twitter)
+
+            let dataFile = Path.Combine(Path.GetTempPath(), sprintf "zest-layout-ctx-%s.fsx" (Guid.NewGuid().ToString("N")))
+            File.WriteAllText(dataFile, dataContent, Encoding.UTF8)
+            let preamble = buildLayoutPreamble ctxFilePath dataFile
+            let tmpFsx = Path.Combine(Path.GetTempPath(), sprintf "zest-layout-%s.fsx" (Guid.NewGuid().ToString("N")))
+            try
+                File.WriteAllText(tmpFsx, preamble + "\n" + scriptText, Encoding.UTF8)
+                runFsi tmpFsx
+            finally
+                if File.Exists tmpFsx  then File.Delete tmpFsx
+                if File.Exists dataFile then File.Delete dataFile
+        with ex ->
+            Error(sprintf "Layout evaluation threw: %s" ex.Message)
+
     // ── Individual script evaluation ──────────────────────────────────────
 
     let evaluatePageScript (scriptText: string) : Result<string, string> =
