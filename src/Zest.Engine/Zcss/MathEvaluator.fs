@@ -17,7 +17,6 @@ module MathEvaluator =
         | Var of string
 
     // Cached regex — created once, reused across all calls
-    let private mathPattern = Regex(@"[\d.]+\w*\s*[+\-*/]\s*[\d.]+\w*", RegexOptions.Compiled)
     let private dollarVarPattern = Regex(@"\$([\w-]+)", RegexOptions.Compiled)
 
     let private tokenize (s: string) : Token list =
@@ -75,25 +74,28 @@ module MathEvaluator =
     /// Rules: if operands have the same unit, result keeps that unit.
     /// If one operand is unitless, result uses the other's unit.
     /// For * and /, only the first operand's unit is kept (CSS-like behavior).
+    /// Evaluate math, but ONLY inside an explicit `calc(...)` wrapper.
+    ///
+    /// CSS is context-sensitive: the "/" in `font: 16px/1.65 sans-serif` is a
+    /// size/line-height separator, not division; "0 4px 6px -1px" in box-shadow
+    /// is a value list, not subtraction. Guessing whether an arbitrary property
+    /// value "looks like math" via character whitelists/blacklists is unreliable
+    /// and has caused both crashes and silent CSS corruption. The only safe,
+    /// standards-compliant trigger for arithmetic is the explicit `calc()` marker
+    /// — exactly how native CSS scopes math. Every other value is returned
+    /// untouched (which also drops the previous 3-pass scanning overhead).
     let eval (expr: string) (vars: IDictionary<string, string>) : string =
-        // First resolve variables
-        let resolved = dollarVarPattern.Replace(expr, fun m ->
-            match vars.TryGetValue(m.Groups.[1].Value) with
-            | true, v -> v | _ -> m.Value)
-
-        // Guard: a value is only evaluated as a math expression when it is composed
-        // solely of numbers, operators, parentheses, variables ($), units (letters/%)
-        // and whitespace. Values containing other characters — notably commas in CSS
-        // `font` shorthands such as `16px/1.65 system-ui, -apple-system` — are passed
-        // through unchanged, so we never corrupt real CSS or trip the tokenizer on a
-        // stray hyphen.
-        let nonMathCharPattern = Regex(@"[^0-9.+*/()$%a-zA-Z\s-]", RegexOptions.Compiled)
-        let looksLikeMath = mathPattern.IsMatch resolved && not (nonMathCharPattern.IsMatch resolved)
-
-        // Simple heuristic: only evaluate if there are math operators and numbers
-        // Match numbers with optional units (e.g., 16px, 0.5r, 100%)
-        if not looksLikeMath then resolved
+        let trimmed = expr.Trim()
+        if not (trimmed.StartsWith("calc(") && trimmed.EndsWith(")")) then
+            expr
         else
+            // Inner expression between the outer `calc(` and the final `)`.
+            let inner = trimmed.Substring(5, trimmed.Length - 6)
+            // Resolve $variables first (e.g. calc($spacing / 2)).
+            let resolved = dollarVarPattern.Replace(inner, fun m ->
+                match vars.TryGetValue(m.Groups.[1].Value) with
+                | true, v -> v | _ -> m.Value)
+
             let tokens = tokenize resolved
             // Simple recursive descent parser
             let pos = ref 0
@@ -145,5 +147,5 @@ module MathEvaluator =
                 let numStr =
                     if value = floor value then string (int64 value)
                     else value.ToString("0.######")
-                numStr + unit
-            with _ -> resolved
+                "calc(" + numStr + unit + ")"
+            with _ -> "calc(" + resolved + ")"
