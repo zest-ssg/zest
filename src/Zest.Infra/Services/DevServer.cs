@@ -182,6 +182,34 @@ public class DevServer : HttpServer
         if (_buildService == null || _config == null || _wsServer == null) return;
         lock (_rebuildLock)
         {
+            // ── Engine upgrade detection ──
+            // If the Zest.Engine DLL was replaced mid-serve (e.g. dotnet tool
+            // update), clear all caches and force a full rebuild so pages are
+            // regenerated with the new engine logic.
+            if (BuildCache.hasEngineChanged())
+            {
+                LogWriter.WriteDim("  [Zest] Engine changed — forcing full rebuild.");
+                BuildCache.clearCache();
+            }
+
+            // ── Output directory resilience ──
+            // If the output directory was deleted mid-serve (e.g. by an
+            // external tool or accidental rm), recreate it so the HTTP server
+            // doesn't return 404s for the entire site.
+            var outDir = GetOutputDir();
+            if (!Directory.Exists(outDir))
+            {
+                Directory.CreateDirectory(outDir);
+                LogWriter.WriteDim("  [Zest] Output directory recreated.");
+            }
+
+            // Reset the in-process template caches so layout/include changes
+            // are picked up immediately. The BuildCache on disk handles
+            // incremental page detection; these in-memory caches handle
+            // template conversion + Nunjucks compilation.
+            try { Zest.Engine.Template.TemplateManager.clearCaches(); }
+            catch { /* non-fatal — proceed with rebuild */ }
+
             try
             {
                 var result = _buildService.Execute(_config);
@@ -217,6 +245,8 @@ public class DevServer : HttpServer
             catch (Exception ex)
             {
                 LogWriter.Error("DevServer", $"Rebuild failed: {ex.Message}");
+                // Don't rethrow — keep the server alive so the user can fix
+                // the error and the next file-save triggers another rebuild.
             }
         }
     }

@@ -206,6 +206,15 @@ module LayoutEngine =
                             if addedKeys.Add(kv.Key) then
                                 pairs.Add(kv.Key, box kv.Value)
 
+                        // Replacements from buildReplacements flatten all globalData
+                        // values to strings via ToString(), which destroys nested
+                        // structure (arrays / dicts become "System.Object[]"). Re-add
+                        // them here as their native objects so Nunjucks can traverse
+                        // dotted keys and iterate arrays. Duplicate keys are harmless
+                        // because buildNestedContext overwrites with the last value.
+                        for kv in globalData do
+                            pairs.Add("site." + kv.Key, kv.Value)
+
                         pairs.Add("pages", box (PageQuery.getPagesForNunjucks () |> Array.map box))
                         pairs.Add("tags", box (PageQuery.getTagsForNunjucks ()))
                         pairs.Add("collections", box (PageQuery.getCollectionsForNunjucks ()))
