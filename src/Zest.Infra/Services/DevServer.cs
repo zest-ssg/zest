@@ -40,6 +40,7 @@ public class DevServer : HttpServer
     {
         _config = config;
         _wsServer = new SocketHub(config.LiveReloadPort);
+        _ignoredDirNames = ExcludedPaths.For(config);
         EnableSpaFallback = spaFallback;
         EnableDirectoryListing = dirListing;
     }
