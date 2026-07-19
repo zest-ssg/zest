@@ -1,0 +1,22 @@
+# Site navigation for the starter blog.
+# Auto-loaded as `site.nav.items` — iterable in Nunjucks templates.
+
+[[items]]
+label = "Home"
+url = "/"
+weight = 1
+
+[[items]]
+label = "Blog"
+url = "/posts/"
+weight = 2
+
+[[items]]
+label = "Features"
+url = "/features/"
+weight = 3
+
+[[items]]
+label = "About"
+url = "/about/"
+weight = 4

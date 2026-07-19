@@ -24,8 +24,10 @@ obj/
 .DS_Store
 Thumbs.db
 
-# Zest site output
+# Zest
 docs/
+site/
+themes/
 
 # NuGet packages
 packages/

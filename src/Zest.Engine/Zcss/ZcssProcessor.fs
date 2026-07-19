@@ -19,6 +19,22 @@ module Processor =
     // Cached regex — created once, reused across all calls
     let private usePat = Regex(@"^\s*@use\s+[""']([^""']+)[""'](?:\s+as\s+(\w+))?\s*;?\s*$", RegexOptions.Compiled ||| RegexOptions.Multiline)
 
+    // ── Result cache ────────────────────────────────────────────
+    // ZCSS processing is pure (source → CSS). Caching by a hash of the
+    // source avoids re-parsing/re-compiling unchanged files during dev-server
+    // rebuilds triggered by non-ZCSS changes. The cache is keyed on the
+    // (baseDir, source) hash.
+    let private resultCache = System.Collections.Concurrent.ConcurrentDictionary<int64, string>()
+
+    /// Stable 64-bit hash of a string (FNV-1a variant). Good enough for a
+    /// process-local cache; not cryptographic.
+    let private hashSource (s: string) : int64 =
+        let mutable h = 0xcbf29ce484222325UL
+        for c in s do
+            h <- h ^^^ (uint64 c)
+            h <- h * 0x100000001b3UL
+        int64 h
+
     /// Resolve user file @use imports relative to a base directory.
     let private resolveUserImport (baseDir: string option) (path: string) : string option =
         // Try built-in modules first
@@ -39,7 +55,9 @@ module Processor =
                 None
 
     /// Process ZCSS source text with a known base directory for @use resolution.
-    let private processTextWithBaseDir (baseDir: string option) (source: string) : string =
+    /// (Uncached inner implementation — the public `processText` wraps this with
+    /// a content-hash cache and error guard.)
+    let private processTextWithBaseDirUncached (baseDir: string option) (source: string) : string =
 
         // Step 1: Extract and remove @use lines, collect imported contents.
         // Capture aliases (group 2) so namespaced variables (e.g. `p.primary`
@@ -153,16 +171,33 @@ module Processor =
 
         css
 
+    /// Process ZCSS source text with a known base directory (cached + guarded).
+    /// Results are cached by a content hash so unchanged files are not
+    /// re-parsed on dev-server rebuilds; malformed input yields an error
+    /// comment instead of crashing the build.
+    let processTextWithBase (baseDir: string option) (source: string) : string =
+        let key = hashSource ((defaultArg baseDir "") + "\x00" + source)
+        match resultCache.TryGetValue(key) with
+        | true, cached -> cached
+        | _ ->
+            let result =
+                try processTextWithBaseDirUncached baseDir source
+                with ex ->
+                    eprintfn "[ZCSS ERROR] %s" ex.Message
+                    sprintf "/* ZCSS ERROR: %s */" (ex.Message.Replace("*/", "*\\/"))
+            resultCache.[key] <- result
+            result
+
     /// Process ZCSS source text → CSS string
     /// Uses AST-level merge: built-in modules parsed with brace parser,
     /// user content parsed with mode-detected parser, then ASTs merged.
     let processText (source: string) : string =
-        processTextWithBaseDir None source
+        processTextWithBase None source
 
     /// Process a ZCSS file → CSS string
     let processFile (filePath: string) : string =
         let baseDir = Some (Path.GetDirectoryName(Path.GetFullPath(filePath)))
-        File.ReadAllText(filePath) |> processTextWithBaseDir baseDir
+        File.ReadAllText(filePath) |> processTextWithBase baseDir
 
     /// Process a ZCSS file → write CSS to destination
     let processFileTo (src: string) (dst: string) : string =

@@ -166,12 +166,90 @@ module DslUtilities =
     let configGet (key: string) (defaultValue: string) (cfg: Map<string, string>) =
         match cfg.TryFind key with Some v -> v | None -> defaultValue
 
+    // ── Triple-quote inline content blocks ──────────────────────
+    // Mirrors the `md """..."""` ergonomics: raw triple-quoted strings
+    // dropped straight into the DSL tree as plain `string` values, so they
+    // compose with `render [ ... ]` like any other node. `dedent` strips the
+    // common leading whitespace so authors may keep F# source indentation
+    // without breaking the embedded language's own indentation-sensitive
+    // syntax (Markdown ATX headings, JS blocks). See MIGRATION_NOTES §3.2/§九.
+
+    /// Strip the common leading whitespace from every non-blank line of a
+    /// triple-quoted string. Blank lines are preserved (and trimmed) but do
+    /// not count toward the minimum indent. Returns the input unchanged when
+    /// there is nothing to strip. Fixes the indentation issue noted in
+    /// MIGRATION_NOTES §3.2: `md """..."""` / `js """..."""` bodies that
+    /// inherit F# source indentation no longer fail to render.
+    let dedent (text: string) : string =
+        if String.IsNullOrEmpty text then ""
+        else
+            let lines = text.Split([| "\r\n"; "\n"; "\r" |], StringSplitOptions.None)
+            let leadingWs (line: string) =
+                if String.IsNullOrWhiteSpace line then Int32.MaxValue
+                else line.Length - line.TrimStart().Length
+            let nonBlank = lines |> Array.filter (fun l -> not (String.IsNullOrWhiteSpace l))
+            if nonBlank.Length = 0 then text.Trim() else
+            let minIndent = nonBlank |> Array.map leadingWs |> Array.fold min Int32.MaxValue
+            if minIndent = Int32.MaxValue || minIndent = 0 then text
+            else
+                lines
+                |> Array.map (fun line ->
+                    if String.IsNullOrWhiteSpace line then line.Trim()
+                    elif line.Length >= minIndent then line.[minIndent..]
+                    else line.TrimStart())
+                |> String.concat "\n"
+
     // ── Inline Markdown ────────────────────────────────────────
 
     /// Render an inline Markdown string to an HTML string, so Markdown content
     /// can be mixed directly into the (string-based) F# DSL tree. Returns a
     /// plain `string`, identical in kind to everything else the DSL emits, so it
     /// drops straight into a `render [ ... ]` block. Delegates to
-    /// `Zest.Engine.Html.MarkdownEngine.toHtml`.
+    /// `Zest.Engine.Html.MarkdownEngine.toHtml`. Content is passed through
+    /// verbatim — for indented triple-quoted bodies use `mdDedent`.
     let md (markdownText: string) : string =
         Zest.Engine.Html.MarkdownEngine.toHtml markdownText
+
+    /// Like `md`, but first strips common leading indentation via `dedent`.
+    /// Use this when the triple-quoted Markdown body is indented to match the
+    /// surrounding F# source (the recommended style), so ATX headings (`##`)
+    /// and fenced code blocks are recognised. Fixes MIGRATION_NOTES §3.2.
+    let mdDedent (markdownText: string) : string =
+        dedent markdownText |> Zest.Engine.Html.MarkdownEngine.toHtml
+
+    // ── Inline JavaScript (L2) ──────────────────────────────────
+    // Embed page-level one-off scripts via `js """..."""`, mirroring `md`.
+    // The raw JS source is wrapped in `<script>…</script>` and emitted as-is:
+    // F# does not validate JS syntax at build time (just as `md` does not
+    // validate Markdown). For site-wide behaviour prefer external
+    // `assets/js/*.js` referenced via `script src` (L1). See MIGRATION_NOTES
+    // §九 L2.
+
+    /// Embed an inline JavaScript block. Common leading indentation is
+    /// stripped via `dedent`, so the triple-quoted body may follow F# source
+    /// formatting. The body is passed through verbatim — do not embed dynamic
+    /// values with `sprintf` (use `jsonBlock` instead for type-safe data).
+    let js (code: string) : string =
+        sprintf "<script>%s</script>" (dedent code)
+
+    /// Like `js`, but emits `<script type="module">` for ES module scripts
+    /// (`import`/`export`, top-level `await`). Same dedent + passthrough rules.
+    let jsModule (code: string) : string =
+        sprintf "<script type=\"module\">%s</script>" (dedent code)
+
+    // ── Data injection (L3) ─────────────────────────────────────
+    // F# computes typed data; the client consumes it as JSON. Avoids the
+    /// error-prone `sprintf "var x = %d" n` string-concatenation pattern.
+    // See MIGRATION_NOTES §九 L3.
+
+    /// Inject F#-computed data as a JSON literal consumed by client-side JS.
+    /// Emits `<script>window.NAME = JSON</script>` where JSON is produced by
+    /// `System.Text.Json` (handles all string escaping) and then run through
+    /// `jsSafe` so `</`, U+2028 and U+2029 — which would prematurely terminate
+    /// the `<script>` block — are neutralised. Client code reads
+    /// `window.NAME`. This is the type-safe alternative to F# string-built JS.
+    let jsonBlock (name: string) (data: obj) : string =
+        let json =
+            System.Text.Json.JsonSerializer.Serialize(data)
+            |> jsSafe
+        sprintf "<script>window.%s = %s</script>" name json

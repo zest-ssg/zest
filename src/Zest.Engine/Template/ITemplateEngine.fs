@@ -55,3 +55,60 @@ type ITemplateEngine =
 
     /// Clear all cached templates.
     abstract ClearCache: unit -> unit
+
+// ============================================================
+// TemplateUtils — Shared helpers for template converters
+// ============================================================
+
+/// Shared utilities used by the Haml/Pug/Handlebars converters and the
+/// template manager. Kept here (the first Template/ file) so every converter
+/// can reference it without extra coupling.
+module TemplateUtils =
+
+    /// HTML-escape text content: & < > " → entities.
+    let htmlEncode (s: string) =
+        if isNull s then "" else
+        s.Replace("&", "&amp;")
+         .Replace("<", "&lt;")
+         .Replace(">", "&gt;")
+         .Replace("\"", "&quot;")
+
+    /// Escape for use inside a double-quoted attribute value.
+    /// Also escapes single quotes for safety in single-quoted contexts.
+    let attrEncode (s: string) =
+        (htmlEncode s).Replace("'", "&#39;")
+
+    /// HTML5 void elements (self-closing — no end tag).
+    let voidElements = set ["area"; "base"; "br"; "col"; "embed"; "hr"; "img";
+                            "input"; "link"; "meta"; "param"; "source"; "track"; "wbr"]
+
+    /// Check whether a tag name is a void element.
+    let isVoidElement (tag: string) = voidElements.Contains(tag.ToLowerInvariant())
+
+    // ── Conversion result cache ────────────────────────────────
+    // Converter output is pure (source → HTML/Nunjucks). Caching by content
+    // hash avoids re-running regex-heavy conversions on dev-server rebuilds
+    // when the source file hasn't changed.
+    let private conversionCache = System.Collections.Concurrent.ConcurrentDictionary<int64, string>()
+
+    /// Stable FNV-1a 64-bit hash (process-local cache, not cryptographic).
+    let hashSource (s: string) : int64 =
+        let mutable h = 0xcbf29ce484222325UL
+        for c in s do
+            h <- h ^^^ (uint64 c)
+            h <- h * 0x100000001b3UL
+        int64 h
+
+    /// Get a cached conversion result, or compute+cache it.
+    let cachedConvert (source: string) (convert: string -> string) : string =
+        if isNull source || source = "" then "" else
+        let key = hashSource source
+        match conversionCache.TryGetValue key with
+        | true, cached -> cached
+        | _ ->
+            let result = convert source
+            conversionCache.[key] <- result
+            result
+
+    /// Clear the conversion cache (called on full rebuild / cache clear).
+    let clearConversionCache () = conversionCache.Clear()

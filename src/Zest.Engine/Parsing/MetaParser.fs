@@ -45,8 +45,11 @@ module MetaParser =
             | true, dt -> { m with Updated = Some dt }
             | _ -> m
         | "tags" | "tag" | "categories" ->
+            // Split on commas, semicolons OR whitespace so all of these work:
+            // `@tags hugo, terminal` / `@tags hugo terminal` /
+            // `@tags ["hugo", "terminal"]`. Fixes MIGRATION_NOTES §3.3.
             let tags =
-                v.Trim('[', ']').Split(',')
+                System.Text.RegularExpressions.Regex.Split(v.Trim('[', ']'), @"[,;\s]+")
                 |> Array.map (fun t -> t.Trim().Trim('"', '\''))
                 |> Array.filter (fun t -> t.Length > 0)
                 |> Array.toList

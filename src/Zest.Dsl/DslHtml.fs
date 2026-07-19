@@ -68,6 +68,46 @@ module Dsl =
     let th ch = elem "th" [] ch
     let td ch = elem "td" [] ch
 
+    // ---- Description lists ----
+    let dl ch = elem "dl" [] ch
+    let dt ch = elem "dt" [] ch
+    let dd ch = elem "dd" [] ch
+
+    // ---- Additional semantic / inline elements ----
+    let aside ch = elem "aside" [] ch
+    let figure ch = elem "figure" [] ch
+    let figcaption ch = elem "figcaption" [] ch
+    let address ch = elem "address" [] ch
+    let cite ch = elem "cite" [] ch
+    let q ch = elem "q" [] ch
+    let sub ch = elem "sub" [] ch
+    let sup ch = elem "sup" [] ch
+    let kbd ch = elem "kbd" [] ch
+    let samp ch = elem "samp" [] ch
+    let dfn ch = elem "dfn" [] ch
+    let ins ch = elem "ins" [] ch
+    let b ch = elem "b" [] ch
+    let i ch = elem "i" [] ch
+    let u ch = elem "u" [] ch
+    let s ch = elem "s" [] ch
+    let wbr () = voidElem "wbr" []
+
+    /// `<time datetime="...">label</time>` — machine-readable timestamp.
+    let time (datetime: string) (ch: string list) = elem "time" [attr "datetime" datetime] ch
+    let summary ch = elem "summary" [] ch
+    let details ch = elem "details" [] ch
+    let dialog ch = elem "dialog" [] ch
+    let progress ch = elem "progress" [] ch
+    let meter ch = elem "meter" [] ch
+    let output ch = elem "output" [] ch
+
+    // ---- Class-shortcut variants for new semantic elements ----
+    let figureC cls ch = elem "figure" [attr "class" cls] ch
+    let timeC cls datetime ch = elem "time" [attr "datetime" datetime; attr "class" cls] ch
+    let detailsC cls ch = elem "details" [attr "class" cls] ch
+    let dlC cls ch = elem "dl" [attr "class" cls] ch
+    let citeC cls ch = elem "cite" [attr "class" cls] ch
+
     // ---- Doc structure ----
     let doctype = "<!DOCTYPE html>"
     let html ch = elem "html" [] ch
@@ -147,3 +187,83 @@ module Dsl =
         s.Replace("</", "<\\/")
          .Replace("\u2028", "\\u2028")
          .Replace("\u2029", "\\u2029")
+
+    // ---- Attribute sugar ───────────────────────────────────────
+    // Concise builders for the most common attributes, so authors can write
+    // `div [id' "main"; cls "page"; data' "page" "home"] [...]` instead of
+    // spelling out `attr "id" "main"` each time.
+
+    /// `class="…"` attribute.
+    let cls (c: string) = attr "class" c
+    /// `id="…"` attribute.
+    let id' (v: string) = attr "id" v
+    /// `role="…"` attribute (ARIA landmark roles).
+    let role (v: string) = attr "role" v
+    /// `href="…"` attribute.
+    let href (v: string) = attr "href" v
+    /// `src="…"` attribute.
+    let src (v: string) = attr "src" v
+    /// `type="…"` attribute.
+    let type' (v: string) = attr "type" v
+    /// `name="…"` attribute.
+    let name' (v: string) = attr "name" v
+    /// `value="…"` attribute.
+    let value' (v: string) = attr "value" v
+    /// `placeholder="…"` attribute.
+    let placeholder (v: string) = attr "placeholder" v
+    /// `title="…"` attribute (tooltip).
+    let title' (v: string) = attr "title" v
+    /// `width="…"` attribute.
+    let width' (v: string) = attr "width" v
+    /// `height="…"` attribute.
+    let height' (v: string) = attr "height" v
+    /// `alt="…"` attribute.
+    let alt (v: string) = attr "alt" v
+    /// `lang="…"` attribute.
+    let lang (v: string) = attr "lang" v
+    /// `tabindex="…"` attribute.
+    let tabindex (v: string) = attr "tabindex" v
+
+    /// `data-KEY="VALUE"` — HTML data attribute. `data' "id" "42"` →
+    /// `data-id="42"`. The key is inserted verbatim (use kebab-case).
+    let data' (key: string) (v: string) = attr ("data-" + key) v
+
+    /// `aria-KEY="VALUE"` — ARIA accessibility attribute.
+    /// `aria "label" "Close"` → `aria-label="Close"`.
+    let aria (key: string) (v: string) = attr ("aria-" + key) v
+
+    /// Boolean attribute (present when `true`, omitted when `false`).
+    /// `boolAttr "disabled" true` → `disabled="disabled"`; `… false` → `""`.
+    let boolAttr (name: string) (on: bool) =
+        if on then sprintf "%s=\"%s\"" name name else ""
+
+    // ---- Misc string helpers ───────────────────────────────────
+
+    /// An HTML comment `<!-- … -->`. The body is NOT escaped — do not embed
+    /// user input containing `-->`.
+    let comment (body: string) = sprintf "<!-- %s -->" body
+
+    /// Non-breaking space entity.
+    let nbsp = "&nbsp;"
+
+    /// Concatenate child nodes WITHOUT a wrapping element (a "fragment"),
+    /// useful when a parent already provides the container.
+    let fragment (children: string list) = String.concat "" children
+
+    /// Join child nodes with a newline separator (pretty-printed block).
+    let fragmentLines (children: string list) = String.concat "\n" children
+
+    /// Render a list of key/value attribute pairs into an attribute string.
+    /// `attrsOf ["id","main"; "class","page"]` → `id="main" class="page"`.
+    let attrsOf (pairs: (string * string) list) =
+        pairs |> List.map (fun (k, v) -> attr k v) |> String.concat " "
+
+    /// Build an element from a tag, a list of (key,value) attribute pairs,
+    /// and children. A concise general-purpose constructor.
+    /// `el "div" [("id","main"); ("class","page")] [text "Hi"]`
+    let el (tag: string) (pairs: (string * string) list) (children: string list) =
+        elem tag (pairs |> List.map (fun (k, v) -> attr k v)) children
+
+    /// Void element from a tag and (key,value) attribute pairs.
+    let elVoid (tag: string) (pairs: (string * string) list) =
+        voidElem tag (pairs |> List.map (fun (k, v) -> attr k v))

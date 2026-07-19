@@ -474,3 +474,49 @@ module ``New features and compatibility`` =
         | Ok _ -> failwith "expected error for unbalanced expression"
         | Error (TemplateError.RuntimeError(_, line)) -> Assert.Equal(2, line)
         | Error _ -> failwith "unexpected error kind"
+
+// ============================================================
+// Migration fixes — regression tests for MIGRATION_NOTES bugs.
+// §1.4: pipe inside filter args; §1.5: int filter on decimals;
+// §1.7: arithmetic combined with nested pipes.
+// ============================================================
+
+module ``Migration - filter and arithmetic fixes`` =
+
+    [<Fact>]
+    let ``int filter truncates decimal string (not 0)`` () =
+        // §1.5: `int "1.245"` previously failed to 0; now floats first.
+        Assert.Equal("1", renderOk "{{ n | int }}" ["n", box "1.245"])
+        Assert.Equal("0", renderOk "{{ n | int }}" ["n", box "0.9"])
+        Assert.Equal("42", renderOk "{{ n | int }}" ["n", box "42"])
+
+    [<Fact>]
+    let ``int filter on float value truncates toward zero`` () =
+        Assert.Equal("3", renderOk "{{ n | int }}" ["n", box 3.9])
+        Assert.Equal("3", renderOk "{{ n | int }}" ["n", box 3.1])
+
+    [<Fact>]
+    let ``filter argument with nested pipe evaluates`` () =
+        // §1.4: `default(x | default('fallback'))` — the inner pipe in the
+        // filter argument must be evaluated, not boxed as a raw string.
+        Assert.Equal("fallback", renderOk "{{ v | default(missing | default('fallback')) }}" [])
+        Assert.Equal("real", renderOk "{{ v | default(missing | default('fallback')) }}" ["v", box "real"])
+
+    [<Fact>]
+    let ``filter argument resolves a variable path`` () =
+        // §1.4: a bare variable path passed as a filter arg must resolve.
+        Assert.Equal("Y", renderOk "{{ v | default(fmt) }}" ["v", box "Y"; "fmt", box "X"])
+
+    [<Fact>]
+    let ``arithmetic with nested pipe in parentheses`` () =
+        // §1.7: `((content | length) + 199) / 200` must evaluate the pipe
+        // inside parentheses before the arithmetic.
+        let r = renderOk "{{ ((content | length) + 199) / 200 | round }}" ["content", box "abc"]
+        // length("abc")=3 → (3+199)/200 = 1.0 → round → 1
+        Assert.Equal("1", r)
+
+    [<Fact>]
+    let ``pipe inside parentheses is not treated as chain separator`` () =
+        // A parenthesised sub-expression containing a pipe evaluates as one atom.
+        Assert.Equal("3", renderOk "{{ (content | length) }}" ["content", box "abc"])
+

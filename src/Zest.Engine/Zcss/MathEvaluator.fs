@@ -102,8 +102,17 @@ module MathEvaluator =
             let peek() = if pos.Value < tokens.Length then Some tokens.[pos.Value] else None
             let advance() = let t = tokens.[pos.Value] in incr pos; t
 
-            let addNum (n1, u1) (n2, u2) = (n1 + n2, if u1 <> "" then u1 else u2)
-            let subNum (n1, u1) (n2, u2) = (n1 - n2, if u1 <> "" then u1 else u2)
+            // For + and -, operands must share a unit (or one must be unitless)
+            // for the result to be meaningful at build time. Mismatched units
+            // (e.g. `100% - 2rem`) depend on runtime context and must be left
+            // for the browser — raise so the try/with fallback returns the
+            // original `calc(...)` verbatim.
+            let addNum (n1, u1) (n2, u2) =
+                if u1 <> "" && u2 <> "" && u1 <> u2 then failwith "incompatible units"
+                (n1 + n2, if u1 <> "" then u1 else u2)
+            let subNum (n1, u1) (n2, u2) =
+                if u1 <> "" && u2 <> "" && u1 <> u2 then failwith "incompatible units"
+                (n1 - n2, if u1 <> "" then u1 else u2)
             let mulNum (n1, u1) (n2, _) = (n1 * n2, u1)
             let divNum (n1, u1) (n2, _) = if n2 <> 0.0 then (n1 / n2, u1) else (0.0, u1)
 

@@ -86,13 +86,14 @@ module TemplateCompat =
     let allExtensions : string list =
         strategyMap |> Map.keys |> List.ofSeq
 
-    /// Convert a HAML/Pug body to HTML for further processing.
-    /// Returns the same string unchanged for non-conversion extensions.
+    /// Convert a template body to Nunjucks-compatible syntax based on its
+    /// extension. Handles HAML, Pug (→ HTML), Handlebars, and Mustache (→
+    /// Nunjucks). Returns the body unchanged for extensions that need no
+    /// conversion. Results are cached by content hash (via the converters).
     let convertIfNeeded (ext: string) (body: string) : string =
-        match strategyFor ext with
-        | Some ConvertThenNunjucks ->
-            match ext.ToLowerInvariant() with
-            | FileExtensions.Haml -> HamlConverter.convert body
-            | FileExtensions.Pug  -> PugConverter.convert body
-            | _       -> body
-        | _ -> body
+        match ext.ToLowerInvariant() with
+        | FileExtensions.Haml         -> HamlConverter.convert body
+        | FileExtensions.Pug          -> PugConverter.convert body
+        | FileExtensions.Handlebars
+        | FileExtensions.Mustache     -> HandlebarsMustacheConverter.convertByExtension ext body
+        | _                           -> body

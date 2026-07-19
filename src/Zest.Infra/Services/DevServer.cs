@@ -124,6 +124,13 @@ public class DevServer : HttpServer
 
         void OnChange(object sender, FileSystemEventArgs e)
         {
+            // Guard against null args / disposed state during shutdown.
+            // FileSystemWatcher can fire with null EventArgs in rare races, and
+            // the debounce timer may still be pending when the server stops.
+            // Fixes MIGRATION_NOTES §1.9 (NullReferenceException in OnChange).
+            if (e == null || _debounceTimer == null || _watcher == null) return;
+            if (string.IsNullOrEmpty(e.FullPath)) return;
+
             // Skip changes in the output directory
             if (_outputDir != null && e.FullPath.StartsWith(_outputDir, StringComparison.OrdinalIgnoreCase))
                 return;
@@ -146,7 +153,7 @@ public class DevServer : HttpServer
                 }
             }
 
-            var ext = Path.GetExtension(e.Name!)?.ToLowerInvariant() ?? "";
+            var ext = (e.Name != null ? Path.GetExtension(e.Name) : null)?.ToLowerInvariant() ?? "";
             if (!WatchConstants.Extensions.Contains(ext)) return;
 
             // Track whether this change batch is CSS-only
@@ -169,6 +176,9 @@ public class DevServer : HttpServer
 
     private void Rebuild()
     {
+        // Guard against rebuild firing after the server has been disposed
+        // (timer callback races during shutdown). Fixes MIGRATION_NOTES §1.9.
+        if (_buildService == null || _config == null || _wsServer == null) return;
         lock (_rebuildLock)
         {
             try
