@@ -18,6 +18,9 @@
     <!-- ZCSS -->
     <Compile Include="ZcssProcessorTests.fs" />
 
+    <!-- DSL inline blocks (js/jsonBlock/dedent/mdDedent) -->
+    <Compile Include="DslInlineBlocksTests.fs" />
+
     <!-- Template engines -->
     <Compile Include="TemplateManagerTests.fs" />
     <Compile Include="NunjucksEngineTests.fs" />
@@ -28,6 +31,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Zest.Engine\Zest.Engine.fsproj" />
+    <!-- Direct reference so DSL helpers (js/jsonBlock/dedent/mdDedent) are
+         available to the inline-block tests. -->
+    <ProjectReference Include="..\..\src\Zest.Dsl\Zest.Dsl.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

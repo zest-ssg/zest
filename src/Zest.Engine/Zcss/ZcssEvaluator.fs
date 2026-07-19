@@ -32,7 +32,11 @@ module Evaluator =
             |> String.concat " "
 
     // ── Cached regex and data for resolveBareVars ──
-    let private bareVarRe = Regex(@"(?<![.\$a-zA-Z0-9_-])([a-zA-Z_][\w]*)(?![a-zA-Z0-9_-])", RegexOptions.Compiled)
+    // Capture group includes `-` (`[\w-]*`) so hyphenated variable names like
+    // `font-size` / `line-height` match as ONE token. The lookbehind excludes
+    // `-` so a name preceded by `-` (e.g. the `font-size` inside the CSS
+    // custom property `--font-size`) is NOT resolved. Fixes MIGRATION_NOTES §1.10.
+    let private bareVarRe = Regex(@"(?<![.\$a-zA-Z0-9_-])([a-zA-Z_][\w-]*)(?![\w-])", RegexOptions.Compiled)
     let private cssKeywords = set ["none"; "auto"; "inherit"; "initial"; "unset"; "normal";
                            "bold"; "italic"; "left"; "right"; "center"; "top"; "bottom";
                            "solid"; "dashed"; "dotted"; "double"; "transparent";
@@ -52,7 +56,33 @@ module Evaluator =
                            "infinite"; "alternate"; "reverse"; "forwards"; "backwards"; "both";
                            "multiply"; "screen"; "overlay"; "darken"; "lighten";
                            "isolate"; "mixed"; "plaintext"; "ltr"; "rtl";
-                           "flat"; "preserve-3d"; "open"; "closed"]
+                           "flat"; "preserve-3d"; "open"; "closed";
+                           // ── CSS function names (never resolve as variables) ──
+                           // Prevents `calc`/`min`/`max`/`color-mix` etc. from being
+                           // looked up if a user happens to define a same-named `let`.
+                           "calc"; "clamp"; "min"; "max"; "var"; "env"; "url"; "attr";
+                           "rgb"; "rgba"; "hsl"; "hsla"; "hwb"; "lab"; "lch";
+                           "oklab"; "oklch"; "color"; "color-mix"; "color-contrast";
+                           "fit-content"; "minmax";
+                           "linear-gradient"; "radial-gradient"; "conic-gradient";
+                           "repeating-linear-gradient"; "repeating-radial-gradient";
+                           "image"; "cross-fade"; "paint"; "element";
+                           "counter"; "counters"; "toggle"; "symbols";
+                           // transform / filter functions
+                           "rotate"; "rotateX"; "rotateY"; "rotateZ"; "rotate3d";
+                           "scale"; "scaleX"; "scaleY"; "scaleZ"; "scale3d";
+                           "translate"; "translateX"; "translateY"; "translateZ"; "translate3d";
+                           "skew"; "skewX"; "skewY"; "matrix"; "matrix3d"; "perspective";
+                           "blur"; "brightness"; "contrast"; "drop-shadow"; "grayscale";
+                           "hue-rotate"; "invert"; "opacity"; "saturate"; "sepia";
+                           // shape / clip-path
+                           "circle"; "ellipse"; "inset"; "polygon"; "path";
+                           // easing
+                           "cubic-bezier"; "steps";
+                           // color-mix / color() keywords & color spaces
+                           "in"; "to"; "from"; "srgb"; "srgb-linear"; "display-p3";
+                           "a98-rgb"; "prophoto-rgb"; "rec2020"; "xyz"; "xyz-d50"; "xyz-d65";
+                           "lighter"; "darker"; "shorter"; "longer"; "increasing"; "decreasing"]
 
     let resolveBareVars (value: string) (vars: IDictionary<string, string>) : string =
         bareVarRe.Replace(value, fun m ->

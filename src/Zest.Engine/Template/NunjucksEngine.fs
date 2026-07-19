@@ -285,6 +285,36 @@ module private NunjucksImpl =
         if sb.Length > 0 then res.Add(sb.ToString().Trim())
         List.ofSeq res
 
+    /// Split a filter chain on top-level `|` pipes, respecting quotes and
+    /// nested parentheses/brackets so that a `|` inside a filter argument
+    /// (e.g. `date(x | default('y'))`) is NOT treated as a chain separator.
+    /// Also skips `||` (logical or). Fixes MIGRATION_NOTES §1.4.
+    let private splitTopLevelPipes (s: string) : string list =
+        let res = ResizeArray<string>()
+        let sb = StringBuilder()
+        let mutable inS = false
+        let mutable inD = false
+        let mutable depth = 0
+        let mutable i = 0
+        let n = s.Length
+        while i < n do
+            let c = s.[i]
+            if inS then (if c = '\'' then inS <- false); sb.Append(c) |> ignore; i <- i + 1
+            elif inD then (if c = '"' then inD <- false); sb.Append(c) |> ignore; i <- i + 1
+            elif c = '\'' then inS <- true; sb.Append(c) |> ignore; i <- i + 1
+            elif c = '"' then inD <- true; sb.Append(c) |> ignore; i <- i + 1
+            elif c = '(' || c = '[' then depth <- depth + 1; sb.Append(c) |> ignore; i <- i + 1
+            elif c = ')' || c = ']' then depth <- depth - 1; sb.Append(c) |> ignore; i <- i + 1
+            elif c = '|' && depth = 0 then
+                // Skip `||` (logical or) — it stays part of the current segment.
+                if i + 1 < n && s.[i+1] = '|' then
+                    sb.Append(c) |> ignore; sb.Append(s.[i+1]) |> ignore; i <- i + 2
+                else
+                    res.Add(sb.ToString().Trim()); sb.Clear() |> ignore; i <- i + 1
+            else sb.Append(c) |> ignore; i <- i + 1
+        if sb.Length > 0 then res.Add(sb.ToString().Trim())
+        List.ofSeq res
+
     /// Validate that an expression's parentheses/brackets are balanced.
     /// Throws on imbalance so the error surfaces with a source line.
     let private checkBalanced (s: string) =
@@ -309,7 +339,33 @@ module private NunjucksImpl =
         let text = exprText.Trim()
         if text = "" then box "" else
         checkBalanced text
-        evalOr text ctx
+        evalPipe text ctx
+
+    // Pipe `|` has the LOWEST precedence in Nunjucks/Jinja — lower than
+    // arithmetic, comparison and logic — so it is handled here, ABOVE evalOr.
+    // `a / b | round` therefore parses as `(a / b) | round`, not `a / (b|round)`.
+    // The LHS is delegated to evalOr (which descends through arithmetic etc.);
+    // each RHS segment is a filter. Filter args are split on top-level commas
+    // and evaluated via `evalExpr`, so `filter(x | subfilter(y))` resolves.
+    // Fixes MIGRATION_NOTES §1.4 (pipe inside filter args) and §1.7
+    // (arithmetic + nested pipes evaluating to 0).
+    and evalPipe (text: string) ctx : obj =
+        let parts = splitTopLevelPipes text
+        if parts.Length <= 1 then evalOr text ctx else
+        let rawVal = evalOr parts.Head ctx
+        let mutable result = rawVal
+        for fp in parts.Tail do
+            if fp <> "" then
+                let ppi = fp.IndexOf('(')
+                let fname, fargsText =
+                    if ppi >= 0 then fp.[..ppi-1], fp.[ppi+1..fp.Length-2].Trim()
+                    else fp, ""
+                let fargs =
+                    if fargsText = "" then []
+                    else
+                        splitTopLevelArgs fargsText |> List.map (fun a -> evalExpr a ctx)
+                result <- applyFilter fname result fargs
+        result
 
     and evalOr (text: string) ctx : obj =
         match findTopOp text [ "or" ] with
@@ -481,47 +537,13 @@ module private NunjucksImpl =
                 match Int32.TryParse t with
                 | true, i -> Some(box i)
                 | _ -> match Double.TryParse t with | true, f -> Some(box f) | _ -> None
-        let pipeIdx = t.IndexOf("|")
-        if pipeIdx >= 0 && (pipeIdx = 0 || t.[pipeIdx-1] <> '|') && (pipeIdx+1 >= t.Length || t.[pipeIdx+1] <> '|') then
-            let lhs = t.[..pipeIdx-1].Trim()
-            let rawVal = match tryLiteral lhs with Some v -> v | _ -> resolvePath lhs ctx
-            let filterParts = t.[pipeIdx+1..].Split('|') |> Array.map (fun x -> x.Trim()) |> Array.filter (fun x -> x <> "")
-            let mutable result = rawVal
-            for fp in filterParts do
-                let ppi = fp.IndexOf('(')
-                let fname, fargsText =
-                    if ppi >= 0 then fp.[..ppi-1], fp.[ppi+1..fp.Length-2].Trim()
-                    else fp, ""
-                let fargs =
-                    if fargsText = "" then []
-                    else
-                        // Parse filter arguments respecting quoted strings (comma is separator)
-                        let rec parseFilterArgs (rem: string) (acc: string list) =
-                            let rem = rem.TrimStart()
-                            if rem = "" then List.rev acc
-                            elif rem.[0] = '"' || rem.[0] = '\'' then
-                                let quote = rem.[0]
-                                let mutable i = 1
-                                while i < rem.Length && rem.[i] <> quote do i <- i + 1
-                                let arg = if i > 1 then rem.[1..i-1] else ""
-                                let rest = if i + 1 < rem.Length then rem.[i+1..] else ""
-                                let restTrimmed = rest.TrimStart()
-                                let rest2 = if restTrimmed.StartsWith(",") then restTrimmed.[1..] else restTrimmed
-                                parseFilterArgs rest2 (arg :: acc)
-                            else
-                                let commaIdx = rem.IndexOf(',')
-                                if commaIdx >= 0 then
-                                    let arg = rem.[..commaIdx-1].Trim()
-                                    parseFilterArgs rem.[commaIdx+1..] (arg :: acc)
-                                else
-                                    List.rev ((rem.Trim()) :: acc)
-                        parseFilterArgs fargsText [] |> List.map (fun s -> box s)
-                result <- applyFilter fname result fargs
-            result
-        else
-            match tryLiteral t with
-            | Some v -> v
-            | _ -> resolvePath t ctx
+        // Pipe handling now lives in `evalPipe` (above evalOr) so that `|`
+        // has the correct lowest precedence. evalAtom resolves only literals
+        // and variable paths; parenthesised sub-expressions recurse via
+        // evalExpr → evalPipe, so inner pipes inside `(...)` still work.
+        match tryLiteral t with
+        | Some v -> v
+        | _ -> resolvePath t ctx
 
     and applyFilter (name: string) (value: obj) (args: obj list) : obj =
         let s = toStr value
@@ -575,7 +597,10 @@ module private NunjucksImpl =
             ret(s.PadLeft((w + s.Length) / 2).PadRight(w))
 
         // Numeric filters
-        | "int" -> box(try int s with _ -> 0)
+        // `int` parses via `float` first so decimal strings like "1.245"
+        // truncate to 1 instead of failing to 0. Matches Nunjucks `int`
+        // semantics (truncate toward zero). Fixes MIGRATION_NOTES §1.5.
+        | "int" -> box(try int (float s) with _ -> 0)
         | "float" -> box(try float s with _ -> 0.0)
         | "abs" -> box(abs (try float s with _ -> 0.0))
         | "round" ->

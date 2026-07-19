@@ -2,9 +2,9 @@
     <div class="container site-header__inner">
         <a class="site-header__brand" href="/">{{ site.title }}</a>
         <nav class="site-nav" aria-label="Primary">
-            <a class="site-nav__link" href="/">Home</a>
-            <a class="site-nav__link" href="/posts/">Blog</a>
-            <a class="site-nav__link" href="/about/">About</a>
+            {% for item in site.nav.items | sort_by("weight") %}
+            <a class="site-nav__link" href="{{ item.url }}">{{ item.label }}</a>
+            {% endfor %}
         </nav>
     </div>
 </header>

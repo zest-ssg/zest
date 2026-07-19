@@ -103,11 +103,12 @@ module TemplateManager =
             | None ->
                 Error(TemplateError.RuntimeError("use_native_fallback", 0))
 
-    /// Clear all engine caches.
+    /// Clear all engine caches (and the converter result cache).
     let clearCaches () =
         for kv in engines do
             kv.Value.ClearCache()
         cache.Clear()
+        TemplateUtils.clearConversionCache ()
 
     /// Check if an engine is available.
     let isEngineAvailable (name: string) : bool =

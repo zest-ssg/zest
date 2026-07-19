@@ -157,3 +157,78 @@ module DslSugar =
 
     /// Convert a boolean to "true" / "false".
     let bool_str (x: bool) = if x then "true" else "false"
+
+    // ── Option / nullable rendering ─────────────────────────────
+
+    /// Render an `Option<string>`: `Some s` → `s`, `None` → `""`.
+    /// Same as `DslComponents.opt` but available in the sugar module.
+    let opt_str (v: string option) = match v with Some s -> s | None -> ""
+
+    /// Render an `Option<string>` with a fallback for `None`.
+    let opt_or (fallback: string) (v: string option) =
+        match v with Some s when not (String.IsNullOrEmpty s) -> s | _ -> fallback
+
+    /// Apply a render function only when the value is `Some`, else `""`.
+    let opt_map (f: 'a -> string) (v: 'a option) =
+        match v with Some x -> f x | None -> ""
+
+    /// Render content only when the value is `Some`, ignoring the inner value.
+    let opt_when (v: 'a option) (content: string) =
+        match v with Some _ -> content | None -> ""
+
+    // ── Joining helpers ─────────────────────────────────────────
+
+    /// Join items with newlines (alias for readability in pipelines).
+    let join_lines (items: string list) = String.concat "\n" items
+
+    /// Join items with commas (e.g. tag lists).
+    let join_comma (items: string list) = String.concat ", " items
+
+    /// Join items with a custom separator (alias for `joinWith`).
+    let join_with (sep: string) (items: string list) = String.concat sep items
+
+    /// Intersperse a separator BETWEEN items (not trailing).
+    /// `intersperse ", " ["a";"b";"c"]` → `"a, b, c"`.
+    let intersperse (sep: string) (items: string list) =
+        match items with
+        | [] | [_] -> String.concat "" items
+        | head :: tail -> head + (tail |> List.map (fun x -> sep + x) |> String.concat "")
+
+    // ── Text formatting ─────────────────────────────────────────
+
+    /// Truncate a string to `maxLen` chars, appending an ellipsis if cut.
+    let truncate_str (maxLen: int) (s: string) =
+        if s = null then ""
+        elif s.Length <= maxLen then s
+        else s.[..maxLen-1] + "…"
+
+    /// Pad a string to a fixed width with spaces (right-padded).
+    let pad_right (width: int) (s: string) = s.PadRight(width)
+
+    /// Pad a string to a fixed width with spaces (left-padded).
+    let pad_left (width: int) (s: string) = s.PadLeft(width)
+
+    /// Simple pluralisation: `pluralize 1 "item"` → `"1 item"`,
+    /// `pluralize 3 "item"` → `"3 items"` (appends 's'). For irregular
+    /// plurals pass the plural form explicitly.
+    let pluralize (count: int) (singular: string) =
+        let word = if count = 1 then singular else singular + "s"
+        sprintf "%d %s" count word
+
+    /// Pluralise with an explicit plural form.
+    let pluralize_with (count: int) (singular: string) (plural: string) =
+        let word = if count = 1 then singular else plural
+        sprintf "%d %s" count word
+
+    /// Capitalise the first character (sentence case).
+    let capitalize (s: string) =
+        if String.IsNullOrEmpty s then s
+        else s.[0].ToString().ToUpperInvariant() + s.[1..]
+
+    /// Convert a kebab/snake-case string to a human-readable title.
+    /// `"post-list"` / `"post_list"` → `"Post List"`.
+    let titleize (s: string) =
+        s.Replace('-', ' ').Replace('_', ' ').Split(' ')
+        |> Array.filter (fun w -> w.Length > 0)
+        |> Array.map (fun w -> w.[0].ToString().ToUpperInvariant() + (if w.Length > 1 then w.[1..] else ""))
+        |> String.concat " "

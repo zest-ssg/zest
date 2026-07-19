@@ -81,12 +81,18 @@ module FilterRegistry =
             // ── by_collection: filter pages by collection name ─
             engine.RegisterFilter "by_collection" (fun value args ->
                 let col = if args.Length > 0 then args.[0] else ""
+                // 2nd arg `exclude_index` arrives as a string ("true"/"True"/"1").
+                let excludeIndex =
+                    args.Length > 1 &&
+                    (match args.[1].Trim().ToLowerInvariant() with "true" | "yes" | "1" -> true | _ -> false)
                 PageQuery.getPagesForNunjucks ()
                 |> Array.filter (fun p ->
                     match p.TryGetValue "url" with
                     | true, (:? string as u) ->
                         let parts = u.Trim('/').Split('/')
-                        parts.Length > 0 && parts.[0].Equals(col, StringComparison.OrdinalIgnoreCase)
+                        let inCol = parts.Length > 0 && parts.[0].Equals(col, StringComparison.OrdinalIgnoreCase)
+                        let isIndex = parts.Length <= 1
+                        inCol && (not excludeIndex || not isIndex)
                     | _ -> false)
                 |> Array.map (fun d -> d :> obj) |> box)
 

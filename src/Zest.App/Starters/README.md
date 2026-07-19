@@ -11,15 +11,18 @@ ZCSS (`.zcss`).
 .
 ├── _config.toml            # Site config (native template engine)
 ├── _init.zest.fsx          # Runs before each build (injects globals)
+├── _data/
+│   └── nav.toml            # Navigation items (auto-loaded as site.nav.items)
 ├── _layouts/
 │   ├── default.html        # Base layout (Nunjucks) — header, footer, SEO, RSS
 │   └── post.html           # Article layout (Nunjucks)
 ├── _includes/
-│   ├── header.html         # Site header / nav
+│   ├── header.html         # Site header / nav (iterates site.nav.items)
 │   └── footer.html         # Site footer
 ├── content/
 │   ├── index.zest.fsx      # Home page
 │   ├── about.zest.fsx      # About page
+│   ├── features.zest.fsx   # DSL feature tour (js/jsonBlock/new components)
 │   ├── 404.zest.fsx        # Custom 404 page (`/404.html`)
 │   ├── rss.zest.fsx        # RSS 2.0 feed (`/rss.xml`, auto-generated)
 │   ├── sitemap.zest.fsx    # XML sitemap (`/sitemap.xml`, auto-generated)
@@ -38,6 +41,11 @@ responsive theme, site navigation/footer, an **RSS feed** (`/rss.xml`), an
 **XML sitemap** (`/sitemap.xml`) for SEO, a **custom 404 page**, Open Graph
 meta tags, and a favicon. Set `[site] url` in `_config.toml` so the feed and
 sitemap point at your real domain.
+
+The `features.zest.fsx` page demonstrates the new DSL capabilities: inline
+JavaScript (`js """..."""`), JSON data injection (`jsonBlock`), new semantic
+components (`breadcrumb`/`tagBadges`/`progressBar`/`icon`), and syntax sugar
+(`intersperse`/`pluralize`/`titleize`/`mdDedent`).
 
 ## Commands
 
