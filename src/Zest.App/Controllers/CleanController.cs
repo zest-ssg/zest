@@ -7,7 +7,7 @@ namespace Zest.App.Controllers;
 /// <summary>
 /// Handles `zest clean [--cache] [--output]`
 /// Clears build artifacts. By default clears both cache and output.
-///   --cache   Remove .zest-cache.json / .zest-deps.json (and in-process state)
+///   --cache   Remove .zest-cache.toml / .zest-deps.toml (and in-process state)
 ///   --output  Remove the _site output directory
 /// </summary>
 public static class CleanController
@@ -26,12 +26,31 @@ public static class CleanController
         {
             // Clear in-process cache (mtime index + dependency graph) via the
             // BuildService wrapper, then delete on-disk cache artifacts.
+            // Include legacy .json names for migration from older Zest versions.
             BuildService.ClearCache();
-            foreach (var name in new[] { ".zest-cache.json", ".zest-deps.json", ".zcss-cache" })
+            var cacheNames = new[] {
+                ".zest-cache.toml", ".zest-deps.toml",      // current format
+                ".zest-cache.json", ".zest-deps.json",      // legacy (pre-upgrade)
+                ".zcss-cache"
+            };
+            foreach (var name in cacheNames)
             {
-                var p = Path.Combine(projectDir, name);
-                if (File.Exists(p)) { File.Delete(p); LogWriter.WriteDim($"  Removed {p}"); }
-                else if (Directory.Exists(p)) { Directory.Delete(p, recursive: true); LogWriter.WriteDim($"  Removed {p}"); }
+                // Search in project root AND in the output directory.
+                var searchDirs = new[] { projectDir };
+                try
+                {
+                    var cfg = ConfigLoader.Load(projectDir);
+                    var outDir = Path.Combine(projectDir, cfg.OutputDir.TrimStart('.', '/', '\\'));
+                    searchDirs = new[] { projectDir, outDir };
+                }
+                catch { /* config may be missing */ }
+
+                foreach (var dir in searchDirs)
+                {
+                    var p = Path.Combine(dir, name);
+                    if (File.Exists(p)) { File.Delete(p); LogWriter.WriteDim($"  Removed {p}"); }
+                    else if (Directory.Exists(p)) { Directory.Delete(p, recursive: true); LogWriter.WriteDim($"  Removed {p}"); }
+                }
             }
             LogWriter.WriteSuccess("  [Zest] Build cache cleared.");
         }

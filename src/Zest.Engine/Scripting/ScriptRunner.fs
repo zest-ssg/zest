@@ -62,6 +62,13 @@ module ScriptRunner =
         let dllPath = ScriptDiscovery.getIsolatedDslDll ()
         let sb = Text.StringBuilder(1024)
         sb.AppendLine("#r @\"" + dllPath + "\"") |> ignore
+        // Explicitly reference Zest.Engine.dll from the same isolated dir.
+        // Zest.Dsl calls Zest.Engine.Html.MarkdownEngine (via `md`/`mdDedent`),
+        // so FSI needs the assembly loaded — copying it alongside isn't enough.
+        // Fixes MIGRATION_NOTES §1.1 (FS0074 on `md`).
+        let engineDllPath = Path.Combine(Path.GetDirectoryName(dllPath), "Zest.Engine.dll")
+        if File.Exists(engineDllPath) then
+            sb.AppendLine("#r @\"" + engineDllPath + "\"") |> ignore
         sb.AppendLine("open System") |> ignore
         sb.AppendLine("open System.Text.RegularExpressions") |> ignore
         sb.AppendLine("open System.Collections.Generic") |> ignore

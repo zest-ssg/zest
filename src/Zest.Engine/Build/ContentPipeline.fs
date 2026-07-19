@@ -60,6 +60,10 @@ module ContentPipeline =
                             |> Array.filter (fun f -> not (PathResolver.isExcluded contentDir f))
             if htmlFiles.Length > 0 then
                 let engineCfg = { Engine = "nunjucks"; EnableCache = true; Extension = FileExtensions.Nunjucks; Filters = [] }
+                // Snapshot globalData for thread-safe iteration inside Parallel.ForEach.
+                // Dictionary<K,V>.GetEnumerator is not safe for concurrent enumeration
+                // (can corrupt internal state even for read-only access across threads).
+                let gdSnapshot = globalData |> Seq.map (fun kv -> kv.Key, kv.Value) |> Seq.toArray
                 Parallel.ForEach(htmlFiles, fun htmlFile ->
                     let relPath = Path.GetRelativePath(contentDir, htmlFile)
                     let destPath = Path.Combine(outputDir, relPath)
@@ -72,7 +76,7 @@ module ContentPipeline =
                             // Build the full page + site context so HTML can
                             // reference {{ page.title }}, {{ site.* }}, pages, etc.
                             let pairs = ResizeArray<string * obj>()
-                            for kv in globalData do pairs.Add(kv.Key, kv.Value)
+                            for (key, value) in gdSnapshot do pairs.Add(key, value)
                             pairs.Add("site.title", box config.Title)
                             pairs.Add("site.description", box config.Description)
                             pairs.Add("site.base_url", box config.BaseUrl)

@@ -227,15 +227,17 @@ module DslUtilities =
 
     /// Embed an inline JavaScript block. Common leading indentation is
     /// stripped via `dedent`, so the triple-quoted body may follow F# source
-    /// formatting. The body is passed through verbatim — do not embed dynamic
-    /// values with `sprintf` (use `jsonBlock` instead for type-safe data).
+    /// formatting. The body is run through `jsSafe` to neutralise `</`,
+    /// U+2028, and U+2029 — which would prematurely terminate the `<script>`
+    /// block in the browser's HTML parser. Use `jsonBlock` for type-safe data
+    /// injection (it applies jsSafe internally).
     let js (code: string) : string =
-        sprintf "<script>%s</script>" (dedent code)
+        sprintf "<script>%s</script>" (dedent code |> jsSafe)
 
     /// Like `js`, but emits `<script type="module">` for ES module scripts
-    /// (`import`/`export`, top-level `await`). Same dedent + passthrough rules.
+    /// (`import`/`export`, top-level `await`). Same dedent + jsSafe rules.
     let jsModule (code: string) : string =
-        sprintf "<script type=\"module\">%s</script>" (dedent code)
+        sprintf "<script type=\"module\">%s</script>" (dedent code |> jsSafe)
 
     // ── Data injection (L3) ─────────────────────────────────────
     // F# computes typed data; the client consumes it as JSON. Avoids the
