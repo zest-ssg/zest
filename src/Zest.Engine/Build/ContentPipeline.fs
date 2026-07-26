@@ -7,6 +7,7 @@ open System.IO
 open System.Threading
 open System.Threading.Tasks
 open Zest.Engine
+open Zest.Engine.Html
 open Zest.Engine.Parsing
 open Zest.Engine.Template
 open Zest.Engine.Routing
@@ -33,6 +34,12 @@ module ContentPipeline =
         (includes: IDictionary<string, string>)
         =
 
+        // Wrap globalData for thread-safe concurrent enumeration.
+        // Regular Dictionary.GetEnumerator corrupts when enumerated
+        // concurrently; ConcurrentDictionary provides snapshot enumeration.
+        let safeData = ConcurrentDictionary<string, obj>(globalData)
+        let safeIncludes = ConcurrentDictionary<string, string>(includes)
+
         let errors = ConcurrentBag<string>()
         let mutable processed = 0
         let mutable cached    = 0
@@ -46,7 +53,7 @@ module ContentPipeline =
                 |> Seq.filter (fun f ->
                     let ext = Path.GetExtension(f).ToLowerInvariant()
                     (processableExts |> List.exists ((=) ext))
-                    && not (PathResolver.isExcluded contentDir f))
+                    && not (PathResolver.isExcludedWithConfig contentDir config f))
                 |> Seq.distinct
                 |> Seq.toArray
 
@@ -57,13 +64,13 @@ module ContentPipeline =
         // syntax is copied verbatim.
         if Directory.Exists contentDir then
             let htmlFiles = Directory.GetFiles(contentDir, "*.html", SearchOption.AllDirectories)
-                            |> Array.filter (fun f -> not (PathResolver.isExcluded contentDir f))
+                            |> Array.filter (fun f -> not (PathResolver.isExcludedWithConfig contentDir config f))
             if htmlFiles.Length > 0 then
                 let engineCfg = { Engine = "nunjucks"; EnableCache = true; Extension = FileExtensions.Nunjucks; Filters = [] }
                 // Snapshot globalData for thread-safe iteration inside Parallel.ForEach.
                 // Dictionary<K,V>.GetEnumerator is not safe for concurrent enumeration
                 // (can corrupt internal state even for read-only access across threads).
-                let gdSnapshot = globalData |> Seq.map (fun kv -> kv.Key, kv.Value) |> Seq.toArray
+                let gdSnapshot = safeData |> Seq.map (fun kv -> kv.Key, kv.Value) |> Seq.toArray
                 Parallel.ForEach(htmlFiles, fun htmlFile ->
                     let relPath = Path.GetRelativePath(contentDir, htmlFile)
                     let destPath = Path.Combine(outputDir, relPath)
@@ -115,7 +122,10 @@ module ContentPipeline =
 
         // ── First pass: fast metadata extraction for collections API ──
         // Cache file text between extractMeta and evaluate to avoid double ReadAllText
+        // Draft pages (meta.Draft = true) are collected for _drafts but excluded
+        // from the main page set to prevent them from appearing in production builds.
         let fileContentCache = ConcurrentDictionary<string, string>()
+        let draftPages = ConcurrentBag<ContentPage>()
         let metaPages =
             allFiles
             |> Array.choose (fun f ->
@@ -127,8 +137,14 @@ module ContentPipeline =
                         fileContentCache.[f] <- text
                         ScriptEvaluator.extractMetaWithText f config text
                 with _ -> None)
+            |> Array.choose (fun (page: ContentPage) ->
+                if page.Draft then
+                    draftPages.Add(page)
+                    None
+                else Some page)
             |> Array.toList
         PageQuery.setAllPages metaPages
+        PageQuery.setDraftPages (draftPages |> Seq.toList)
         ScriptRunner.resetSession ()
 
         let mdFiles  = allFiles |> Array.filter (fun f -> let e = Path.GetExtension(f).ToLowerInvariant() in e = FileExtensions.Markdown || e = FileExtensions.MarkdownLong)
@@ -150,7 +166,7 @@ module ContentPipeline =
 
         if mdToEval.Length > 0 then
             Parallel.ForEach(mdToEval, fun f ->
-                try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
+                try evalResults.Add(ScriptEvaluator.evaluate f config safeData)
                 with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)) |> ignore
 
         // FSI scripts: batch evaluate in a single FSI process for performance
@@ -182,7 +198,7 @@ module ContentPipeline =
                 if scriptsToEval.IsEmpty then
                     if not config.EnableIncrementalBuild then
                         Parallel.ForEach(fsxFiles, fun f ->
-                            try evalResults.Add(ScriptEvaluator.evaluate f config globalData)
+                            try evalResults.Add(ScriptEvaluator.evaluate f config safeData)
                             with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)) |> ignore
                     Map.empty
                 else
@@ -203,21 +219,21 @@ module ContentPipeline =
                         match Map.tryFind f fsxResults with
                         | Some batchResult ->
                             match batchResult with
-                            | Ok htmlContent -> evalResults.Add(ScriptEvaluator.buildPage f config globalData text htmlContent)
+                            | Ok htmlContent -> evalResults.Add(ScriptEvaluator.buildPage f config safeData text htmlContent)
                             | Error evalErr ->
                                 eprintfn "[Zest] WARN: Script evaluation failed '%s': %s — falling back to Markdown mode" f evalErr
-                                evalResults.Add(ScriptEvaluator.evaluate f config globalData)
-                        | None -> evalResults.Add(ScriptEvaluator.evaluate f config globalData)
+                                evalResults.Add(ScriptEvaluator.evaluate f config safeData)
+                        | None -> evalResults.Add(ScriptEvaluator.evaluate f config safeData)
                 else
                     let text = fileContentCache.GetOrAdd(f, fun _ -> File.ReadAllText(f))
                     match Map.tryFind f fsxResults with
                     | Some batchResult ->
                         match batchResult with
-                        | Ok htmlContent -> evalResults.Add(ScriptEvaluator.buildPage f config globalData text htmlContent)
+                        | Ok htmlContent -> evalResults.Add(ScriptEvaluator.buildPage f config safeData text htmlContent)
                         | Error evalErr ->
                             eprintfn "[Zest] WARN: Script evaluation failed '%s': %s — falling back to Markdown mode" f evalErr
-                            evalResults.Add(ScriptEvaluator.evaluate f config globalData)
-                    | None -> evalResults.Add(ScriptEvaluator.evaluate f config globalData)
+                            evalResults.Add(ScriptEvaluator.evaluate f config safeData)
+                    | None -> evalResults.Add(ScriptEvaluator.evaluate f config safeData)
             with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
 
         Parallel.ForEach(fsxFiles, fun f -> processFsxFile f) |> ignore
@@ -233,9 +249,14 @@ module ContentPipeline =
                 if config.EnableIncrementalBuild && not (BuildCache.needsRebuildWithDeps page.SourcePath outPath) then
                     Interlocked.Increment(&localCached) |> ignore
                 else
-                    let replacements = BuildLayout.buildReplacements page config globalData
+                    let replacements = BuildLayout.buildReplacements page config safeData
                     let layoutName   = page.Layout |> Option.defaultValue config.DefaultLayout
-                    let finalHtml    = BuildLayout.applyLayout layoutName page.Content layouts replacements includes page config globalData
+                    let finalHtml    = BuildLayout.applyLayout layoutName page.Content layouts replacements safeIncludes page config safeData
+                    let formattedHtml =
+                        if config.EnableHtmlFormatting then
+                            HtmlFormatter.formatDefault finalHtml
+                        else
+                            finalHtml
                     // Record page→layout dependency so future layout changes
                     // trigger a rebuild of only the affected pages.
                     match layouts.TryFind layoutName with
@@ -244,8 +265,8 @@ module ContentPipeline =
                     | None -> ()
                     let dir = Path.GetDirectoryName(outPath)
                     if dir <> null then Directory.CreateDirectory(dir) |> ignore
-                    File.WriteAllText(outPath, finalHtml, System.Text.Encoding.UTF8)
-                    BuildCache.updateCache page.SourcePath finalHtml
+                    File.WriteAllText(outPath, formattedHtml, System.Text.Encoding.UTF8)
+                    BuildCache.updateCache page.SourcePath formattedHtml
                     Interlocked.Increment(&localProcessed) |> ignore) |> ignore
         processed <- processed + localProcessed
         cached    <- cached + localCached

@@ -11,6 +11,9 @@
     <Compile Include="Domain/ScriptContext.fs" />
     <Compile Include="Domain/ContentMeta.fs" />
 
+    <!-- Theme system -->
+    <Compile Include="Theme/ThemeResolver.fs" />
+
     <!-- ZCSS pipeline -->
     <Compile Include="Zcss/ZcssAst.fs" />
     <Compile Include="Zcss/BuiltinFunctions.fs" />
@@ -63,11 +66,14 @@
     <!-- Scripting (depends on Domain, Routing, Parsing, Template, Html) -->
     <Compile Include="Scripting/InitEngine.fs" />
     <Compile Include="Scripting/PageQuery.fs" />
+    <Compile Include="Resources/ZestPjax.fs" />
     <Compile Include="Scripting/FilterRegistry.fs" />
     <Compile Include="Scripting/ScriptDiscovery.fs" />
     <Compile Include="Scripting/ScriptRunner.fs" />
     <Compile Include="Scripting/ScriptEvaluator.fs" />
 
+    <!-- I18n locale system -->
+    <Compile Include="I18n/LocaleLoader.fs" />
     <!-- Build pipeline (depends on everything above) -->
     <Compile Include="Build/PathResolver.fs" />
     <Compile Include="Build/BuildCache.fs" />

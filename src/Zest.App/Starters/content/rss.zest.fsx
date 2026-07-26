@@ -22,7 +22,7 @@ let xe (s: string) =
      .Replace("\"", "&quot;").Replace("'", "&apos;")
 
 let data = Context.get().SiteData
-let opt k = if data.ContainsKey(k) then data.[k] else ""
+let opt k = if data.ContainsKey(k) then data.[k].GetString() else ""
 
 let siteUrl   = let u = opt "site.base_url" in if u <> "" then u else "https://example.com"
 let siteTitle = if opt "site.title" <> "" then opt "site.title" else "Zest Site"

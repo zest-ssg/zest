@@ -172,14 +172,12 @@ module DslUtilities =
     // compose with `render [ ... ]` like any other node. `dedent` strips the
     // common leading whitespace so authors may keep F# source indentation
     // without breaking the embedded language's own indentation-sensitive
-    // syntax (Markdown ATX headings, JS blocks). See MIGRATION_NOTES §3.2/§九.
+    // syntax (Markdown ATX headings, JS blocks).
 
     /// Strip the common leading whitespace from every non-blank line of a
     /// triple-quoted string. Blank lines are preserved (and trimmed) but do
     /// not count toward the minimum indent. Returns the input unchanged when
-    /// there is nothing to strip. Fixes the indentation issue noted in
-    /// MIGRATION_NOTES §3.2: `md """..."""` / `js """..."""` bodies that
-    /// inherit F# source indentation no longer fail to render.
+    /// there is nothing to strip.
     let dedent (text: string) : string =
         if String.IsNullOrEmpty text then ""
         else
@@ -213,7 +211,7 @@ module DslUtilities =
     /// Like `md`, but first strips common leading indentation via `dedent`.
     /// Use this when the triple-quoted Markdown body is indented to match the
     /// surrounding F# source (the recommended style), so ATX headings (`##`)
-    /// and fenced code blocks are recognised. Fixes MIGRATION_NOTES §3.2.
+    /// and fenced code blocks are recognised.
     let mdDedent (markdownText: string) : string =
         dedent markdownText |> Zest.Engine.Html.MarkdownEngine.toHtml
 
@@ -222,8 +220,7 @@ module DslUtilities =
     // The raw JS source is wrapped in `<script>…</script>` and emitted as-is:
     // F# does not validate JS syntax at build time (just as `md` does not
     // validate Markdown). For site-wide behaviour prefer external
-    // `assets/js/*.js` referenced via `script src` (L1). See MIGRATION_NOTES
-    // §九 L2.
+    // `assets/js/*.js` referenced via `script src` (L1).
 
     /// Embed an inline JavaScript block. Common leading indentation is
     /// stripped via `dedent`, so the triple-quoted body may follow F# source
@@ -242,7 +239,6 @@ module DslUtilities =
     // ── Data injection (L3) ─────────────────────────────────────
     // F# computes typed data; the client consumes it as JSON. Avoids the
     /// error-prone `sprintf "var x = %d" n` string-concatenation pattern.
-    // See MIGRATION_NOTES §九 L3.
 
     /// Inject F#-computed data as a JSON literal consumed by client-side JS.
     /// Emits `<script>window.NAME = JSON</script>` where JSON is produced by

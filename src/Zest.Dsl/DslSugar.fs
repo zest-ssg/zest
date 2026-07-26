@@ -232,3 +232,70 @@ module DslSugar =
         |> Array.filter (fun w -> w.Length > 0)
         |> Array.map (fun w -> w.[0].ToString().ToUpperInvariant() + (if w.Length > 1 then w.[1..] else ""))
         |> String.concat " "
+
+    // ── i18n translation lookup ────────────────────────────────
+
+    /// Translate a key using locale data from siteData.
+    /// Looks up `locale.{lang}.{key}` with fallback to any available locale.
+    /// Usage: `t "nav.home"` or `t_lang "nav.home" "zh"
+    let t (key: string) : string =
+        let ctx = Context.get ()
+        let defaultLang =
+            match ctx.SiteData.TryGetValue("site.language") with
+            | true, lang -> lang.GetString()
+            | _ -> "en"
+        // Try default language first
+        let tryKey = sprintf "locale.%s.%s" defaultLang key
+        match ctx.SiteData.TryGetValue(tryKey) with
+        | true, v -> v.GetString()
+        | _ ->
+            // Fallback: search all locale entries for this key
+            let prefix = sprintf "locale."
+            ctx.SiteData
+            |> Seq.tryPick (fun kv ->
+                if kv.Key.StartsWith(prefix) && kv.Key.EndsWith("." + key) then
+                    Some (kv.Value.GetString())
+                else None)
+            |> Option.defaultValue key
+
+    /// Translate a key with an explicit language code.
+    let t_lang (key: string) (lang: string) : string =
+        let ctx = Context.get ()
+        let tryKey = sprintf "locale.%s.%s" lang key
+        match ctx.SiteData.TryGetValue(tryKey) with
+        | true, v -> v.GetString()
+        | _ -> t key  // fallback to auto-detect
+
+    // ── pjax script injection ──────────────────────────────────
+
+    /// Inject the self-contained pjax client script.
+    /// Place in head or before closing body tag.
+    /// Usage: `pjax_script ()`
+    let pjax_script () : string =
+        """<script>
+(function(){
+function c(){return document.querySelector('main')||document.getElementById('content')||document.body}
+function load(href,push){if(!push)push=true;
+document.dispatchEvent(new CustomEvent('pjax:start',{detail:{url:href}}));
+var container=c();container.style.opacity='0.3';container.style.transition='opacity .15s';
+fetch(href,{headers:{'X-PJAX':'true'}}).then(function(r){if(!r.ok)throw Error(r.status);
+return r.text()}).then(function(html){var doc=new DOMParser().parseFromString(html,'text/html');
+var next=doc.querySelector('main')||doc.getElementById('content')||doc.body;
+var container=c();
+if(next)container.innerHTML=next.innerHTML;
+if(push)history.pushState({pjax:true,url:href},'',href);
+document.title=doc.title;
+container.style.opacity='1';
+document.dispatchEvent(new CustomEvent('pjax:end',{detail:{url:href}}));
+}).catch(function(e){var container=c();container.style.opacity='1';
+if(push)location.href=href})}
+document.addEventListener('click',function(e){var a=e.target.closest('a[href]');
+if(!a)return;var href=a.getAttribute('href');
+if(!href||href.startsWith('#')||href.startsWith('javascript:')||href.startsWith('mailto:')||href.startsWith('tel:'))return;
+if(a.host!==location.host)return;if(a.hasAttribute('download'))return;
+if(a.getAttribute('target')==='_blank')return;
+e.preventDefault();load(href,true)});
+window.addEventListener('popstate',function(e){if(e.state&&e.state.pjax)
+load(e.state.url||location.href,false)})
+})();
+</script>"""

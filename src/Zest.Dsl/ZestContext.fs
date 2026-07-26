@@ -41,7 +41,7 @@ type ZestContext(ctxFile: string) =
 
     member _.SiteData =
         root.GetProperty("siteData").EnumerateObject()
-        |> Seq.map (fun m -> m.Name, m.Value.GetString())
+        |> Seq.map (fun m -> m.Name, m.Value)
         |> dict
 
 /// Global context instance — set by ScriptRunner before evaluation

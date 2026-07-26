@@ -21,8 +21,10 @@ public static class WatchConstants
 }
 
 /// <summary>
-/// File watcher that triggers site rebuild on content changes.
-/// Filters by relevant extensions and excludes hidden/system directories.
+/// Standalone file watcher for <c>zest build --watch</c>.
+/// Monitors the content directory for changes and triggers a full site
+/// rebuild after a 300ms debounce. Filters by relevant extensions and
+/// excludes hidden/system directories.
 /// </summary>
 public static class WatchAgent
 {
@@ -38,10 +40,11 @@ public static class WatchAgent
         using var watcher = new FileSystemWatcher(contentDir, "*.*")
         {
             IncludeSubdirectories = true,
-            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.CreationTime
+            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.CreationTime,
+            InternalBufferSize = 65536 // .NET default (8 KB) overflows on large projects
         };
 
-        var debounceTimer = new System.Timers.Timer(300) { AutoReset = false };
+        using var debounceTimer = new System.Timers.Timer(300) { AutoReset = false };
         debounceTimer.Elapsed += (_, _) =>
         {
             try
@@ -49,10 +52,17 @@ public static class WatchAgent
                 var svc = new BuildService();
                 var r = svc.Execute(config);
                 BuildService.PrintResult(r, config);
+                if (r.Errors.Length > 0)
+                {
+                    foreach (var err in r.Errors)
+                        LogWriter.Error("Watch", err);
+                }
             }
             catch (Exception ex)
             {
                 LogWriter.Error("Watch", $"Rebuild failed: {ex.Message}");
+                if (ex.InnerException != null)
+                    LogWriter.Error("Watch", $"  → {ex.InnerException.Message}");
             }
         };
 
@@ -68,9 +78,23 @@ public static class WatchAgent
         watcher.Changed += OnChange;
         watcher.Created += OnChange;
         watcher.Deleted += OnChange;
-        watcher.Renamed += (_, _) => { debounceTimer.Stop(); debounceTimer.Start(); };
+        watcher.Renamed += (_, _) =>
+        {
+            debounceTimer.Stop();
+            debounceTimer.Start();
+        };
+
+        // Handle FileSystemWatcher.Error (buffer overflow, etc.)
+        watcher.Error += (_, e) =>
+        {
+            var ex = e.GetException();
+            LogWriter.Warn("Watch", $"FileSystemWatcher error: {ex.Message}. Triggering rebuild as safety measure.");
+            debounceTimer.Stop();
+            debounceTimer.Start();
+        };
 
         watcher.EnableRaisingEvents = true;
+
         var evt = new ManualResetEventSlim(false);
         Console.CancelKeyPress += (_, args) => { evt.Set(); args.Cancel = true; };
         evt.Wait();

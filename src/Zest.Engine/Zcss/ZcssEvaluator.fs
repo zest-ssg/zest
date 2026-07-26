@@ -35,7 +35,7 @@ module Evaluator =
     // Capture group includes `-` (`[\w-]*`) so hyphenated variable names like
     // `font-size` / `line-height` match as ONE token. The lookbehind excludes
     // `-` so a name preceded by `-` (e.g. the `font-size` inside the CSS
-    // custom property `--font-size`) is NOT resolved. Fixes MIGRATION_NOTES §1.10.
+    // custom property `--font-size`) is NOT resolved.
     let private bareVarRe = Regex(@"(?<![.\$a-zA-Z0-9_-])([a-zA-Z_][\w-]*)(?![\w-])", RegexOptions.Compiled)
     let private cssKeywords = set ["none"; "auto"; "inherit"; "initial"; "unset"; "normal";
                            "bold"; "italic"; "left"; "right"; "center"; "top"; "bottom";

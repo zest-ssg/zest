@@ -7,7 +7,7 @@ namespace Zest.App.Controllers;
 /// <summary>
 /// Handles `zest clean [--cache] [--output]`
 /// Clears build artifacts. By default clears both cache and output.
-///   --cache   Remove .zest-cache.toml / .zest-deps.toml (and in-process state)
+///   --cache   Remove .zest-cache.log / .zest-deps.log (and in-process state)
 ///   --output  Remove the _site output directory
 /// </summary>
 public static class CleanController
@@ -29,8 +29,10 @@ public static class CleanController
             // Include legacy .json names for migration from older Zest versions.
             BuildService.ClearCache();
             var cacheNames = new[] {
-                ".zest-cache.toml", ".zest-deps.toml",      // current format
-                ".zest-cache.json", ".zest-deps.json",      // legacy (pre-upgrade)
+                ".zest-cache.log", ".zest-deps.log",          // current format
+                ".zest-cache.toml", ".zest-deps.toml",        // legacy (v1 transitional)
+                ".zest-cache.json", ".zest-deps.json",        // legacy (pre-upgrade)
+                ".zest-cache", ".zest-deps",                  // legacy (bare files)
                 ".zcss-cache"
             };
             foreach (var name in cacheNames)

@@ -8,7 +8,7 @@ type BuildResult = {
     ProcessedPages: int
     CachedPages: int
     AssetsCopied: int
-    AssetsMinified: int
+    AssetsProcessed: int
     DurationMs: int64
     Errors: string list
 }

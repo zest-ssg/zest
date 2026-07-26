@@ -7,9 +7,8 @@ using Zest.Engine;
 namespace Zest.Infra.Services;
 
 /// <summary>
-/// Development HTTP server with live-reload via WebSocket.
-/// Monitors file changes, triggers rebuilds via F# BuildEngine,
-/// and broadcasts reload to all connected browsers.
+/// Development HTTP server with initial build, file watching, incremental
+/// rebuild, and live-reload via WebSocket + SSE fallback.
 /// </summary>
 public class DevServer : HttpServer
 {
@@ -17,30 +16,24 @@ public class DevServer : HttpServer
     private readonly BuildService _buildService = new();
     private readonly SocketHub _wsServer;
     private string? _outputDir;
-    private FileSystemWatcher? _watcher;
+    private FileWatchController? _fileWatcher;
     private long _rebuildCount;
+    private readonly object _rebuildLock = new();
 
     // SSE fallback for environments where WebSocket is blocked
     private readonly List<Stream> _sseClients = new();
     private readonly object _sseLock = new();
 
-    // Keep debounce timer as field to prevent GC from collecting it
-    private System.Timers.Timer? _debounceTimer;
-    // Prevent concurrent rebuilds
-    private readonly object _rebuildLock = new();
-    // Track whether the current change batch is CSS-only (for style injection vs full reload)
-    private bool _cssOnlyChanges = true;
-    private readonly object _changeLock = new();
-
     protected override string ServerName => "Development";
     protected override int Port => _config.DevServerPort;
 
-    public DevServer(SiteConfig config, string host = "localhost", bool openBrowser = false, bool spaFallback = false, bool dirListing = false)
+    public DevServer(SiteConfig config, string host = "localhost", bool openBrowser = false,
+        bool spaFallback = false, bool dirListing = false)
         : base(host, openBrowser)
     {
         _config = config;
         _wsServer = new SocketHub(config.LiveReloadPort);
-        _ignoredDirNames = ExcludedPaths.For(config);
+        IgnoredDirNames = ExcludedPaths.For(config);
         EnableSpaFallback = spaFallback;
         EnableDirectoryListing = dirListing;
     }
@@ -56,15 +49,14 @@ public class DevServer : HttpServer
     protected override void OnStarted()
     {
         _outputDir = GetOutputDir();
+        StartFileWatcher();
 
-        // Initial build
+        // Initial build — runs after banner is displayed (see HttpServer.Start).
         var result = _buildService.Execute(_config);
         BuildService.PrintResult(result, _config);
 
         // WebSocket server for live reload
         _wsServer.Start(Cts!);
-
-        StartFileWatcher();
     }
 
     protected override string? GetLiveReloadScript() => _wsServer.GetLiveReloadScript();
@@ -72,7 +64,6 @@ public class DevServer : HttpServer
     protected override async Task<bool> TryHandleVirtualPath(HttpListenerContext ctx, string urlPath)
     {
         if (urlPath != "/__zest_livereload_events") return false;
-
         await HandleSseConnection(ctx);
         return true;
     }
@@ -80,7 +71,6 @@ public class DevServer : HttpServer
     protected override async Task<bool> TryHandleSpecialFile(HttpListenerContext ctx, string filePath, string ext)
     {
         if (ext != FileExtensions.Zcss) return false;
-
         await ServeZcssFile(ctx, filePath);
         return true;
     }
@@ -90,10 +80,8 @@ public class DevServer : HttpServer
         Cts?.Cancel();
         Listener?.Stop();
         _wsServer.Stop();
-        _watcher?.Dispose();
-        _debounceTimer?.Dispose();
+        _fileWatcher?.Dispose();
 
-        // Close all SSE connections
         lock (_sseLock)
         {
             foreach (var s in _sseClients)
@@ -106,96 +94,28 @@ public class DevServer : HttpServer
         LogWriter.Info($"Total requests: {TotalRequests}, rebuilds: {_rebuildCount}");
     }
 
-    /// Directories whose contents should NOT trigger rebuilds.
-    /// Initialized from <see cref="ExcludedPaths.For"/> in the constructor so
-    /// the configured <c>OutputDir</c> (default <c>_site</c>) is respected.
-    private readonly HashSet<string> _ignoredDirNames;
-
     private void StartFileWatcher()
     {
-        var watchDir = Directory.GetCurrentDirectory();
-        _watcher = new(watchDir, "*.*")
-        {
-            IncludeSubdirectories = true,
-            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.CreationTime
-        };
-
-        _debounceTimer = new System.Timers.Timer(300) { AutoReset = false };
-        _debounceTimer.Elapsed += (_, _) => Rebuild();
-
-        void OnChange(object sender, FileSystemEventArgs e)
-        {
-            // Guard against null args / disposed state during shutdown.
-            // FileSystemWatcher can fire with null EventArgs in rare races, and
-            // the debounce timer may still be pending when the server stops.
-            // Fixes MIGRATION_NOTES §1.9 (NullReferenceException in OnChange).
-            if (e == null || _debounceTimer == null || _watcher == null) return;
-            if (string.IsNullOrEmpty(e.FullPath)) return;
-
-            // Skip changes in the output directory
-            if (_outputDir != null && e.FullPath.StartsWith(_outputDir, StringComparison.OrdinalIgnoreCase))
-                return;
-
-            // Check each directory component — only skip known ignore-worthy dirs
-            var parts = e.FullPath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            for (int i = 0; i < parts.Length - 1; i++)
-            {
-                var p = parts[i];
-                // Only check the LAST directory component (the file's parent dir)
-                if (i == parts.Length - 2)
-                {
-                    if (_ignoredDirNames.Contains(p))
-                        return;
-                }
-                else if (p.StartsWith('.'))
-                {
-                    // Only skip hidden directories (starting with .)
-                    return;
-                }
-            }
-
-            var ext = (e.Name != null ? Path.GetExtension(e.Name) : null)?.ToLowerInvariant() ?? "";
-            if (!WatchConstants.Extensions.Contains(ext)) return;
-
-            // Track whether this change batch is CSS-only
-            var isCss = ext is FileExtensions.Css or FileExtensions.Zcss;
-            lock (_changeLock)
-            {
-                if (!isCss) _cssOnlyChanges = false;
-            }
-
-            _debounceTimer.Stop();
-            _debounceTimer.Start();
-        }
-
-        _watcher.Changed += OnChange;
-        _watcher.Created += OnChange;
-        _watcher.Deleted += OnChange;
-        _watcher.Renamed += (_, _) => { _debounceTimer.Stop(); _debounceTimer.Start(); };
-        _watcher.EnableRaisingEvents = true;
+        _fileWatcher = new FileWatchController(
+            Directory.GetCurrentDirectory(),
+            GetOutputDir(),
+            IgnoredDirNames!,
+            cssOnly => Rebuild(cssOnly));
     }
 
-    private void Rebuild()
+    private void Rebuild(bool cssOnly)
     {
-        // Guard against rebuild firing after the server has been disposed
-        // (timer callback races during shutdown). Fixes MIGRATION_NOTES §1.9.
-        if (_buildService == null || _config == null || _wsServer == null) return;
         lock (_rebuildLock)
         {
-            // ── Engine upgrade detection ──
-            // If the Zest.Engine DLL was replaced mid-serve (e.g. dotnet tool
-            // update), clear all caches and force a full rebuild so pages are
-            // regenerated with the new engine logic.
+            // Engine upgrade detection — if Zest.Engine.dll was replaced
+            // mid-serve, clear caches and force a full rebuild.
             if (BuildCache.hasEngineChanged())
             {
                 LogWriter.WriteDim("  [Zest] Engine changed — forcing full rebuild.");
                 BuildCache.clearCache();
             }
 
-            // ── Output directory resilience ──
-            // If the output directory was deleted mid-serve (e.g. by an
-            // external tool or accidental rm), recreate it so the HTTP server
-            // doesn't return 404s for the entire site.
+            // Output directory resilience — recreate if deleted externally.
             var outDir = GetOutputDir();
             if (!Directory.Exists(outDir))
             {
@@ -203,12 +123,10 @@ public class DevServer : HttpServer
                 LogWriter.WriteDim("  [Zest] Output directory recreated.");
             }
 
-            // Reset the in-process template caches so layout/include changes
-            // are picked up immediately. The BuildCache on disk handles
-            // incremental page detection; these in-memory caches handle
-            // template conversion + Nunjucks compilation.
+            // Reset in-process template caches so layout/include changes
+            // are picked up immediately.
             try { Zest.Engine.Template.TemplateManager.clearCaches(); }
-            catch { /* non-fatal — proceed with rebuild */ }
+            catch { /* non-fatal */ }
 
             try
             {
@@ -222,14 +140,6 @@ public class DevServer : HttpServer
                 }
 
                 Interlocked.Increment(ref _rebuildCount);
-
-                // Choose broadcast type based on changed file types
-                bool cssOnly;
-                lock (_changeLock)
-                {
-                    cssOnly = _cssOnlyChanges;
-                    _cssOnlyChanges = true; // reset for next batch
-                }
 
                 if (cssOnly)
                 {
@@ -245,8 +155,9 @@ public class DevServer : HttpServer
             catch (Exception ex)
             {
                 LogWriter.Error("DevServer", $"Rebuild failed: {ex.Message}");
-                // Don't rethrow — keep the server alive so the user can fix
-                // the error and the next file-save triggers another rebuild.
+                if (ex.InnerException != null)
+                    LogWriter.Error("DevServer", $"  → {ex.InnerException.Message}");
+                // Keep server alive — next file-save triggers another rebuild.
             }
         }
     }
@@ -270,10 +181,8 @@ public class DevServer : HttpServer
         }
     }
 
-    /// <summary>
-    /// Handle an SSE (Server-Sent Events) connection for live reload.
-    /// Keeps the connection open and streams reload events.
-    /// </summary>
+    // ── SSE (Server-Sent Events) fallback ──
+
     private async Task HandleSseConnection(HttpListenerContext ctx)
     {
         var response = ctx.Response;
@@ -284,28 +193,28 @@ public class DevServer : HttpServer
         response.SendChunked = true;
 
         var stream = response.OutputStream;
-
         lock (_sseLock) _sseClients.Add(stream);
         LogWriter.VerboseLog($"SSE client connected (total: {_sseClients.Count})");
 
         try
         {
-            // Send initial comment to establish connection
             var initBytes = Encoding.UTF8.GetBytes(": connected\n\n");
             await stream.WriteAsync(initBytes);
             await stream.FlushAsync();
 
-            // Keep connection alive until cancelled
             while (Cts is { IsCancellationRequested: false })
             {
                 await Task.Delay(15_000, Cts.Token);
-                // Send keepalive comment
                 var keepalive = Encoding.UTF8.GetBytes(": keepalive\n\n");
                 await stream.WriteAsync(keepalive);
                 await stream.FlushAsync();
             }
         }
-        catch { }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            LogWriter.VerboseLog($"SSE client disconnected: {ex.Message}");
+        }
         finally
         {
             lock (_sseLock) _sseClients.Remove(stream);
@@ -313,9 +222,6 @@ public class DevServer : HttpServer
         }
     }
 
-    /// <summary>
-    /// Broadcast an SSE event to all connected SSE clients.
-    /// </summary>
     private void BroadcastSse(string jsonData)
     {
         lock (_sseLock)

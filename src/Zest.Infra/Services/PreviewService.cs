@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text;
 using Zest.Engine;
 
 #nullable enable
@@ -5,8 +7,9 @@ using Zest.Engine;
 namespace Zest.Infra.Services;
 
 /// <summary>
-/// Preview server — serves _site/ static files directly, no initial build triggered.
-/// Optionally supports file watching with auto-rebuild and live reload via WebSocket.
+/// Preview server — serves _site/ static files directly without an initial
+/// build. Optionally supports file watching with auto-rebuild and live reload
+/// via WebSocket + SSE fallback.
 /// </summary>
 public class PreviewService : HttpServer
 {
@@ -16,13 +19,14 @@ public class PreviewService : HttpServer
     private readonly bool _liveReload;
     private string? _outputDir;
     private SocketHub? _wsServer;
-    private FileSystemWatcher? _watcher;
-    private System.Timers.Timer? _debounceTimer;
+    private FileWatchController? _fileWatcher;
     private readonly BuildService _buildService = new();
     private readonly object _rebuildLock = new();
     private long _rebuildCount;
-    private bool _cssOnlyChanges = true;
-    private readonly object _changeLock = new();
+
+    // SSE fallback for environments where WebSocket is blocked
+    private readonly List<Stream> _sseClients = new();
+    private readonly object _sseLock = new();
 
     protected override string ServerName => "Preview";
     protected override int Port => _port;
@@ -32,7 +36,7 @@ public class PreviewService : HttpServer
         : base(host, openBrowser)
     {
         _config = config;
-        _ignoredDirNames = ExcludedPaths.For(config);
+        IgnoredDirNames = ExcludedPaths.For(config);
         _port = port;
         _watch = watch;
         _liveReload = liveReload;
@@ -74,84 +78,87 @@ public class PreviewService : HttpServer
         // Set up file watcher + auto-rebuild
         if (_watch)
         {
-            StartFileWatcher();
+            _fileWatcher = new FileWatchController(
+                Directory.GetCurrentDirectory(),
+                outputDir,
+                IgnoredDirNames!,
+                cssOnly => Rebuild(cssOnly));
         }
     }
 
     protected override string? GetLiveReloadScript() => _wsServer?.GetLiveReloadScript();
+
+    protected override async Task<bool> TryHandleVirtualPath(HttpListenerContext ctx, string urlPath)
+    {
+        if (urlPath != "/__zest_livereload_events" || !_liveReload) return false;
+        await HandleSseConnection(ctx);
+        return true;
+    }
+
+    protected override async Task<bool> TryHandleSpecialFile(HttpListenerContext ctx, string filePath, string ext)
+    {
+        if (ext != FileExtensions.Zcss) return false;
+
+        try
+        {
+            var css = Zest.Engine.Zcss.Processor.processFile(filePath);
+            var cssBytes = Encoding.UTF8.GetBytes(css);
+            ctx.Response.ContentType = "text/css; charset=utf-8";
+            HttpHelper.AddCorsHeaders(ctx.Response);
+            ctx.Response.ContentLength64 = cssBytes.Length;
+            await ctx.Response.OutputStream.WriteAsync(cssBytes);
+            await ctx.Response.OutputStream.FlushAsync();
+        }
+        catch (Exception ex)
+        {
+            LogWriter.Error("ZCSS", $"Failed to compile {filePath}: {ex.Message}");
+            await HttpHelper.WriteFileResponseAsync(ctx, filePath);
+        }
+        return true;
+    }
 
     public override void Shutdown()
     {
         Cts?.Cancel();
         Listener?.Stop();
         _wsServer?.Stop();
-        _watcher?.Dispose();
-        _debounceTimer?.Dispose();
+        _fileWatcher?.Dispose();
+
+        lock (_sseLock)
+        {
+            foreach (var s in _sseClients)
+            {
+                try { s.Close(); } catch { }
+            }
+            _sseClients.Clear();
+        }
 
         LogWriter.Info($"Total requests: {TotalRequests}, rebuilds: {_rebuildCount}");
     }
 
-    /// Directories whose contents should NOT trigger rebuilds.
-    /// Initialized from <see cref="ExcludedPaths.For"/> in the constructor so
-    /// the configured <c>OutputDir</c> (default <c>_site</c>) is respected.
-    private readonly HashSet<string> _ignoredDirNames;
-
-    private void StartFileWatcher()
-    {
-        var watchDir = Directory.GetCurrentDirectory();
-        _watcher = new(watchDir, "*.*")
-        {
-            IncludeSubdirectories = true,
-            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.CreationTime
-        };
-
-        _debounceTimer = new System.Timers.Timer(300) { AutoReset = false };
-        _debounceTimer.Elapsed += (_, _) => Rebuild();
-
-        void OnChange(object sender, FileSystemEventArgs e)
-        {
-            if (_outputDir != null && e.FullPath.StartsWith(_outputDir, StringComparison.OrdinalIgnoreCase))
-                return;
-
-            var parts = e.FullPath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            for (int i = 0; i < parts.Length - 1; i++)
-            {
-                var p = parts[i];
-                if (i == parts.Length - 2)
-                {
-                    if (_ignoredDirNames.Contains(p))
-                        return;
-                }
-                else if (p.StartsWith('.'))
-                {
-                    return;
-                }
-            }
-
-            var ext = Path.GetExtension(e.Name!)?.ToLowerInvariant() ?? "";
-            if (!WatchConstants.Extensions.Contains(ext)) return;
-
-            var isCss = ext is FileExtensions.Css or FileExtensions.Zcss;
-            lock (_changeLock)
-            {
-                if (!isCss) _cssOnlyChanges = false;
-            }
-
-            _debounceTimer.Stop();
-            _debounceTimer.Start();
-        }
-
-        _watcher.Changed += OnChange;
-        _watcher.Created += OnChange;
-        _watcher.Deleted += OnChange;
-        _watcher.Renamed += (_, _) => { _debounceTimer.Stop(); _debounceTimer.Start(); };
-        _watcher.EnableRaisingEvents = true;
-    }
-
-    private void Rebuild()
+    private void Rebuild(bool cssOnly)
     {
         lock (_rebuildLock)
         {
+            // Engine upgrade detection — consistent with DevServer behavior.
+            if (BuildCache.hasEngineChanged())
+            {
+                LogWriter.WriteDim("  [Zest] Engine changed — forcing full rebuild.");
+                BuildCache.clearCache();
+            }
+
+            // Output directory resilience — recreate if deleted externally.
+            var outDir = GetOutputDir();
+            if (!Directory.Exists(outDir))
+            {
+                Directory.CreateDirectory(outDir);
+                LogWriter.WriteDim("  [Zest] Output directory recreated.");
+            }
+
+            // Reset in-process template caches.
+            try { Zest.Engine.Template.TemplateManager.clearCaches(); }
+            catch { /* non-fatal */ }
+
             try
             {
                 var result = _buildService.Execute(_config);
@@ -167,23 +174,88 @@ public class PreviewService : HttpServer
 
                 if (_liveReload && _wsServer != null)
                 {
-                    bool cssOnly;
-                    lock (_changeLock)
-                    {
-                        cssOnly = _cssOnlyChanges;
-                        _cssOnlyChanges = true;
-                    }
-
                     if (cssOnly)
+                    {
                         _wsServer.BroadcastStyleUpdate();
+                        BroadcastSse("{\"type\":\"style\"}");
+                    }
                     else
+                    {
                         _wsServer.BroadcastReload();
+                        BroadcastSse("{\"type\":\"reload\"}");
+                    }
                 }
             }
             catch (Exception ex)
             {
                 LogWriter.Error("PreviewService", $"Rebuild failed: {ex.Message}");
+                if (ex.InnerException != null)
+                    LogWriter.Error("PreviewService", $"  → {ex.InnerException.Message}");
             }
+        }
+    }
+
+    // ── SSE (Server-Sent Events) fallback ──
+
+    private async Task HandleSseConnection(HttpListenerContext ctx)
+    {
+        var response = ctx.Response;
+        response.ContentType = "text/event-stream; charset=utf-8";
+        response.Headers["Cache-Control"] = "no-cache";
+        response.Headers["Connection"] = "keep-alive";
+        HttpHelper.AddCorsHeaders(response);
+        response.SendChunked = true;
+
+        var stream = response.OutputStream;
+        lock (_sseLock) _sseClients.Add(stream);
+        LogWriter.VerboseLog($"SSE client connected (total: {_sseClients.Count})");
+
+        try
+        {
+            var initBytes = Encoding.UTF8.GetBytes(": connected\n\n");
+            await stream.WriteAsync(initBytes);
+            await stream.FlushAsync();
+
+            while (Cts is { IsCancellationRequested: false })
+            {
+                await Task.Delay(15_000, Cts.Token);
+                var keepalive = Encoding.UTF8.GetBytes(": keepalive\n\n");
+                await stream.WriteAsync(keepalive);
+                await stream.FlushAsync();
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            LogWriter.VerboseLog($"SSE client disconnected: {ex.Message}");
+        }
+        finally
+        {
+            lock (_sseLock) _sseClients.Remove(stream);
+            try { stream.Close(); } catch { }
+        }
+    }
+
+    private void BroadcastSse(string jsonData)
+    {
+        lock (_sseLock)
+        {
+            if (_sseClients.Count == 0) return;
+
+            var payload = Encoding.UTF8.GetBytes($"data: {jsonData}\n\n");
+            var dead = new List<Stream>();
+
+            foreach (var s in _sseClients)
+            {
+                try
+                {
+                    s.Write(payload, 0, payload.Length);
+                    s.Flush();
+                }
+                catch { dead.Add(s); }
+            }
+
+            foreach (var s in dead) _sseClients.Remove(s);
         }
     }
 }

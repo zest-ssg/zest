@@ -1,0 +1,24 @@
+# Chinese locale for Zest starter theme
+# Usage in templates: {{ 'nav.home' | t('zh') }}
+# Usage in DSL scripts: t_lang "nav.home" "zh"
+
+[nav]
+home = "首页"
+blog = "博客"
+features = "功能"
+about = "关于"
+
+[meta]
+site_desc = "一个基于 Zest SSG 构建的快速、极简博客。"
+read_more = "阅读更多"
+min_read = "分钟阅读"
+recent_posts = "最近文章"
+no_posts = "暂无文章。"
+
+[notfound]
+title = "页面未找到"
+message = "抱歉，您要找的页面不存在。"
+back_home = "返回首页"
+
+[footer]
+built_with = "基于"

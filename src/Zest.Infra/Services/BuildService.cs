@@ -29,7 +29,7 @@ public class BuildService
     /// <summary>
     /// Clear the in-process build cache (mtime index, content hashes, and the
     /// page→dependency graph). Used by `zest clean --cache`. On-disk cache
-    /// files (.zest-cache.toml / .zest-deps.toml) are removed separately by
+    /// files (.zest-cache.log / .zest-deps.log) are removed separately by
     /// the CleanController.
     /// </summary>
     public static void ClearCache() => BuildCache.clearCache();

@@ -12,13 +12,14 @@ namespace Zest.Infra.Services;
 internal static class HttpHelper
 {
     /// <summary>
-    /// Add CORS headers for local development.
+    /// Add CORS and security headers for local development.
     /// </summary>
     public static void AddCorsHeaders(HttpListenerResponse response)
     {
         response.Headers["Access-Control-Allow-Origin"] = "*";
         response.Headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS";
         response.Headers["Access-Control-Allow-Headers"] = "Content-Type, If-None-Match";
+        response.Headers["X-Content-Type-Options"] = "nosniff";
     }
 
     /// <summary>

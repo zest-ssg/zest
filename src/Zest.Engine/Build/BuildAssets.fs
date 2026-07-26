@@ -8,8 +8,10 @@ open Zest.Engine.Zcss
 /// Asset (assets/) copying and ZCSS compilation — fully parallelized.
 module BuildAssets =
 
-    let internal copyAssets (projectRoot: string) (outputDir: string) =
-        let src = Path.Combine(projectRoot, "assets")
+    /// Copy assets from an arbitrary source directory to the output directory.
+    /// Used for theme asset copying (project assets take priority by being
+    /// copied second and overwriting).
+    let internal copyAssetsDir (src: string) (outputDir: string) =
         if not (Directory.Exists src) then 0
         else
             let dst = Path.Combine(outputDir, "assets")
@@ -40,3 +42,7 @@ module BuildAssets =
                         File.Copy(file, target, overwrite = true)
                 System.Threading.Interlocked.Increment(&n) |> ignore) |> ignore
             n
+
+    let internal copyAssets (projectRoot: string) (outputDir: string) =
+        let src = Path.Combine(projectRoot, "assets")
+        copyAssetsDir src outputDir

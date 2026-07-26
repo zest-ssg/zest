@@ -36,6 +36,9 @@ type ContentPage = {
     /// Publish date
     Date: System.DateTime option
 
+    /// Draft status — when true, the page is excluded from production builds
+    Draft: bool
+
     /// Slug derived from filename
     Slug: string
 
@@ -58,5 +61,6 @@ module ContentPage =
           Permalink = None
           Tags = []
           Date = None
+          Draft = false
           Slug = ""
           SourcePath = "" }

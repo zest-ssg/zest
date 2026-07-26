@@ -10,10 +10,12 @@ open Zest.Engine
 module PageQuery =
 
     let internal allPagesRef : ContentPage list ref = ref []
+    let internal draftPagesRef : ContentPage list ref = ref []
     let internal includesRef : IDictionary<string, string> ref = ref (dict [])
     let internal verboseRef   : bool ref = ref false
 
     let setAllPages (pages: ContentPage list) = allPagesRef := pages
+    let setDraftPages (pages: ContentPage list) = draftPagesRef := pages
     let setIncludes (includes: IDictionary<string, string>) = includesRef := includes
     let setVerbose (v: bool) = verboseRef := v
 

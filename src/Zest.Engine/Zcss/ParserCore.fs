@@ -155,8 +155,7 @@ module ParserCore =
         // Lookahead excludes hyphen (`(?![\w-])`) so that a hyphenated
         // variable name such as `font-size` matches as ONE token rather than
         // splitting at the hyphen. The lookbehind already excludes `-`/`#`,
-        // making both boundaries treat hyphen as a word char — fixes
-        // MIGRATION_NOTES §1.10 (hyphenated `let` vars not resolving).
+        // making both boundaries treat hyphen as a word char.
         Regex.Replace(v1, @"(?<![a-zA-Z0-9#-])([\w-]+)(?![\w-])", fun mm ->
             let name = mm.Groups.[1].Value
             if cssKeywords.Contains name then mm.Value

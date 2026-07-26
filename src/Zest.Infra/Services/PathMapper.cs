@@ -1,10 +1,13 @@
+using System.Web;
+
 #nullable enable
 
 namespace Zest.Infra.Services;
 
 /// <summary>
 /// Secure file path resolution with directory traversal protection.
-/// Handles directory-style URLs, query string stripping, and index.html fallback.
+/// Handles directory-style URLs, query string stripping, URL decoding,
+/// and index.html fallback.
 /// </summary>
 internal static class PathMapper
 {
@@ -21,6 +24,9 @@ internal static class PathMapper
         // Strip query string
         var qIdx = urlPath.IndexOf('?');
         if (qIdx >= 0) urlPath = urlPath[..qIdx];
+
+        // URL-decode to catch encoded path traversal (e.g. %2f → /)
+        urlPath = HttpUtility.UrlDecode(urlPath);
 
         // Strip leading slash, normalize path separators
         var relative = urlPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);

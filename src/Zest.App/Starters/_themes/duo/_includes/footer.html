@@ -1,0 +1,10 @@
+<footer class="site-footer">
+    <div class="site-footer__inner">
+        <ul class="site-footer__social">
+            {% for s in site.socials %}
+            <li><a href="{{ s.url }}" target="_blank" rel="noopener noreferrer">{{ s.label }}</a></li>
+            {% endfor %}
+        </ul>
+        <p class="site-footer__copy">{{ 'footer.built_with' | t }} <a href="https://github.com/zest-ssg/zest">Zest</a> &middot; &copy; {{ "now" | date("yyyy") }} {{ site.author | default(site.title) }}</p>
+    </div>
+</footer>

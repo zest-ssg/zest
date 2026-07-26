@@ -1,4 +1,5 @@
 using Tomlyn;
+using Tomlyn.Model;
 using Zest.Engine;
 using Zest.Infra.Services;
 
@@ -98,6 +99,8 @@ public static class ConfigLoader
             var devServerPort = FromSiteInt("dev_server_port", TomlReader.GetInt(model, "dev_server_port", config.DevServerPort));
             var liveReloadPort = FromSiteInt("live_reload_port", TomlReader.GetInt(model, "live_reload_port", config.LiveReloadPort));
             var enableMinification    = FromSiteBool("enable_minification",     TomlReader.GetBool(model, "enable_minification",     config.EnableMinification));
+            var enableAssetFormatting  = FromSiteBool("enable_asset_formatting", TomlReader.GetBool(model, "enable_asset_formatting", config.EnableAssetFormatting));
+            var enableHtmlFormatting  = FromSiteBool("enable_html_formatting",  TomlReader.GetBool(model, "enable_html_formatting",  config.EnableHtmlFormatting));
             var enableCacheBusting   = FromSiteBool("enable_cache_busting",    TomlReader.GetBool(model, "enable_cache_busting",    config.EnableCacheBusting));
             var enableParallel       = FromSiteBool("enable_parallel_build",   TomlReader.GetBool(model, "enable_parallel_build",   config.EnableParallelBuild));
             var enableIncremental    = FromSiteBool("enable_incremental_build",TomlReader.GetBool(model, "enable_incremental_build",config.EnableIncrementalBuild));
@@ -181,6 +184,83 @@ public static class ConfigLoader
             }
             IDictionary<string, Microsoft.FSharp.Collections.FSharpList<MenuItem>> menusDict = menus;
 
+            // ── Parse [theme] table (local / git / url / path sources) ──
+            // Example:
+            //   [theme]
+            //   name = "minima"
+            //   source = "git"
+            //   git = "https://github.com/zest-ssg/zest-theme-minima.git"
+            //   branch = "main"
+            var themeName = "";
+            var themeSource = "local";
+            var themeGit = "";
+            var themeBranch = "main";
+            var themeTag = "";
+            var themeUrl = "";
+            var themePath = "";
+            if (model.TryGetValue("theme", out var themeObj) && themeObj is Tomlyn.Model.TomlTable themeTbl)
+            {
+                themeName   = TomlReader.GetString(themeTbl, "name",   "");
+                themeSource = TomlReader.GetString(themeTbl, "source", "local");
+                themeGit    = TomlReader.GetString(themeTbl, "git",    "");
+                themeBranch = TomlReader.GetString(themeTbl, "branch", "main");
+                themeTag    = TomlReader.GetString(themeTbl, "tag",    "");
+                themeUrl    = TomlReader.GetString(themeTbl, "url",    "");
+                themePath   = TomlReader.GetString(themeTbl, "path",   "");
+            }
+            var themeConfig = new ThemeConfig(
+                name:   themeName,
+                source: themeSource,
+                git:    themeGit,
+                branch: themeBranch,
+                tag:    themeTag,
+                url:    themeUrl,
+                path:   themePath
+            );
+
+            // ── Parse include / exclude globs ─────────────────────
+            // Example:
+            //   include = [".domains", "tools", "library"]
+            //   exclude = ["README.md", "LICENSE", "*.config.js"]
+            Microsoft.FSharp.Collections.FSharpList<string> includeList = Microsoft.FSharp.Collections.ListModule.OfSeq(Array.Empty<string>());
+            Microsoft.FSharp.Collections.FSharpList<string> excludeList = Microsoft.FSharp.Collections.ListModule.OfSeq(Array.Empty<string>());
+            if (model.TryGetValue("include", out var incObj) && incObj is TomlArray incArr)
+                includeList = Microsoft.FSharp.Collections.ListModule.OfSeq(incArr.Select(x => x?.ToString() ?? ""));
+            if (model.TryGetValue("exclude", out var excObj) && excObj is TomlArray excArr)
+                excludeList = Microsoft.FSharp.Collections.ListModule.OfSeq(excArr.Select(x => x?.ToString() ?? ""));
+
+            // ── Parse [[defaults]]: page-level frontmatter defaults ──
+            // Example:
+            //   [[defaults]]
+            //   path = "posts/*"
+            //   [defaults.values]
+            //   layout = "post"
+            //   comments = "true"
+            var pageDefaultsList = new List<PageDefaults>();
+            if (model.TryGetValue("defaults", out var defaultsObj) && defaultsObj is TomlTableArray defaultsArr)
+            {
+                foreach (var item in defaultsArr)
+                {
+                    if (item is TomlTable defTbl)
+                    {
+                        var path = TomlReader.GetString(defTbl, "path", "");
+                        var valuesMap = new Dictionary<string, string>();
+                        if (defTbl.TryGetValue("values", out var valObj) && valObj is TomlTable valuesTbl)
+                        {
+                            foreach (var kv in valuesTbl)
+                                valuesMap[kv.Key] = kv.Value?.ToString() ?? "";
+                        }
+                        var valuesSeq = valuesMap.Select(kv =>
+                            Tuple.Create(kv.Key, kv.Value));
+                        pageDefaultsList.Add(new Zest.Engine.PageDefaults(
+                            path,
+                            Microsoft.FSharp.Collections.MapModule.OfSeq(valuesSeq)
+                        ));
+                    }
+                }
+            }
+            var pageDefaults = Microsoft.FSharp.Collections.ListModule.OfSeq(pageDefaultsList);
+
             _cachedConfig = new SiteConfig(
                 title: title,
                 baseUrl: baseUrl,
@@ -197,6 +277,8 @@ public static class ConfigLoader
                 devServerPort: devServerPort,
                 liveReloadPort: liveReloadPort,
                 enableMinification: enableMinification,
+                enableAssetFormatting: enableAssetFormatting,
+                enableHtmlFormatting: enableHtmlFormatting,
                 enableCacheBusting: enableCacheBusting,
                 siteVersion: siteVersion,
                 enableParallelBuild: enableParallel,
@@ -213,7 +295,11 @@ public static class ConfigLoader
                 compatHexo: compatHexo,
                 compatHugo: compatHugo,
                 compatEleventy: compatEleventy,
-                nunjucksCompatibility: nunjucksCompat
+                nunjucksCompatibility: nunjucksCompat,
+                theme: themeConfig,
+                include: includeList,
+                exclude: excludeList,
+                pageDefaults: pageDefaults
             );
             return _cachedConfig;
         }

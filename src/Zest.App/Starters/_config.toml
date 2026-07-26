@@ -1,4 +1,4 @@
-# Zest site configuration
+# Zest site configuration — duo-inspired starter
 [site]
 title = "My Zest Blog"
 description = "A fast, minimal blog built with Zest SSG."
@@ -6,10 +6,36 @@ url = "https://example.com"
 author = "Zest User"
 language = "en"
 
+# ── HTML formatting: pretty-print output with indentation ──
+enable_html_formatting = true
+
+# ── CSS/JS formatting: pretty-print with indentation ──
+enable_asset_formatting = true
+
 [template]
 # Native mode: .zest.fsx files are F# templates evaluated directly,
 # and .html layouts are processed by the Nunjucks engine.
 engine = "native"
 
+# ── Theme ────────────────────────────────────────────
+# The duo theme is self-contained under _themes/duo/.
+# Layouts, includes, locales, and assets are loaded from
+# the theme; project files with the same name take priority.
+[theme]
+name = "duo"
+source = "local"
+
 [build]
 output = "_site"
+
+# ── File inclusion / exclusion ──────────────────────
+# Files starting with _ or . are auto-excluded.
+# Explicitly include generated files that get a _ prefix
+# from the afterBuild step (e.g. _friends.html).
+include = ["_friends.html"]
+
+# ── Page defaults: shared frontmatter for matching files ─
+[[defaults]]
+path = "posts/*"
+[defaults.values]
+layout = "post"

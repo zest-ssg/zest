@@ -7,14 +7,14 @@
 // automatically when a route is not found.
 
 open Zest.Dsl
+open Zest.Dsl.DslSugar
 
 render [
     divC "notfound" [
         h1C "notfound__code" [ text "404" ]
-        md """
-**Sorry, the page you were looking for doesn’t exist.**
-
-[← Back to home](/)
-"""
+        pC "notfound__lead" [ text (t "notfound.message") ]
+        p [
+            aHref "/" (t "notfound.back_home")
+        ]
     ]
 ]

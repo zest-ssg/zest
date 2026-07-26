@@ -1,0 +1,24 @@
+# English locale for Zest starter theme
+# Usage in templates: {{ 'nav.home' | t }}
+# Usage in DSL scripts: t "nav.home"
+
+[nav]
+home = "Home"
+blog = "Blog"
+features = "Features"
+about = "About"
+
+[meta]
+site_desc = "A fast, minimal blog built with Zest SSG."
+read_more = "Read more"
+min_read = "min read"
+recent_posts = "Recent posts"
+no_posts = "No posts yet."
+
+[notfound]
+title = "Page not found"
+message = "Sorry, the page you were looking for does not exist."
+back_home = "Back to home"
+
+[footer]
+built_with = "Built with"

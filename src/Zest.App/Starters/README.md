@@ -5,20 +5,37 @@ template mode: pages are written in `.zest.fsx` (real F# code) and HTML
 layouts are automatically processed by the Nunjucks engine, while styles use
 ZCSS (`.zcss`).
 
+The included **Duo** theme was ported from the
+[Eleventy Duo](https://github.com/yinkakun/eleventy-duo) theme by Yinka
+and is licensed under the MIT license. The original design has been
+adapted for Zest's zero-dependency architecture: system fonts replace
+Google Fonts, the PostCSS/webpack pipeline is replaced by ZCSS, and
+Nunjucks remains the layout engine.
+
 ## Structure
 
 ```
 .
-├── _config.toml            # Site config (native template engine)
+├── _config.toml            # Site config ([theme] points to _themes/duo/)
 ├── _init.zest.fsx          # Runs before each build (injects globals)
 ├── _data/
 │   └── nav.toml            # Navigation items (auto-loaded as site.nav.items)
-├── _layouts/
-│   ├── default.html        # Base layout (Nunjucks) — header, footer, SEO, RSS
-│   └── post.html           # Article layout (Nunjucks)
-├── _includes/
-│   ├── header.html         # Site header / nav (iterates site.nav.items)
-│   └── footer.html         # Site footer
+├── _themes/
+│   └── duo/                # Self-contained duo theme
+│       ├── _theme.zest.fsx # Theme init script (runs before _init.zest.fsx)
+│       ├── _layouts/
+│       │   ├── default.html
+│       │   └── post.html
+│       ├── _includes/
+│       │   ├── header.html
+│       │   └── footer.html
+│       ├── _locales/
+│       │   ├── en.toml     # English translations
+│       │   └── zh.toml     # Chinese translations
+│       └── assets/
+│           ├── favicon.svg
+│           └── css/
+│               └── main.zcss
 ├── content/
 │   ├── index.zest.fsx      # Home page
 │   ├── about.zest.fsx      # About page
@@ -30,22 +47,41 @@ ZCSS (`.zcss`).
 │       ├── index.zest.fsx  # Blog archive
 │       ├── welcome-to-zest.zest.fsx
 │       └── building-sites-with-fsharp.zest.fsx
-└── assets/
-    ├── favicon.svg         # Site icon
-    └── css/
-        └── main.zcss       # ZCSS → compiled to main.css
 ```
 
-Out of the box this starter ships with what Jekyll's *minima* does: a
-responsive theme, site navigation/footer, an **RSS feed** (`/rss.xml`), an
-**XML sitemap** (`/sitemap.xml`) for SEO, a **custom 404 page**, Open Graph
-meta tags, and a favicon. Set `[site] url` in `_config.toml` so the feed and
-sitemap point at your real domain.
+Out of the box this starter ships with a duo-inspired responsive theme,
+site navigation and footer, an **RSS feed** (`/rss.xml`), an **XML
+sitemap** (`/sitemap.xml`) for SEO, a **custom 404 page**, Open Graph
+meta tags, and a favicon. CSS and JavaScript in the output are automatically
+minified. Set `[site] url` in `_config.toml` so the feed and sitemap
+point at your real domain.
+
+The theme includes built-in **pjax** (smooth page navigation without full
+reload) and **i18n** support via `_locales/{lang}.toml` files and a `t`
+filter. Navigation labels and footer text are translated automatically
+based on `[site].language`. The `_init.zest.fsx` script also demonstrates
+the `afterBuild` API for running post-build commands.
 
 The `features.zest.fsx` page demonstrates the new DSL capabilities: inline
 JavaScript (`js """..."""`), JSON data injection (`jsonBlock`), new semantic
 components (`breadcrumb`/`tagBadges`/`progressBar`/`icon`), and syntax sugar
 (`intersperse`/`pluralize`/`titleize`/`mdDedent`).
+
+## Theme system
+
+The **Duo** theme lives under `_themes/duo/`. Zest resolves themes from
+four sources:
+
+| Source | Config | Example |
+|--------|--------|---------|
+| `local` | `name = "duo"`, `source = "local"` | `_themes/duo/` |
+| `git` | `source = "git"`, `git = "https://..."` | Clones to `.zest/themes/` |
+| `url` | `source = "url"`, `url = "https://..."` | Downloads ZIP |
+| `path` | `source = "path"`, `path = "/abs/path"` | Any local path |
+
+Theme files act as **fallbacks** — project files with the same name
+always take priority. To customise a layout, copy it from
+`_themes/duo/_layouts/` to your project's `_layouts/` and edit.
 
 ## Commands
 

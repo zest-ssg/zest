@@ -14,8 +14,7 @@ module BuildData =
     /// Recursively convert Tomlyn container objects to plain .NET types so they
     /// are directly iterable/traversable in Nunjucks and F# scripts. In Tomlyn
     /// 0.17 scalars are already native (`string`/`int64`/`double`/`bool`), so
-    /// only `TomlTable`/`TomlArray`/`TomlTableArray` need unwrapping. Fixes
-    /// MIGRATION_NOTES §1.2/§1.3 (TOML arrays/tables lost when injected).
+    /// only `TomlTable`/`TomlArray`/`TomlTableArray` need unwrapping.
     let rec private tomlToNative (v: obj) : obj =
         match v with
         | :? TomlTable as t ->

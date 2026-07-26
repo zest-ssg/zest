@@ -15,6 +15,34 @@ type TaxonomyConfig = {
     Plural: string   // plural,   e.g. "tags"
 }
 
+/// Page defaults: set frontmatter defaults for files matching a glob pattern.
+/// Example: path = "posts/*", values = { layout: "post", comments: "true" }
+type PageDefaults = {
+    /// Glob pattern to match (e.g., "posts/*", "*.md")
+    Path: string
+    /// Default frontmatter key/value pairs
+    Values: Map<string, string>
+}
+
+/// Theme configuration from the [theme] table in _config.toml.
+/// Controls which theme to load and from where.
+type ThemeConfig = {
+    /// Theme directory name (e.g. "minima").
+    Name: string
+    /// Source type: "local" (default), "git", "url", or "path".
+    Source: string
+    /// Git repository URL (source = "git").
+    Git: string
+    /// Git branch to checkout (source = "git", default "main").
+    Branch: string
+    /// Git tag to checkout (source = "git", overrides branch).
+    Tag: string
+    /// URL to a ZIP archive of the theme (source = "url").
+    Url: string
+    /// Local filesystem path to the theme (source = "path").
+    Path: string
+}
+
 /// <summary>
 /// Site configuration loaded from _config.toml (or defaults).
 /// </summary>
@@ -38,6 +66,8 @@ type SiteConfig = {
     DevServerPort: int
     LiveReloadPort: int
     EnableMinification: bool
+    EnableAssetFormatting: bool
+    EnableHtmlFormatting: bool
     EnableCacheBusting: bool
     SiteVersion: string
     // Performance
@@ -67,6 +97,20 @@ type SiteConfig = {
     // ── Nunjucks compatibility mode ──
     /// "strict" = match official Nunjucks exactly; "zest" = Zest extensions enabled.
     NunjucksCompatibility: string
+    // ── Theme ──
+    /// Theme configuration from the [theme] table.
+    Theme: ThemeConfig
+    // ── File inclusion / exclusion ──
+    /// Glob patterns for files to explicitly include (even if excluded by
+    /// the default _-prefix / .-prefix rules). Example: [".domains", "tools/*"]
+    Include: string list
+    /// Glob patterns for files to explicitly exclude from the content pipeline.
+    /// Example: ["README.md", "LICENSE", "node_modules/*"]
+    Exclude: string list
+    // ── Page defaults ──
+    /// Default frontmatter overrides applied to files matching glob patterns.
+    /// Lower-index entries have higher priority (first match wins).
+    PageDefaults: PageDefaults list
 }
 with
     /// Create a copy with a different dev server port.
@@ -101,6 +145,8 @@ module SiteConfigDefaults =
           DevServerPort = 8080
           LiveReloadPort = 35729
           EnableMinification = false
+          EnableAssetFormatting = false
+          EnableHtmlFormatting = false
           EnableCacheBusting = false
           SiteVersion = "1.0"
           EnableParallelBuild = true
@@ -119,4 +165,11 @@ module SiteConfigDefaults =
           CompatHugo = false
           CompatEleventy = false
           // "zest" mode enables Zest's extended filters/macros on top of Nunjucks.
-          NunjucksCompatibility = "zest" }
+          NunjucksCompatibility = "zest"
+          // Theme defaults to empty — no theme loaded unless explicitly configured.
+          Theme = { Name = ""; Source = "local"; Git = ""; Branch = "main"; Tag = ""; Url = ""; Path = "" }
+          // Include / exclude — empty by default
+          Include = []
+          Exclude = []
+          // Page defaults — empty by default
+          PageDefaults = [] }

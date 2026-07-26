@@ -288,7 +288,7 @@ module private NunjucksImpl =
     /// Split a filter chain on top-level `|` pipes, respecting quotes and
     /// nested parentheses/brackets so that a `|` inside a filter argument
     /// (e.g. `date(x | default('y'))`) is NOT treated as a chain separator.
-    /// Also skips `||` (logical or). Fixes MIGRATION_NOTES §1.4.
+    /// Also skips `||` (logical or).
     let private splitTopLevelPipes (s: string) : string list =
         let res = ResizeArray<string>()
         let sb = StringBuilder()
@@ -347,8 +347,6 @@ module private NunjucksImpl =
     // The LHS is delegated to evalOr (which descends through arithmetic etc.);
     // each RHS segment is a filter. Filter args are split on top-level commas
     // and evaluated via `evalExpr`, so `filter(x | subfilter(y))` resolves.
-    // Fixes MIGRATION_NOTES §1.4 (pipe inside filter args) and §1.7
-    // (arithmetic + nested pipes evaluating to 0).
     and evalPipe (text: string) ctx : obj =
         let parts = splitTopLevelPipes text
         if parts.Length <= 1 then evalOr text ctx else
@@ -599,7 +597,7 @@ module private NunjucksImpl =
         // Numeric filters
         // `int` parses via `float` first so decimal strings like "1.245"
         // truncate to 1 instead of failing to 0. Matches Nunjucks `int`
-        // semantics (truncate toward zero). Fixes MIGRATION_NOTES §1.5.
+        // semantics (truncate toward zero).
         | "int" -> box(try int (float s) with _ -> 0)
         | "float" -> box(try float s with _ -> 0.0)
         | "abs" -> box(abs (try float s with _ -> 0.0))

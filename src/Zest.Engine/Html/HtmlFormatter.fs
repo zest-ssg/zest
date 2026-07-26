@@ -88,6 +88,14 @@ module HtmlFormatter =
         "link"; "meta"; "param"; "source"; "track"; "wbr"
     ]
 
+    /// Inline (phrasing) elements that should not increase indentation
+    /// depth. Their text content stays on the same line as the tag.
+    let private inlineTags = set [
+        "a"; "abbr"; "b"; "bdi"; "bdo"; "cite"; "code"; "data"; "dfn"
+        "em"; "i"; "kbd"; "mark"; "q"; "rp"; "rt"; "ruby"; "s"; "samp"
+        "small"; "span"; "strong"; "sub"; "sup"; "time"; "title"; "u"; "var"
+    ]
+
     let private optionalClosingTags = set [
         "li"; "p"; "dt"; "dd"; "rt"; "rp"; "optgroup"; "option"
         "colgroup"; "thead"; "tbody"; "tfoot"; "tr"; "th"; "td"
@@ -231,22 +239,42 @@ module HtmlFormatter =
         let mutable inScript = false
         let mutable inStyle = false
         let mutable inTextarea = false
+        // Depth of inline element nesting. When > 0, text and whitespace
+        // flow inline without newlines or indentation.
+        let mutable inlineDepth = 0
+        // True when we are inside an inline text flow at block level —
+        // subsequent text / inline tags continue on the same line.
+        let mutable pendingInline = false
 
         let tagRegex = Regex(
-            @"(<!--.*?-->|<!DOCTYPE[^>]*>|</?[a-zA-Z][a-zA-Z0-9\-]*[^>]*/?>|[^<]+)",
+            @"(<!--.*?-->|<!DOCTYPE[^>]*>|<\?[^?]*\?>|</?[a-zA-Z][a-zA-Z0-9\-]*[^>]*/?>|[^<]+)",
             RegexOptions.Singleline)
 
         let matches = tagRegex.Matches(html)
         for m in matches do
             let token = m.Value
-            if String.IsNullOrWhiteSpace(token) && not inPre && not inScript && not inStyle && not inTextarea then
-                () // skip whitespace-only tokens outside special elements
+            if String.IsNullOrWhiteSpace(token) && not inScript && not inStyle && not inTextarea then
+                if inlineDepth > 0 then
+                    // Collapse whitespace to a single space inside inline flow.
+                    sb.Append(' ') |> ignore
+                else
+                    () // skip whitespace-only tokens outside special elements
             elif token.StartsWith("<!--") then
+                inlineDepth <- 0
+                pendingInline <- false
                 sb.AppendLine() |> ignore
                 sb.Append(String.replicate depth indent) |> ignore
                 sb.Append(token) |> ignore
                 sb.AppendLine() |> ignore
             elif token.StartsWith("<!DOCTYPE") then
+                inlineDepth <- 0
+                pendingInline <- false
+                sb.Append(token.Trim()) |> ignore
+                sb.AppendLine() |> ignore
+            elif token.StartsWith("<?") then
+                // XML processing instruction — output as-is.
+                inlineDepth <- 0
+                pendingInline <- false
                 sb.Append(token.Trim()) |> ignore
                 sb.AppendLine() |> ignore
             elif token.StartsWith("</") then
@@ -255,16 +283,27 @@ module HtmlFormatter =
                 elif tagName = "script" then inScript <- false
                 elif tagName = "style" then inStyle <- false
                 elif tagName = "textarea" then inTextarea <- false
-                if not (token.EndsWith("/>")) then
-                    if depth > 0 then depth <- depth - 1
-                sb.AppendLine() |> ignore
-                sb.Append(String.replicate depth indent) |> ignore
-                sb.Append(token.Trim()) |> ignore
+                if inlineTags.Contains tagName then
+                    // Inline closing tag — stay on the same line, don't change block depth.
+                    if inlineDepth > 0 then inlineDepth <- inlineDepth - 1
+                    sb.Append(token.Trim()) |> ignore
+                else
+                    inlineDepth <- 0
+                    pendingInline <- false
+                    if not (token.EndsWith("/>")) then
+                        if depth > 0 then depth <- depth - 1
+                    sb.AppendLine() |> ignore
+                    sb.Append(String.replicate depth indent) |> ignore
+                    sb.Append(token.Trim()) |> ignore
             elif token.StartsWith("<") && token.EndsWith("/>") then
-                // Self-closing tag
+                // Self-closing tag — add trailing newline so the next
+                // token starts on a fresh line regardless of its type.
+                inlineDepth <- 0
+                pendingInline <- false
                 sb.AppendLine() |> ignore
                 sb.Append(String.replicate depth indent) |> ignore
                 sb.Append(token.Trim()) |> ignore
+                sb.AppendLine() |> ignore
             elif token.StartsWith("<") then
                 // Opening tag
                 let trimmed = token.Trim()
@@ -287,32 +326,89 @@ module HtmlFormatter =
                     elif closingTag = "script" then inScript <- false
                     elif closingTag = "style" then inStyle <- false
                     elif closingTag = "textarea" then inTextarea <- false
-                    if depth > 0 then depth <- depth - 1
-                    sb.AppendLine() |> ignore
-                    sb.Append(String.replicate depth indent) |> ignore
-                    sb.Append(trimmed) |> ignore
+                    if inlineTags.Contains closingTag then
+                        if inlineDepth > 0 then inlineDepth <- inlineDepth - 1
+                        sb.Append(trimmed) |> ignore
+                    else
+                        inlineDepth <- 0
+                        pendingInline <- false
+                        if depth > 0 then depth <- depth - 1
+                        sb.AppendLine() |> ignore
+                        sb.Append(String.replicate depth indent) |> ignore
+                        sb.Append(trimmed) |> ignore
                 else
-                    // In pre/script/style/textarea, don't indent
-                    if inPre || inScript || inStyle || inTextarea then
+                    // In script/style/textarea, preserve child content verbatim.
+                    // In <pre>, only text content is preserved; child tags
+                    // are formatted normally so they get proper indentation.
+                    let isPreserveOpening =
+                        tagName = "pre" || tagName = "script"
+                        || tagName = "style" || tagName = "textarea"
+                    if (inScript || inStyle || inTextarea) && not isPreserveOpening then
+                        sb.Append(trimmed) |> ignore
+                    elif inlineTags.Contains tagName then
+                        // Inline element. If already in an inline flow,
+                        // continue on the same line; otherwise start one.
+                        // Inside <pre>, stay inline with the parent tag.
+                        if inlineDepth = 0 then
+                            if inPre then
+                                () // stay on the same line — <pre> content must not be disturbed
+                            elif pendingInline then
+                                sb.Append(' ') |> ignore
+                            else
+                                if sb.Length > 0 && sb.[sb.Length - 1] <> '\n' then
+                                    sb.AppendLine() |> ignore
+                                sb.Append(String.replicate depth indent) |> ignore
+                        inlineDepth <- inlineDepth + 1
+                        sb.Append(trimmed) |> ignore
+                    else
+                        inlineDepth <- 0
+                        pendingInline <- false
+                        sb.AppendLine() |> ignore
+                        sb.Append(String.replicate depth indent) |> ignore
+                        sb.Append(trimmed) |> ignore
+                        // Trailing newline so children start on a fresh line.
+                        // Skip for <pre> — its content must stay inline.
+                        if tagName <> "pre" then
+                            sb.AppendLine() |> ignore
+                    if not isVoid && not (inlineTags.Contains tagName) then
+                        depth <- depth + 1
+            elif inPre || inScript || inStyle || inTextarea then
+                // Text inside preserved blocks. <pre> keeps its original
+                // formatting; <script>/<style> content is re-indented to
+                // match the current nesting depth.
+                if inPre then
+                    sb.Append(token) |> ignore
+                else
+                    let normalized = token.Replace("\r\n", "\n")
+                    let mutable firstLine = true
+                    for line in normalized.Split('\n') do
+                        let trimmed = line.Trim()
+                        if trimmed.Length > 0 then
+                            if not firstLine then sb.AppendLine() |> ignore
+                            sb.Append(String.replicate depth indent) |> ignore
+                            sb.Append(trimmed) |> ignore
+                            firstLine <- false
+                    if not firstLine then sb.AppendLine() |> ignore
+            else
+                // Text content — inline when inside an inline element,
+                // otherwise flows inline with preceding text/inline tags.
+                let trimmed = token.Trim()
+                if trimmed.Length > 0 then
+                    if inlineDepth > 0 then
+                        sb.Append(trimmed) |> ignore
+                    elif pendingInline then
+                        sb.Append(' ') |> ignore
                         sb.Append(trimmed) |> ignore
                     else
                         sb.AppendLine() |> ignore
                         sb.Append(String.replicate depth indent) |> ignore
                         sb.Append(trimmed) |> ignore
-                    if not isVoid then
-                        depth <- depth + 1
-            elif inPre || inScript || inStyle || inTextarea then
-                // Text inside preserved blocks
-                sb.Append(token) |> ignore
-            else
-                // Text content
-                let trimmed = token.Trim()
-                if trimmed.Length > 0 then
-                    sb.Append(trimmed) |> ignore
+                        pendingInline <- true
 
-        let result = sb.ToString().TrimStart()
-        // Normalize multiple blank lines
-        Regex.Replace(result, @"\n{3,}", "\n\n")
+        let result = sb.ToString().TrimStart().Replace("\r\n", "\n")
+        // Collapse consecutive blank lines
+        let collapsed = Regex.Replace(result, @"\n{2,}", "\n")
+        collapsed
 
     /// Format HTML with default options (2-space indent).
     let formatDefault (html: string) : string =
@@ -338,6 +434,18 @@ module HtmlFormatter =
     /// unnecessary semicolons and trailing zeros.
     let minifyCss (css: string) : string =
         let mutable result = css
+
+        // Protect data URIs and content property values from aggressive minification
+        let protectedBlocks = ResizeArray<string>()
+        let mutable idx = 0
+        let protectPattern = Regex(
+            @"url\([^)]*\)|""[^""]*""|'[^']*'",
+            RegexOptions.Compiled)
+        result <- protectPattern.Replace(result, fun m ->
+            let key = sprintf "\x00CSSPROTECT%d\x00" idx
+            protectedBlocks.Add(m.Value)
+            idx <- idx + 1
+            key)
 
         // Remove comments: /* ... */
         result <- Regex.Replace(result, @"/\*.*?\*/", "", RegexOptions.Singleline)
@@ -367,11 +475,17 @@ module HtmlFormatter =
         // Remove last semicolon before closing brace: ;} → }
         result <- Regex.Replace(result, @";}", "}")
 
-        // Remove leading/trailing whitespace from CSS custom property values where safe
+        // Remove leading/trailing whitespace
         result <- Regex.Replace(result, @"\s*;\s*$", "")
 
+        // Restore protected blocks before value-sensitive transforms
+        if idx > 0 then
+            for i = 0 to idx - 1 do
+                result <- result.Replace(sprintf "\x00CSSPROTECT%d\x00" i, protectedBlocks.[i])
+
         // Remove units from 0 values (0px → 0, 0em → 0, etc.)
-        result <- Regex.Replace(result, @"(?<=\b)0(px|em|rem|%|vh|vw|vmin|vmax|ch|ex|cm|mm|in|pt|pc|deg|rad|grad|turn|s|ms)\b", "0")
+        // Only outside quoted/protected strings — we already restored them above.
+        result <- Regex.Replace(result, @"(?<!\w)(0)(px|em|rem|%|vh|vw|vmin|vmax|ch|ex|cm|mm|in|pt|pc|deg|rad|grad|turn|s|ms)\b", "$1")
 
         // Shorten hex colors: #ff0000 → #f00, #aabbcc → #abc
         result <- Regex.Replace(result, @"#([0-9a-fA-F])\1([0-9a-fA-F])\2([0-9a-fA-F])\3\b", "#$1$2$3")
@@ -422,6 +536,8 @@ module HtmlFormatter =
                     sb.Append(cleaned.Substring(i, endBrace - i + 1).Trim()) |> ignore
                     sb.AppendLine() |> ignore
                     depth <- depth + 1
+                    // Pre-indent for the first nested rule inside @media.
+                    sb.Append(String.replicate depth indent) |> ignore
                     i <- endBrace + 1
                 else
                     sb.Append(c) |> ignore
@@ -434,9 +550,14 @@ module HtmlFormatter =
                 sb.Append(" {") |> ignore
                 sb.AppendLine() |> ignore
                 depth <- depth + 1
+                // Pre-indent so the first declaration gets proper spacing.
+                sb.Append(String.replicate depth indent) |> ignore
                 i <- i + 1
             elif c = '}' then
                 if depth > 0 then depth <- depth - 1
+                // Trim trailing indent left over from the last ;
+                while sb.Length > 0 && sb.[sb.Length - 1] = ' ' do
+                    sb.Remove(sb.Length - 1, 1) |> ignore
                 sb.AppendLine() |> ignore
                 sb.Append(String.replicate depth indent) |> ignore
                 sb.Append('}') |> ignore
@@ -458,7 +579,15 @@ module HtmlFormatter =
                 sb.Append(c) |> ignore
                 i <- i + 1
 
-        Regex.Replace(sb.ToString().Trim(), @"\n{3,}", "\n\n")
+        let result = sb.ToString().Trim().Replace("\r\n", "\n")
+        // Ensure first content after { on a new line is indented.
+        // Only applies when there is zero whitespace between \n and the content.
+        // If there is already whitespace (e.g. from a nested rule at depth > 1),
+        // the existing indentation is preserved.
+        let indentStr = String.replicate indentSize " "
+        let result = Regex.Replace(result, @"\{(\r?\n)([^\s\n\r\}])",
+            "{$1" + indentStr + "$2")
+        Regex.Replace(result, @"\n{2,}", "\n")
 
     // ================================================================
     // JavaScript Minification & Formatting
@@ -624,7 +753,7 @@ module HtmlFormatter =
 
             prevChar <- c
 
-        Regex.Replace(sb.ToString().Trim(), @"\n{3,}", "\n\n")
+        Regex.Replace(sb.ToString().Trim().Replace("\r\n", "\n"), @"\n{2,}", "\n")
 
     /// Combined CSS+JS minification convenience function.
     /// Detects content type based on heuristics (script tags, function keywords, etc.)

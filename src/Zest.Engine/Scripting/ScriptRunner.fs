@@ -46,9 +46,14 @@ module ScriptRunner =
             let desc = match p.Data.TryGetValue("description") with true, v -> v.ToString() | _ -> ""
             {| url=p.Url; title=p.Title; date=date; slug=p.Slug; description=desc; tags=p.Tags |}
         let siteData =
-            !PageQuery.globalDataRef
-            |> Seq.map (fun kv -> kv.Key, kv.Value |> Option.ofObj |> Option.map (fun v -> v.ToString()) |> Option.defaultValue "")
-            |> dict
+            let nodeDict = System.Collections.Generic.Dictionary<string, System.Text.Json.Nodes.JsonNode>()
+            for kv in !PageQuery.globalDataRef do
+                let node =
+                    match Option.ofObj kv.Value with
+                    | Some v -> System.Text.Json.JsonSerializer.SerializeToNode(v)
+                    | None -> System.Text.Json.JsonSerializer.SerializeToNode("")
+                nodeDict.[kv.Key] <- node
+            nodeDict
         let payload = {|
             pages   = !PageQuery.allPagesRef |> List.map pageToObj
             includes = !PageQuery.includesRef |> Seq.map (fun kv -> kv.Key, kv.Value) |> dict
@@ -65,7 +70,6 @@ module ScriptRunner =
         // Explicitly reference Zest.Engine.dll from the same isolated dir.
         // Zest.Dsl calls Zest.Engine.Html.MarkdownEngine (via `md`/`mdDedent`),
         // so FSI needs the assembly loaded — copying it alongside isn't enough.
-        // Fixes MIGRATION_NOTES §1.1 (FS0074 on `md`).
         let engineDllPath = Path.Combine(Path.GetDirectoryName(dllPath), "Zest.Engine.dll")
         if File.Exists(engineDllPath) then
             sb.AppendLine("#r @\"" + engineDllPath + "\"") |> ignore

@@ -17,6 +17,28 @@ module ScriptEvaluator =
     // ── Static compiled Regex (allocated once) ──────────────────────
     let private headingPattern = Regex(@"^#\s+(.+)$", RegexOptions.Compiled ||| RegexOptions.Multiline)
 
+    // ── Page defaults helper ───────────────────────────────────────
+    /// Apply config.PageDefaults to a ContentMeta. First matching
+    /// pattern wins (lower-index entries have higher priority).
+    let private applyPageDefaults (config: SiteConfig) (filePath: string) (meta: ContentMeta) : ContentMeta =
+        if List.isEmpty config.PageDefaults then meta
+        else
+            let fileName = Path.GetFileName(filePath)
+            let relPath = Path.GetRelativePath(Directory.GetCurrentDirectory(), filePath).Replace('\\', '/')
+            match config.PageDefaults
+                  |> List.tryFind (fun def ->
+                      let pattern = def.Path
+                      pattern = fileName
+                      || pattern = relPath
+                      || (pattern.StartsWith("*.") && fileName.EndsWith(pattern.Substring(1), StringComparison.OrdinalIgnoreCase))
+                      || (pattern.EndsWith("/*") && relPath.StartsWith(pattern.TrimEnd('/').TrimEnd('*')))) with
+            | Some def ->
+                let mutable m = meta
+                for kv in def.Values do
+                    m <- MetaParser.applyDefault m kv.Key kv.Value
+                m
+            | None -> meta
+
     // ── Nunjucks context caching (built once per build, shared across all pages) ──
     let mutable private cachedNunjucksSiteContext : (string * obj)[] option = None
     let mutable private cachedNunjucksGlobalDataHash = 0
@@ -152,6 +174,7 @@ module ScriptEvaluator =
             let contentDir = resolveContentDir config
             let relPath, rawSlug = computeSlug filePath contentDir
             let meta, bodyText = MetaParser.parse ext text
+            let meta = applyPageDefaults config filePath meta
             let slug = PermalinkRouter.slugify rawSlug
             let title =
                 meta.Title
@@ -176,6 +199,7 @@ module ScriptEvaluator =
                     Slug       = slug
                     Tags       = meta.Tags
                     Date       = meta.Date
+                    Draft      = meta.Draft
                     Data       = d :> IDictionary<string, obj> }
         with ex ->
             eprintfn "[Zest] WARN: extractMeta failed for '%s': %s" filePath ex.Message
@@ -204,6 +228,7 @@ module ScriptEvaluator =
             let contentDir = resolveContentDir config
             let relPath, rawSlug = computeSlug filePath contentDir
             let meta, _ = MetaParser.parse ext text
+            let meta = applyPageDefaults config filePath meta
             let slug = PermalinkRouter.slugify rawSlug
             let mergedData = Dictionary<string, obj>()
             for kv in globalData do mergedData.[kv.Key] <- kv.Value
@@ -224,6 +249,7 @@ module ScriptEvaluator =
                     Permalink = meta.Permalink
                     Tags = meta.Tags
                     Date = meta.Date
+                    Draft = meta.Draft
                     Slug = slug }
         with ex ->
             Error(sprintf "Failed to build page '%s': %s" filePath ex.Message)
@@ -242,6 +268,7 @@ module ScriptEvaluator =
 
             let relPath, rawSlug = computeSlug filePath contentDir
             let meta, bodyText = MetaParser.parse ext text
+            let meta = applyPageDefaults config filePath meta
             let slug = PermalinkRouter.slugify rawSlug
 
             let isScript = ScriptRunner.isPageScript ext text
@@ -273,6 +300,7 @@ module ScriptEvaluator =
                             Permalink    = finalPermalink
                             Tags         = meta.Tags
                             Date         = meta.Date
+                            Draft        = meta.Draft
                             Slug         = slug }
                 | Error evalErr ->
                     eprintfn "[Zest] WARN: Script evaluation failed '%s': %s — falling back to Markdown mode" filePath evalErr
@@ -305,6 +333,7 @@ module ScriptEvaluator =
                             Permalink    = meta.Permalink
                             Tags         = meta.Tags
                             Date         = meta.Date
+                            Draft        = meta.Draft
                             Slug         = slug }
 
             else
@@ -340,6 +369,7 @@ module ScriptEvaluator =
                         Permalink    = meta.Permalink
                         Tags         = meta.Tags
                         Date         = meta.Date
+                        Draft        = meta.Draft
                         Slug         = slug }
 
         with ex ->

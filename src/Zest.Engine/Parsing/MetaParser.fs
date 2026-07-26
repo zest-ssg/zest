@@ -47,7 +47,7 @@ module MetaParser =
         | "tags" | "tag" | "categories" ->
             // Split on commas, semicolons OR whitespace so all of these work:
             // `@tags hugo, terminal` / `@tags hugo terminal` /
-            // `@tags ["hugo", "terminal"]`. Fixes MIGRATION_NOTES §3.3.
+            // `@tags ["hugo", "terminal"].
             let tags =
                 System.Text.RegularExpressions.Regex.Split(v.Trim('[', ']'), @"[,;\s]+")
                 |> Array.map (fun t -> t.Trim().Trim('"', '\''))
@@ -289,6 +289,27 @@ module MetaParser =
 
     let parseHtmlComments (text: string) : ContentMeta * string =
         parseHtmlCommentsWithLines (normalizeLines text)
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    //  Page defaults application
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    /// Apply a single default key/value to a ContentMeta.
+    /// Only sets fields that are not already present (defaults don't override).
+    let applyDefault (meta: ContentMeta) (key: string) (value: string) : ContentMeta =
+        match key.ToLowerInvariant() with
+        | "layout" when meta.Layout.IsNone    -> { meta with Layout      = Some value }
+        | "title" when meta.Title.IsNone       -> { meta with Title       = Some value }
+        | "permalink" when meta.Permalink.IsNone -> { meta with Permalink = Some value }
+        | "description" when meta.Description.IsNone -> { meta with Description = Some value }
+        | "author" when meta.Author.IsNone     -> { meta with Author      = Some value }
+        | "template" when meta.Template.IsNone -> { meta with Template    = Some value }
+        | "collection" when meta.Collection.IsNone -> { meta with Collection = Some value }
+        | "date" when meta.Date.IsNone ->
+            match DateTime.TryParse value with
+            | true, dt -> { meta with Date = Some dt }
+            | _ -> meta
+        | _ -> { meta with Extra = meta.Extra |> Map.add key value }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     //  Unified entry point

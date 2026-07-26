@@ -14,6 +14,7 @@ module Dsl =
 
     let text s = htmlEncode s
     let raw  s = s
+    let empty = ""
 
     let attr k v = sprintf "%s=\"%s\"" k (htmlEncode v)
 

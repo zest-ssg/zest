@@ -4,6 +4,7 @@
 
 open Zest.Dsl
 open Zest.Dsl.DslCollections
+open Zest.Dsl.DslSugar
 
 let posts =
     site_pages ()
@@ -12,7 +13,7 @@ let posts =
 
 let postList =
     if posts.Length = 0 then
-        p [ text "No posts yet — add one in content/posts/." ]
+        p [ text (t "meta.no_posts") ]
     else
         ulC "post-list" [
             for p in posts ->
@@ -24,9 +25,11 @@ let postList =
         ]
 
 render [
-    sectionC "posts" [
-        h1 [ text "Blog" ]
-        p [ text "Thoughts on F#, static sites, and building fast." ]
-        postList
+    h1 [ text (t "nav.blog") ]
+    p [
+        mdDedent """
+            Thoughts on F#, static sites, and building fast.
+        """
     ]
+    postList
 ]

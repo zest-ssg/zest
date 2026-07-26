@@ -69,7 +69,7 @@ module DslCollections =
     /// Look up a site data value by key.
     let site_data key =
         match (get ()).SiteData.TryGetValue(key) with
-        | true, v -> v
+        | true, v -> v.ToString()
         | _ -> ""
 
     /// Look up site data values under a prefix (e.g. "social.twitter").

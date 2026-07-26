@@ -67,6 +67,7 @@
        (which lives in Zest.Engine/Template). -->
   <ItemGroup>
     <None Remove="Starters\**\*" />
+    <!-- Root config / init -->
     <EmbeddedResource Include="Starters\_config.toml">
       <LogicalName>Zest.App.Starters._config.toml</LogicalName>
     </EmbeddedResource>
@@ -76,29 +77,44 @@
     <EmbeddedResource Include="Starters\README.md">
       <LogicalName>Zest.App.Starters.README.md</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_layouts\default.html">
-      <LogicalName>Zest.App.Starters._layouts\default.html</LogicalName>
+    <!-- Site data -->
+    <EmbeddedResource Include="Starters\_data\nav.toml">
+      <LogicalName>Zest.App.Starters._data\nav.toml</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_layouts\post.html">
-      <LogicalName>Zest.App.Starters._layouts\post.html</LogicalName>
+    <!-- Theme: Duo (self-contained under _themes/duo/) -->
+    <EmbeddedResource Include="Starters\_themes\duo\_theme.zest.fsx">
+      <LogicalName>Zest.App.Starters._themes\duo\_theme.zest.fsx</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_includes\header.html">
-      <LogicalName>Zest.App.Starters._includes\header.html</LogicalName>
+    <EmbeddedResource Include="Starters\_themes\duo\_layouts\default.html">
+      <LogicalName>Zest.App.Starters._themes\duo\_layouts\default.html</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_includes\footer.html">
-      <LogicalName>Zest.App.Starters._includes\footer.html</LogicalName>
+    <EmbeddedResource Include="Starters\_themes\duo\_layouts\post.html">
+      <LogicalName>Zest.App.Starters._themes\duo\_layouts\post.html</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Starters\assets\css\main.zcss">
-      <LogicalName>Zest.App.Starters.assets\css\main.zcss</LogicalName>
+    <EmbeddedResource Include="Starters\_themes\duo\_includes\header.html">
+      <LogicalName>Zest.App.Starters._themes\duo\_includes\header.html</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Starters\assets\favicon.svg">
-      <LogicalName>Zest.App.Starters.assets\favicon.svg</LogicalName>
+    <EmbeddedResource Include="Starters\_themes\duo\_includes\footer.html">
+      <LogicalName>Zest.App.Starters._themes\duo\_includes\footer.html</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="Starters\_themes\duo\_locales\en.toml">
+      <LogicalName>Zest.App.Starters._themes\duo\_locales\en.toml</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\_themes\duo\_locales\zh.toml">
+      <LogicalName>Zest.App.Starters._themes\duo\_locales\zh.toml</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\_themes\duo\assets\css\main.zcss">
+      <LogicalName>Zest.App.Starters._themes\duo\assets\css\main.zcss</LogicalName>
+    </EmbeddedResource>
+    <!-- Content pages -->
     <EmbeddedResource Include="Starters\content\index.zest.fsx">
       <LogicalName>Zest.App.Starters.content\index.zest.fsx</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="Starters\content\about.zest.fsx">
       <LogicalName>Zest.App.Starters.content\about.zest.fsx</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\content\features.zest.fsx">
+      <LogicalName>Zest.App.Starters.content\features.zest.fsx</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="Starters\content\rss.zest.fsx">
       <LogicalName>Zest.App.Starters.content\rss.zest.fsx</LogicalName>
@@ -112,11 +128,11 @@
     <EmbeddedResource Include="Starters\content\posts\index.zest.fsx">
       <LogicalName>Zest.App.Starters.content\posts\index.zest.fsx</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Starters\content\posts\welcome-to-zest.zest.fsx">
-      <LogicalName>Zest.App.Starters.content\posts\welcome-to-zest.zest.fsx</LogicalName>
+    <EmbeddedResource Include="Starters\content\posts\welcome-to-zest.md">
+      <LogicalName>Zest.App.Starters.content\posts\welcome-to-zest.md</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Starters\content\posts\building-sites-with-fsharp.zest.fsx">
-      <LogicalName>Zest.App.Starters.content\posts\building-sites-with-fsharp.zest.fsx</LogicalName>
+    <EmbeddedResource Include="Starters\content\posts\building-sites-with-fsharp.md">
+      <LogicalName>Zest.App.Starters.content\posts\building-sites-with-fsharp.md</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

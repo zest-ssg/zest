@@ -214,6 +214,10 @@ module LayoutEngine =
                         // because buildNestedContext overwrites with the last value.
                         for kv in globalData do
                             pairs.Add("site." + kv.Key, kv.Value)
+                        // Expose raw global data keys (e.g. pjaxScript) for
+                        // direct template access without site. prefix.
+                        for kv in globalData do
+                            pairs.Add(kv.Key, kv.Value)
 
                         pairs.Add("pages", box (PageQuery.getPagesForNunjucks () |> Array.map box))
                         pairs.Add("tags", box (PageQuery.getTagsForNunjucks ()))

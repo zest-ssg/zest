@@ -2,7 +2,9 @@ namespace Zest.Engine.Scripting
 
 open System
 open System.Collections.Generic
+open System.Text.RegularExpressions
 open Zest.Engine.Template
+open Zest.Engine.Resources
 
 /// Centralised Nunjucks custom filter registration for Zest.
 /// Used by both content rendering and layout rendering paths.
@@ -20,10 +22,17 @@ module FilterRegistry =
     let private strictMode = ref false
 
     /// Set the init-script-declared filter specs. Called once per build
-    /// after _init.zest.fsx executes.
+    /// after _init.zest.fsx executes. Clears any previously accumulated filters.
     let setInitFilters (filters: IDictionary<string, string>) =
         initFilters.Clear()
         for kv in filters do initFilters.[kv.Key] <- kv.Value
+
+    /// Add init filter specs without clearing existing ones. Used for
+    /// theme _theme.zest.fsx filters so user _init.zest.fsx can extend them.
+    let addInitFilters (filters: IDictionary<string, string>) =
+        for kv in filters do
+            if not (initFilters.ContainsKey kv.Key) then
+                initFilters.[kv.Key] <- kv.Value
 
     /// Toggle strict Nunjucks compatibility mode. When true, Zest-specific
     /// extension filters are not registered on engine instances.
@@ -40,6 +49,22 @@ module FilterRegistry =
         match engine.Render template ctx with
         | Ok s -> box s
         | Error _ -> value  // fall back to original on error
+
+    /// Locale data reference — set by BuildEngine before build.
+    /// Key: language code → (key → translation)
+    let private localeRef : IDictionary<string, IDictionary<string, string>> ref =
+        ref (dict [] :> IDictionary<string, IDictionary<string, string>>)
+
+    /// Default language for t() filter fallback.
+    let private defaultLangRef : string ref = ref "en"
+
+    /// <summary>
+    /// Set locale data and default language for the t() translation filter.
+    /// Called by BuildEngine after loading locale files.
+    /// </summary>
+    let setLocales (locales: IDictionary<string, IDictionary<string, string>>) (defaultLang: string) =
+        localeRef := locales
+        defaultLangRef := defaultLang
 
     /// Register all Zest-specific filters on the given template engine,
     /// including any init-script-declared filters.
@@ -139,3 +164,108 @@ module FilterRegistry =
             let spec = kv.Value
             let name = kv.Key
             engine.RegisterFilter name (fun value _args -> applyPipeline engine spec value)
+
+        // ── readingTime: estimate reading time in minutes ──────
+        // Chinese: ~350 chars/min, English: ~220 words/min.
+        // Strips HTML tags and code blocks before counting.
+        engine.RegisterFilter "readingTime" (fun value _args ->
+            if isNull value then box 1
+            else
+                let text = value.ToString()
+                let stripped =
+                    Regex(@"<pre[^>]*>[\s\S]*?<\/pre>").Replace(text, "")
+                    |> fun s -> Regex(@"<code[^>]*>[\s\S]*?<\/code>").Replace(s, "")
+                    |> fun s -> Regex(@"<[^>]+>").Replace(s, " ")
+                    |> fun s -> s.Trim()
+                let chineseChars = Regex(@"[\u4e00-\u9fff\u3400-\u4dbf]").Matches(stripped).Count
+                let englishWords = Regex(@"[a-zA-Z0-9]+").Matches(stripped).Count
+                let minutes = Math.Max(1, Math.Ceiling(float chineseChars / 350. + float englishWords / 220.) |> int)
+                box minutes)
+
+        // ── t: i18n translation key lookup ─────────────────────
+        // Usage: {{ 'nav.home' | t }} or {{ 'nav.home' | t('zh') }}
+        engine.RegisterFilter "t" (fun value args ->
+            let key = if isNull value then "" else value.ToString()
+            let lang = if args.Length > 0 then args.[0] else !defaultLangRef
+            let locales = !localeRef
+            if locales.Count = 0 then key
+            else
+                match locales.TryGetValue lang with
+                | true, dict ->
+                    match dict.TryGetValue key with
+                    | true, v -> v
+                    | _ -> key
+                | _ -> key)
+
+        // ── prevPost: get previous (older) page from a collection ─
+        // Usage: {{ collection.posts | prevPost(page.url) }}
+        engine.RegisterFilter "prevPost" (fun value args ->
+            let currentUrl = if args.Length > 0 then args.[0] else ""
+            match value with
+            | :? System.Collections.IEnumerable as ie ->
+                let arr = ie |> Seq.cast<obj> |> Array.ofSeq
+                let idx = arr |> Array.tryFindIndex (fun p ->
+                    match p with
+                    | :? IDictionary<string, obj> as d ->
+                        match d.TryGetValue "url" with
+                        | true, (:? string as u) -> u = currentUrl
+                        | _ -> false
+                    | _ -> false)
+                match idx with
+                | Some i when i + 1 < arr.Length -> box arr.[i + 1]
+                | _ -> box null
+            | _ -> box null)
+
+        // ── nextPost: get next (newer) page from a collection ───
+        // Usage: {{ collection.posts | nextPost(page.url) }}
+        engine.RegisterFilter "nextPost" (fun value args ->
+            let currentUrl = if args.Length > 0 then args.[0] else ""
+            match value with
+            | :? System.Collections.IEnumerable as ie ->
+                let arr = ie |> Seq.cast<obj> |> Array.ofSeq
+                let idx = arr |> Array.tryFindIndex (fun p ->
+                    match p with
+                    | :? IDictionary<string, obj> as d ->
+                        match d.TryGetValue "url" with
+                        | true, (:? string as u) -> u = currentUrl
+                        | _ -> false
+                    | _ -> false)
+                match idx with
+                | Some i when i > 0 -> box arr.[i - 1]
+                | _ -> box null
+            | _ -> box null)
+
+        // ── searchIndex: generate JSON search index for static search ──
+        // Usage: {{ pages | searchIndex | dump }}
+        // Output: JSON array of { url, title, tags, description, date }
+        engine.RegisterFilter "searchIndex" (fun value _args ->
+            let pages =
+                match value with
+                | :? System.Collections.IEnumerable as ie ->
+                    ie |> Seq.cast<obj> |> Array.ofSeq
+                | _ -> PageQuery.getPagesForNunjucks () |> Array.map box
+            let index =
+                pages
+                |> Array.choose (fun p ->
+                    match p with
+                    | :? IDictionary<string, obj> as d ->
+                        let url = match d.TryGetValue "url" with true, (:? string as u) -> u | _ -> ""
+                        let title = match d.TryGetValue "title" with true, (:? string as t) -> t | _ -> ""
+                        let tags = match d.TryGetValue "tags" with true, (:? (string[]) as ts) -> String.Join(",", ts) | _ -> ""
+                        let desc = match d.TryGetValue "description" with true, (:? string as ds) -> ds | _ -> ""
+                        let date = match d.TryGetValue "date" with true, (:? string as dt) -> dt | _ -> ""
+                        if String.IsNullOrEmpty url then None
+                        else
+                            Some (sprintf """{"url":"%s","title":"%s","tags":"%s","description":"%s","date":"%s"}"""
+                                    (url.Replace("\"", "\\\""))
+                                    (title.Replace("\"", "\\\""))
+                                    (tags.Replace("\"", "\\\""))
+                                    (desc.Replace("\"", "\\\""))
+                                    (date.Replace("\"", "\\\"")))
+                    | _ -> None)
+            box (sprintf "[%s]" (String.Join(",", index))))
+
+        // ── pjaxScript: inject self-contained pjax JS ─────────
+        // Usage: {{ pjaxScript | safe }} in head or before </body>
+        engine.RegisterFilter "pjaxScript" (fun _value _args ->
+            box ZestPjax.script)
