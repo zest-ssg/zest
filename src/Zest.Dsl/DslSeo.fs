@@ -14,7 +14,8 @@ module DslSeo =
     let private ae (v: string) = htmlEncode v
 
     /// Generate a complete set of <meta> tags for SEO.
-    /// Includes charset, viewport, title, description, keywords, author, and robots.
+    /// Includes charset, viewport, title, description, canonical link,
+    /// application name, and image.
     let meta_tags (title: string) (description: string) (url: string) (image: string) (siteName: string) =
         [
             yield sprintf """<meta charset="utf-8" />"""
@@ -37,6 +38,9 @@ module DslSeo =
             yield sprintf """<meta property="og:type" content="%s" />""" (ae ogType)
             if not (String.IsNullOrEmpty image) then
                 yield sprintf """<meta property="og:image" content="%s" />""" (ae image)
+                // Crawlers that only fetch over TLS read the secure_url variant.
+                if image.StartsWith("https://", StringComparison.OrdinalIgnoreCase) then
+                    yield sprintf """<meta property="og:image:secure_url" content="%s" />""" (ae image)
                 yield sprintf """<meta property="og:image:alt" content="%s" />""" (ae title)
         ]
 
@@ -76,8 +80,11 @@ module DslSeo =
 
     /// Generate a complete Open Graph tag block as a single HTML string.
     /// `openGraphHtml(page)` matches the spec's page-object signature.
+    /// Emits og:site_name when the page carries a site name.
     let openGraphHtml (page: SeoPage) =
-        open_graph_tags page.title page.description page.url page.image page.``type``
+        [ yield! open_graph_tags page.title page.description page.url page.image page.``type``
+          if not (String.IsNullOrEmpty page.siteName) then
+              yield sprintf """<meta property="og:site_name" content="%s" />""" (ae page.siteName) ]
         |> String.concat "\n"
 
     /// Generate a complete Twitter Card tag block as a single HTML string.

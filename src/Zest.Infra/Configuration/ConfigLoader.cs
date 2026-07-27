@@ -84,7 +84,9 @@ public static class ConfigLoader
                 buildTbl != null ? TomlReader.GetString(buildTbl, key, fallback) : fallback;
 
             var title = FromSiteStr("title", TomlReader.GetString(model, "title", config.Title));
-            var baseUrl = FromSiteStr("url", TomlReader.GetString(model, "base_url", config.BaseUrl));
+            // Trim the trailing slash so template concatenation with absolute
+            // page paths ({{ site.base_url }}{{ page.url }}) cannot produce "//".
+            var baseUrl = FromSiteStr("url", TomlReader.GetString(model, "base_url", config.BaseUrl)).TrimEnd('/');
             var description = FromSiteStr("description", TomlReader.GetString(model, "description", config.Description));
             var defaultLayout = FromSiteStr("default_layout", TomlReader.GetString(model, "default_layout", config.DefaultLayout));
             var permalinkFormat = FromSiteStr("permalink_format", TomlReader.GetString(model, "permalink_format", config.PermalinkFormat));

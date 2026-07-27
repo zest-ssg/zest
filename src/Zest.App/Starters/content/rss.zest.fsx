@@ -24,7 +24,8 @@ let xe (s: string) =
 let data = Context.get().SiteData
 let opt k = if data.ContainsKey(k) then data.[k].GetString() else ""
 
-let siteUrl   = let u = opt "site.base_url" in if u <> "" then u else "https://example.com"
+// TrimEnd guards against a trailing slash in site.base_url producing "//" links.
+let siteUrl   = (let u = opt "site.base_url" in if u <> "" then u else "https://example.com").TrimEnd('/')
 let siteTitle = if opt "site.title" <> "" then opt "site.title" else "Zest Site"
 let siteDesc  = opt "site.description"
 

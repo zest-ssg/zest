@@ -22,6 +22,8 @@ module DslXml =
     /// Generate an RSS 2.0 feed XML string from a list of pages.
     /// Each page is an anonymous record with: url, title, date, description, tags.
     let rss_xml (siteTitle: string) (siteUrl: string) (siteDescription: string) (pages: {| url: string; title: string; date: string; description: string |}[]) =
+        // Normalize once so joining with absolute paths cannot produce "//".
+        let siteUrl = siteUrl.TrimEnd('/')
         let sb = StringBuilder()
         sb.AppendLine("""<?xml version="1.0" encoding="utf-8"?>""") |> ignore
         sb.AppendLine("""<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">""") |> ignore
@@ -54,6 +56,8 @@ module DslXml =
 
     /// Generate an Atom 1.0 feed XML string.
     let atom_xml (siteTitle: string) (siteUrl: string) (siteDescription: string) (authorName: string) (pages: {| url: string; title: string; date: string; description: string |}[]) =
+        // Normalize once so joining with absolute paths cannot produce "//".
+        let siteUrl = siteUrl.TrimEnd('/')
         let sb = StringBuilder()
         sb.AppendLine("""<?xml version="1.0" encoding="utf-8"?>""") |> ignore
         sb.AppendLine("""<feed xmlns="http://www.w3.org/2005/Atom">""") |> ignore
@@ -86,6 +90,8 @@ module DslXml =
 
     /// Generate a Sitemap XML string.
     let sitemap_xml (baseUrl: string) (pages: {| url: string; date: string; priority: float |}[]) =
+        // Normalize once so joining with absolute paths cannot produce "//".
+        let baseUrl = baseUrl.TrimEnd('/')
         let sb = StringBuilder()
         sb.AppendLine("""<?xml version="1.0" encoding="utf-8"?>""") |> ignore
         sb.AppendLine("""<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">""") |> ignore
