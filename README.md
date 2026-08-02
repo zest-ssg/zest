@@ -79,11 +79,6 @@ let measure = 44r
 ]
 ```
 
-ZCSS is a small SCSS-like preprocessor: variables, nesting, comma-grouped
-selectors, color functions (`darken()`, `lighten()`), and `r` as a shorthand
-for `rem` — compiled to plain CSS by the engine itself. Rule bodies use
-F#-style `[ ]` blocks.
-
 ### Data
 
 `_init.zest.fsx` runs before every build and injects global data:
