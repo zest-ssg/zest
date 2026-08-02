@@ -2,6 +2,7 @@ namespace Zest.Engine.Scripting
 
 open System
 open System.Collections.Generic
+open System.Collections.Concurrent
 open System.IO
 open System.Diagnostics
 open System.Security.Cryptography
@@ -23,7 +24,7 @@ module ScriptRunner =
         Timestamp: DateTime
     }
 
-    let private scriptCache = Dictionary<string, CacheEntry>()
+    let private scriptCache = ConcurrentDictionary<string, CacheEntry>()
     let mutable private cacheEnabled = true
 
     let setCacheEnabled (enabled: bool) = cacheEnabled <- enabled
@@ -160,10 +161,12 @@ module ScriptRunner =
     // ── Context file path (per-build, shared) ─────────────────────────────
 
     let mutable private ctxFilePath = ""
+    let private ctxLock = obj()
 
     let resetSession () =
-        ctxFilePath <- Path.Combine(Path.GetTempPath(), sprintf "zest-ctx-%s.json" (Guid.NewGuid().ToString("N")))
-        writeContextFile ctxFilePath
+        lock ctxLock (fun () ->
+            ctxFilePath <- Path.Combine(Path.GetTempPath(), sprintf "zest-ctx-%s.json" (Guid.NewGuid().ToString("N")))
+            writeContextFile ctxFilePath)
 
     // ── isPageScript: detect whether a file uses the Zest DSL render pipeline.
     //   .zest.fsx always returns true (the extension guarantees it).
@@ -264,9 +267,9 @@ module ScriptRunner =
     let evaluatePageScript (scriptText: string) : Result<string, string> =
         try
             let hash = computeHash scriptText
-            if cacheEnabled && scriptCache.ContainsKey(hash) then
-                scriptCache.[hash].Result
-            else
+            match scriptCache.TryGetValue(hash) with
+            | true, e when cacheEnabled -> e.Result
+            | _ ->
                 if String.IsNullOrEmpty ctxFilePath || not (File.Exists ctxFilePath) then
                     resetSession ()
 
