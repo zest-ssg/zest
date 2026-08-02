@@ -1,12 +1,10 @@
 <footer class="site-footer">
-    <div class="site-footer__inner">
-        {% if site.socials %}
-        <ul class="site-footer__social">
-            {% for s in site.socials %}
-            <li><a href="{{ s.url }}" target="_blank" rel="noopener noreferrer" {% if s.icon %}class="social-{{ s.icon }}"{% endif %}>{{ s.label }}</a></li>
-            {% endfor %}
-        </ul>
-        {% endif %}
-        <p class="site-footer__copy">{{ 'footer.built_with' | t }} <a href="https://github.com/zest-ssg/zest">Zest</a> &middot; &copy; {{ "now" | date("yyyy") }} {{ site.author | default(site.title) }}</p>
-    </div>
+  <div class="container site-footer__inner">
+    <p class="site-footer__copy">{{ 'footer.built_with' | t }}</p>
+    <ul class="site-footer__socials">
+      <li><a href="https://github.com/zest-ssg" rel="me">GitHub</a></li>
+      <li><a href="https://x.com/zest_ssg" rel="me">X</a></li>
+      <li><a href="/rss.xml" rel="me">RSS</a></li>
+    </ul>
+  </div>
 </footer>

@@ -28,6 +28,7 @@ Thumbs.db
 docs/
 site/
 themes/
+tests/
 
 # NuGet packages
 packages/

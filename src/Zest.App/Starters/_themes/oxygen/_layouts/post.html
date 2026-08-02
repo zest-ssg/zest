@@ -1,66 +1,34 @@
 <!DOCTYPE html>
 <html lang="{{ site.language }}">
 <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#0074d9" />
-    <title>{{ page.title }} — {{ site.title }}</title>
-    <meta name="description" content="{{ page.description | default(site.description) }}" />
-    <link rel="stylesheet" href="/assets/css/main.css" />
-    <link rel="alternate" type="application/rss+xml" title="{{ site.title }}" href="/rss.xml" />
-    <link rel="canonical" href="{{ site.base_url }}{{ page.url }}" />
-    <meta property="og:type" content="article" />
-    <meta property="og:site_name" content="{{ site.title }}" />
-    <meta property="og:title" content="{{ page.title }}" />
-    <meta property="og:description" content="{{ page.description | default(site.description) }}" />
-    <meta property="og:url" content="{{ site.base_url }}{{ page.url }}" />
-    <meta property="article:published_time" content="{{ page.date }}" />
-    {% if page.image %}<meta property="og:image" content="{{ page.image }}" />{% endif %}
-    <meta name="twitter:card" content="{% if page.image %}summary_large_image{% else %}summary{% endif %}" />
-    {% if page.image %}<meta name="twitter:image" content="{{ page.image }}" />{% endif %}
-    {{ pjaxScript | safe }}
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if page.title %}{{ page.title }} · {{ site.title }}{% else %}{{ site.title }}{% endif %}</title>
+  <meta name="description" content="{% if page.description %}{{ page.description }}{% else %}{{ site.description }}{% endif %}">
+  <meta name="theme-color" content="#3c6a5a">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="{{ page.title }}">
+  <meta property="og:description" content="{{ page.description }}">
+  <meta name="twitter:card" content="summary">
+  <link rel="stylesheet" href="/assets/css/main.css">
 </head>
 <body>
-    <a href="#main-content" class="skip-link">{{ 'a11y.skip_to_content' | t }}</a>
-    <div class="layout-wrapper">
-        {{ include header.html }}
-        <main class="site-main" id="main-content">
-            <div class="container">
-                <article class="post">
-                    <header class="post__header">
-                        <h1 class="post__title">{{ page.title }}</h1>
-                        <div class="post__meta">
-                            {% if page.date %}<time datetime="{{ page.date }}">{{ page.date | date("MMMM d, yyyy") }}</time>{% endif %}
-                            {% if page.tags %}
-                            <span class="post__tags">
-                                {% for tag in page.tags %}
-                                <a href="/tags/{{ tag | slug }}/" class="post__tag">#{{ tag }}</a>
-                                {% endfor %}
-                            </span>
-                            {% endif %}
-                            <span class="post__reading-time">
-                                &middot; {{ content | readingTime }} {{ 'meta.min_read' | t }}
-                            </span>
-                        </div>
-                    </header>
-                    <div class="post__body">
-                        {{ content | safe }}
-                    </div>
-                    <footer class="post__pagination">
-                        {% assign posts = collections.posts %}
-                        {% assign prev = posts | prevPost(page.url) %}
-                        {% assign next = posts | nextPost(page.url) %}
-                        {% if prev %}
-                        <a href="{{ prev.url }}" class="post__prev" rel="prev">&larr; {{ prev.title }}</a>
-                        {% endif %}
-                        {% if next %}
-                        <a href="{{ next.url }}" class="post__next" rel="next">{{ next.title }} &rarr;</a>
-                        {% endif %}
-                    </footer>
-                </article>
-            </div>
-        </main>
-        {{ include footer.html }}
-    </div>
+  {{ include header.html }}
+  <main class="site-main" id="main">
+    <article class="post">
+      <header class="post__header">
+        <h1 class="post__title">{{ page.title }}</h1>
+        <p class="post__meta">
+          {% if page.date %}<time datetime="{{ page.date | date('yyyy-MM-dd') }}">{{ page.date | date('MMMM d, yyyy') }}</time>{% endif %}
+          {% if page.tags %}<span class="post__tags">{% for tag in page.tags %}<a class="tag" href="/tags/{{ tag }}/">{{ tag }}</a>{% endfor %}</span>{% endif %}
+          <span class="post__reading">{{ content | readingTime }} {{ 'meta.min_read' | t }}</span>
+        </p>
+      </header>
+      <div class="post__body">
+        {{ content | safe }}
+      </div>
+    </article>
+  </main>
+  {{ include footer.html }}
 </body>
 </html>

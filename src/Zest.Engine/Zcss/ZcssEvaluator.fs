@@ -117,6 +117,8 @@ module Evaluator =
     // to resolve `p.primary`-style references; safe because it requires a
     // dot, which CSS values never contain outside of numbers/units.
     let private bareDottedRe = Regex(@"(?<![\w$.])(([a-zA-Z_]\w*)\.([\w-]+))", RegexOptions.Compiled)
+    let private numericPat   = Regex(@"^[\d.]+(px|rem|em|%|vh|vw|r|p|v|s|ms)?$", RegexOptions.Compiled)
+    let private stripUnitPat = Regex(@"[a-z%]+", RegexOptions.Compiled)
 
     /// Resolve $name references (SCSS-style) - e.g. $primary → #3b82f6.
     /// Also resolves namespaced $alias.name references.
@@ -200,10 +202,10 @@ module Evaluator =
             let left  = cm.Groups.[1].Value.Trim().Trim('"', '\'')
             let op    = cm.Groups.[2].Value
             let right = cm.Groups.[3].Value.Trim().Trim('"', '\'')
-            let isNumeric (s: string) = Regex.IsMatch(s, @"^[\d.]+(px|rem|em|%|vh|vw|r|p|v|s|ms)?$")
+            let isNumeric (s: string) = numericPat.IsMatch(s)
             if isNumeric left && isNumeric right then
-                let leftNum  = Regex.Replace(left,  @"[a-z%]+", "") |> float
-                let rightNum = Regex.Replace(right, @"[a-z%]+", "") |> float
+                let leftNum  = stripUnitPat.Replace(left,  "") |> float
+                let rightNum = stripUnitPat.Replace(right, "") |> float
                 match op with
                 | "==" -> leftNum =  rightNum
                 | "!=" | "<>" -> leftNum <> rightNum
@@ -256,11 +258,13 @@ module Evaluator =
 
     /// Resolve a complete value: variables → let/in → if/then/else → math → color → builtin → shorthand
     let resolveValue (value: string) (vars: IDictionary<string, string>) : string =
-        let initial = resolvePipes value
-        let mutable result = initial
-        for _ in 0..3 do
+        let mutable result = resolvePipes value
+        let mutable stable = false
+        // Repeated passes resolve chained references (e.g. `$a` → `$b` → `#fff`);
+        // stop as soon as a pass produces no change instead of always doing 4.
+        while not stable do
             let next = resolvePass result vars
-            if next = result then result <- next
+            if next = result then stable <- true
             else result <- next
         result
 

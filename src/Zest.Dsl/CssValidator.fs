@@ -5,7 +5,7 @@ open System.Collections.Generic
 open System.Text.RegularExpressions
 
 // ============================================================
-// CssValidator — CSS 语法验证与诊断
+// CssValidator — CSS Syntax Validation and Diagnostics
 // ============================================================
 // Provides bracket matching, property-value format checks,
 // dangerous rule detection, and colour value validation

@@ -58,10 +58,16 @@ module Modules =
     ///
     /// Example: `@use "zest:palette" as p;` with palette defining
     /// `$primary: #3b82f6` registers `p.primary` → `#3b82f6`.
-    let buildNamespacedVars (baseDir: string option) (directives: UseDirective list) : IDictionary<string, string> =
+    let buildNamespacedVars (baseDir: string option) (directives: UseDirective list) (contents: Map<string, string> option) : IDictionary<string, string> =
         let result = Dictionary<string, string>()
         for d in directives do
-            match getModuleSource baseDir d.Path with
+            // Reuse already-loaded import contents when supplied (avoids
+            // double file I/O and re-parsing of @use'd modules).
+            let srcOpt =
+                match contents with
+                | Some m -> (match Map.tryFind d.Path m with Some c -> Some c | None -> getModuleSource baseDir d.Path)
+                | None -> getModuleSource baseDir d.Path
+            match srcOpt with
             | Some src ->
                 let vars = extractVars src
                 for kv in vars do

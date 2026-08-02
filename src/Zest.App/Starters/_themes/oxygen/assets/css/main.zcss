@@ -1,738 +1,860 @@
-// main.zcss — Oxygen theme for Zest SSG
+// ─────────────────────────────────────────────────────────────
+// oxygen — a calm, editorial theme for Zest.
 //
-// A refined, minimal blog theme with clean typography, restrained
-// colour palette, and a fixed reading measure. Built on the ZCSS
-// preprocessor with design tokens, dark-mode support, and
-// accessibility-first styling.
-//
-// ── Authoring conventions ───────────────────────────
-// 1. Root font-size must be absolute (px or %), never `r`/`rem`,
-//    since rem is relative to this very value.
-// 2. Design tokens declared with `let` for consistency.
-// 3. The `r` unit shorthand compiles to `rem`.
-
-// ── Design tokens ──────────────────────────────────
-let accent       = #0074d9          // primary accent (links, code)
-let accentHover  = darken(accent, 12%)
-let heading      = rgb(6, 6, 6)     // headings / titles
-let bodyColor    = rgb(41, 41, 41)  // body text
-let muted        = rgb(117, 117, 117) // secondary/meta text
-let borderColor  = rgb(230, 230, 230) // hairline borders
-let codeBg       = rgba(41, 41, 41, 0.05)  // inline code background
-let bg           = #fffffe          // page background
-let measure      = 48.75r           // max-width reading column (780px)
-
-// ── Dark mode tokens ───────────────────────────────
-let darkBg       = #0d1117
-let darkBody     = rgb(201, 209, 217)
-let darkHeading  = #f0f6fc
-let darkMuted    = rgb(139, 148, 158)
-let darkBorder   = rgb(48, 54, 61)
-let darkCodeBg   = rgba(139, 148, 158, 0.12)
-
-// ── Reset & base ───────────────────────────────────
-*, *:before, *:after [
-  box-sizing = border-box
-  margin = 0
-  padding = 0
-]
-
-html [
-  font-size = 17px
-  scroll-behavior = smooth
-  height = 100%
-  -webkit-text-size-adjust = 100%
-  overflow-y = scroll
-  scrollbar-gutter = stable
-]
-
-body [
-  margin = 0
-  background-color = bg
-  color = bodyColor
-  font-family = -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif
-  font-size = 1.125r
-  line-height = 1.54
-  text-rendering = optimizeLegibility
-  -webkit-font-smoothing = antialiased
-  min-height = 100%
-  transition = background-color 200ms ease, color 200ms ease
-]
-
-// ── Skip link (accessibility) ──────────────────────
-.skip-link [
-  position = absolute
-  top = -100px
-  left = 0
-  padding = 0.5r 1r
-  background = accent
-  color = #fff
-  text-decoration = none
-  z-index = 1000
-  border-radius = 0 0 4px 0
-  &:focus [
-    top = 0
-  ]
-]
-
-// ── Layout: sticky footer via flex ─────────────────
-.layout-wrapper [
-  display = flex
-  flex-direction = column
-  min-height = 100vh
-]
-
-// ── Fixed-width container ──────────────────────────
-.container [
-  width = 100%
-  max-width = measure
-  margin = 0 auto
-  padding = 0 1r
-]
-
-// ── Header ─────────────────────────────────────────
-.site-header [
-  margin-bottom = 4r
-]
-
-.site-header__inner [
-  display = flex
-  flex-wrap = wrap
-  justify-content = space-between
-  align-items = center
-  max-width = measure
-  margin = 0 auto
-  padding = 1r
-  border-bottom = 1px solid borderColor
-]
-
-.site-header__brand [
-  font-size = 1.2r
-  font-weight = 600
-  color = heading
-  text-decoration = none
-  &:hover [
-    color = accent
-  ]
-]
-
-.site-nav [
-  display = flex
-  gap = 2r
-  list-style = none
-  font-size = 1r
-  padding = 0.5r 0
-]
-
-.site-nav__link [
-  color = muted
-  text-decoration = none
-  padding = 0.25r 0.5r
-  border-radius = 3px
-  transition = color 150ms ease, background-color 150ms ease
-  &:hover [
-    color = heading
-  ]
-  &[aria-current="page"] [
-    color = accent
-    font-weight = 500
-  ]
-]
-
-// ── Main ───────────────────────────────────────────
-.site-main [
-  flex = 1
-  padding-bottom = 4r
-]
-
-// ── Links ──────────────────────────────────────────
-a [
-  color = accent
-  text-decoration = underline
-  transition = color 200ms linear
-  &:hover [
-    color = accentHover
-  ]
-]
-
-// Links inside prose content should be underlined;
-// navigation links are not.
-nav a, .site-header__brand, .site-footer a, .site-nav__link [
-  text-decoration = none
-]
-
-// ── Images ─────────────────────────────────────────
-img, video [
-  display = block
-  max-width = 100%
-  height = auto
-  border-radius = 4px
-]
-
-// ── Typography ─────────────────────────────────────
-h1, h2, h3, h4, h5, h6 [
-  line-height = 1.3
-  font-weight = 400
-  color = heading
-]
-
-h1 [ font-size = 2.25r ]
-h2 [ font-size = 1.875r ]
-h3 [ font-size = 1.5r ]
-h4 [ font-size = 1.25r ]
-h5 [ font-size = 1.125r ]
-
-* + h1, * + h2 [ margin-top = 5r ]
-* + h3, * + h4, * + h5 [ margin-top = 3r ]
-* + p [ margin-top = 2r ]
-h2 + p, h3 + p, h4 + p [ margin-top = 1r ]
-
-p [
-  font-size = 1.125r
-  line-height = 1.7
-]
-
-// ── Code ───────────────────────────────────────────
-code, kbd [
-  font-family = ui-monospace, SFMono-Regular, Menlo, Consolas, monospace
-  font-size = 0.95em
-  background = codeBg
-  color = accent
-  padding = 1px 6px
-  margin = 0 2px
-  border-radius = 3px
-  font-feature-settings = normal
-]
-
-// Block code: full-width background, scrollable.
-pre [
-  overflow-x = auto
-  max-width = 100%
-  font-family = ui-monospace, SFMono-Regular, Menlo, Consolas, monospace
-  font-size = 0.95r
-  background = codeBg
-  border = 1px solid borderColor
-  border-radius = 4px
-  padding = 1r
-  margin-top = 2r
-  margin-bottom = 2r
-  white-space = pre-wrap
-  tab-size = 2
-  scrollbar-width = thin
-  scrollbar-color = muted
-]
-
-pre code [
-  background = transparent
-  padding = 0
-  margin = 0
-  color = inherit
-  font-size = inherit
-]
-
-// ── Blockquote ─────────────────────────────────────
-blockquote [
-  margin-top = 2r
-  margin-bottom = 2r
-  padding-left = 1r
-  border-left = 3px solid accent
-  color = rgba(41, 41, 41, 0.8)
-  font-style = italic
-  & > *:last-child [
-    margin-bottom = 0
-  ]
-]
-
-// ── Lists ──────────────────────────────────────────
-ol [ list-style-position = inside ]
-ol ol [ list-style-type = lower-alpha ]
-ul [
-  list-style-type = square
-  list-style-position = inside
-]
-
-li > ul, li > ol [ margin-top = 0.5r ]
-
-// ── Tables ─────────────────────────────────────────
-table [
-  border-collapse = collapse
-  caption-side = bottom
-  overflow-x = auto
-  min-width = 100%
-  border = 1px solid rgba(41, 41, 41, 0.2)
-  margin-top = 2r
-]
-
-td, th [
-  border = 1px solid rgba(41, 41, 41, 0.2)
-  padding = 0.5r
-  text-align = left
-]
-
-th [ font-weight = 500 ]
-
-tbody tr:nth-child(even) [
-  background = codeBg
-]
-
-// ── Horizontal rule ────────────────────────────────
-hr [
-  width = 100%
-  border = none
-  background = rgba(41, 41, 41, 0.1)
-  height = 1px
-  margin-top = 2r
-  margin-bottom = 2r
-]
-
-// ── Home: hero section ─────────────────────────────
-.hero [
-  display = flex
-  flex-direction = column
-]
-
-.hero__title [
-  font-size = 3r
-  line-height = 1.1
-  margin-bottom = 1r
-  color = heading
-]
-
-.hero__lead [
-  font-size = 1.5r
-  color = rgba(41, 41, 41, 0.7)
-  margin-top = 1r
-  line-height = 1.5
-]
-
-// ── Post list ──────────────────────────────────────
-.post-list [
-  list-style = none
-  margin = 0
-  padding = 0
-]
-
-.post-list__item [
-  padding = 1.25r 0
-  border-bottom = 1px solid borderColor
-  &:last-child [
-    border-bottom = none
-  ]
-]
-
-.post-list__title [
-  margin = 0 0 0.25r
-  font-size = 1.35r
-  line-height = 1.3
-  a [
-    color = heading
-    text-decoration = none
-    &:hover [
-      color = accent
-    ]
-  ]
-]
-
-.post-list__meta [
-  font-size = 0.875r
-  color = muted
-  margin-top = 0.25r
-]
-
-.post-list__excerpt [
-  margin-top = 0.5r
-  color = rgba(41, 41, 41, 0.7)
-  font-size = 1r
-  line-height = 1.6
-]
-
-// ── Single post ────────────────────────────────────
-.post [
-  display = flex
-  flex-direction = column
-]
-
-.post > * + * [ margin-top = 4r ]
-
-.post__header [
-  margin-bottom = 2r
-]
-
-.post__title [
-  font-size = 2.25r
-  line-height = 1.2
-  color = heading
-  margin-bottom = 0.5r
-]
-
-.post__meta [
-  font-size = 0.9r
-  color = muted
-  opacity = 0.8
-  display = flex
-  flex-wrap = wrap
-  align-items = center
-  gap = 0.5r
-]
-
-.post__tags [
-  margin-left = 0.25r
-  opacity = 0.8
-]
-
-.post__tag [
-  color = muted
-  text-decoration = none
-  &:hover [
-    color = accent
-  ]
-]
-
-.post__body [
-  word-wrap = break-word
-  font-size = 1.05r
-  font-family = Georgia, "Times New Roman", serif
-  line-height = 1.8
-]
-
-.post__body a [
-  text-decoration = underline
-  color = accent
-  &:hover [
-    color = accentHover
-  ]
-]
-
-// ── Post pagination (prev / next) ──────────────────
-.post__pagination [
-  margin-top = 3r
-  display = flex
-  justify-content = space-between
-  align-items = center
-  font-size = 0.95r
-]
-
-.post__pagination a [
-  display = flex
-  align-items = center
-  gap = 0.5r
-  text-decoration = none
-  color = muted
-  &:hover [
-    color = accent
-  ]
-]
-
-.post__pagination > *:only-child [
-  margin-right = auto
-  margin-left = auto
-]
-
-// ── Footer ─────────────────────────────────────────
-.site-footer [
-  padding-bottom = 4r
-]
-
-.site-footer__inner [
-  display = flex
-  flex-direction = column
-  align-items = center
-  max-width = measure
-  margin = 0 auto
-  padding = 1r
-  border-top = 1px solid borderColor
-  font-size = 1r
-  gap = 2r
-  padding-top = 2r
-]
-
-.site-footer__social [
-  display = flex
-  flex-wrap = wrap
-  list-style = none
-  gap = 2r
-  text-transform = uppercase
-  font-size = 0.875r
-]
-
-.site-footer__social a [
-  color = muted
-  &:hover [
-    color = accent
-  ]
-]
-
-.site-footer__copy [
-  font-size = 0.875r
-  color = muted
-  text-align = center
-]
-
-// ── 404 page ───────────────────────────────────────
-.notfound [
-  text-align = center
-  padding = 2.5r 0
-]
-
-.notfound__code [
-  font-size = 5r
-  line-height = 1
-  font-weight = 300
-  color = accent
-  margin-bottom = 1r
-]
-
-.notfound__lead [
-  font-size = 1.2r
-  color = muted
-  margin-top = 0
-]
-
-// ── Features page ──────────────────────────────────
-.card-grid [
-  display = grid
-  grid-template-columns = repeat(auto-fill, minmax(280px, 1fr))
-  gap = 1.5r
-  margin-top = 2r
-]
-
-.card [
-  padding = 1.25r
-  border = 1px solid borderColor
-  border-radius = 6px
-  transition = box-shadow 200ms ease, transform 200ms ease
-  &:hover [
-    box-shadow = 0 4px 12px rgba(0, 0, 0, 0.08)
-    transform = translateY(-2px)
-  ]
-]
-
-.card h3 [
-  font-size = 1.15r
-  margin-top = 0
-]
-
-.card p [
-  font-size = 0.95r
-  color = rgba(41, 41, 41, 0.7)
-  margin-top = 0.5r
-]
-
-// ── Demo sections ──────────────────────────────────
-.demo-section [
-  margin-top = 3r
-  padding-top = 2r
-  border-top = 1px solid borderColor
-]
-
-.demo-section h2 [
-  margin-top = 0
-]
-
-.btn [
-  display = inline-block
-  padding = 0.6r 1.2r
-  background = accent
-  color = #fff
-  border-radius = 4px
-  text-decoration = none
-  font-size = 0.95r
-  cursor = pointer
-  border = none
-  transition = background 200ms ease, transform 100ms ease
-  &:hover [
-    background = accentHover
-    color = #fff
-  ]
-  &:active [
-    transform = scale(0.97)
-  ]
-]
-
-.code-block [
-  background = #f8f8f8
-  padding = 1r
-  border-radius = 4px
-  font-family = ui-monospace, SFMono-Regular, Menlo, Consolas, monospace
-  font-size = 0.9r
-  overflow-x = auto
-  margin-top = 1r
-]
-
-// ── Tags page ──────────────────────────────────────
-.tag-badge [
-  display = inline-block
-  padding = 0.2r 0.6r
-  margin = 0.2r
-  background = codeBg
-  border-radius = 3px
-  font-size = 0.85r
-  color = accent
-  text-decoration = none
-  &:hover [
-    background = accent
-    color = #fff
-  ]
-]
-
-// ── Breadcrumb ─────────────────────────────────────
-.breadcrumb [
-  display = flex
-  gap = 0.5r
-  font-size = 0.9r
-  color = muted
-  margin-bottom = 1r
-  align-items = center
-]
-
-.breadcrumb a [
-  color = muted
-  text-decoration = none
-  &:hover [
-    color = accent
-  ]
-]
-
-// ── Progress bar ───────────────────────────────────
-.progress [
-  width = 100%
-  height = 8px
-  background = borderColor
-  border-radius = 4px
-  margin-top = 0.75r
-  overflow = hidden
-]
-
-.progress__fill [
-  height = 100%
-  background = accent
-  border-radius = 4px
-  transition = width 0.3s ease
-]
-
-// ── Utility ────────────────────────────────────────
-.visually-hidden [
-  clip = rect(1px, 1px, 1px, 1px)
-  height = 1px
-  overflow = hidden
-  position = absolute
-  white-space = nowrap
-  width = 1px
-]
-
-// ── Dark mode ──────────────────────────────────────
-@media (prefers-color-scheme: dark) [
-  body [
-    background-color = darkBg
-    color = darkBody
-  ]
-  h1, h2, h3, h4, h5, h6 [
-    color = darkHeading
-  ]
-  .site-header__inner, .site-footer__inner [
-    border-color = darkBorder
-  ]
-  .site-header__brand, .post-list__title a, .post__title [
-    color = darkHeading
-  ]
-  .site-nav__link, .post-list__meta, .site-footer__copy, .breadcrumb [
-    color = darkMuted
-  ]
-  .post-list__item [
-    border-color = darkBorder
-  ]
-  .post__body [
-    color = darkBody
-  ]
-  code, kbd [
-    background = darkCodeBg
-    color = lighten(accent, 15%)
-  ]
-  pre [
-    background = darkCodeBg
-    border-color = darkBorder
-  ]
-  .card [
-    border-color = darkBorder
-    &:hover [
-      box-shadow = 0 4px 12px rgba(0, 0, 0, 0.3)
-    ]
-  ]
-  .card p, .hero__lead [
-    color = rgba(201, 209, 217, 0.7)
-  ]
-  .code-block [
-    background = darkCodeBg
-  ]
-  blockquote [
-    color = rgba(201, 209, 217, 0.8)
-    border-left-color = accent
-  ]
-  hr [
-    background = rgba(139, 148, 158, 0.2)
-  ]
-  td, th [
-    border-color = darkBorder
-  ]
-  tbody tr:nth-child(even) [
-    background = darkCodeBg
-  ]
-  .progress [
-    background = darkBorder
-  ]
-  table [
-    border-color = darkBorder
-  ]
-]
-
-// ── Responsive ─────────────────────────────────────
-@media (max-width: 640px) [
-  html [ font-size = 16px ]
-  .site-header__inner [
-    flex-direction = column
-    gap = 0.5r
-    text-align = center
-  ]
-  .site-nav [
-    flex-wrap = wrap
-    justify-content = center
-  ]
-  .hero__title [ font-size = 2.25r ]
-  .hero__lead [ font-size = 1.2r ]
-  .post__pagination [
-    flex-direction = column
-    gap = 1r
-    align-items = flex-start
-  ]
-  .card-grid [
-    grid-template-columns = 1fr
-  ]
-  .post__meta [
-    flex-direction = column
-    align-items = flex-start
-    gap = 0.25r
-  ]
-  .post__tags [
-    margin-left = 0
-  ]
-]
-
-// ── Print ──────────────────────────────────────────
-@media print [
-  .site-header, .site-footer, .post__pagination, .skip-link [
-    display = none
-  ]
-  body [
-    color = #000
-    background = #fff
-    font-size = 12pt
-  ]
-  a [
-    color = #000
-    text-decoration = underline
-  ]
-  a[href]::after [
-    content = " (" attr(href) ")"
-    font-size = 0.8em
-  ]
-]
+// Warm paper background, ink text, a single jade accent, serif
+// headings, hairline rules. Deliberately quiet: no transitions,
+// no shadows, no hover lifts, no scaling, no smooth scrolling.
+// ─────────────────────────────────────────────────────────────
+
+let bg          = #faf9f5
+let surface     = #ffffff
+let ink         = #26241f
+let body        = #46423b
+let muted       = #8d8678
+let line        = #e6e1d5
+let accent      = #3c6a5a
+let accent-deep = darken(#3c6a5a, 10%)
+let accent-soft = lighten(#3c6a5a, 58%)
+let code-bg     = #f3efe6
+let sel-bg      = #e2ebe5
+
+let font-ui      = -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif
+let font-display = Georgia, "Noto Serif SC", "Songti SC", SimSun, serif
+let font-mono    = "SF Mono", "Cascadia Code", Consolas, "Liberation Mono", Menlo, monospace
+
+let measure = 44r
+
+// ── Reset & base ─────────────────────────────────────────────
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: bg;
+  color: body;
+  font-family: font-ui;
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+::selection {
+  background: sel-bg;
+  color: ink;
+}
+
+:focus-visible {
+  outline: 2px solid accent;
+  outline-offset: 2px;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+.container {
+  width: 100%;
+  max-width: 72r;
+  margin: 0 auto;
+  padding: 0 1.25r;
+}
+
+// ── Header ───────────────────────────────────────────────────
+
+.site-header {
+  border-bottom: 1px solid line;
+}
+
+.site-header__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 4.25r;
+}
+
+.brand {
+  font-family: font-display;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: ink;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+.site-nav ul {
+  display: flex;
+  gap: 1.75rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.site-nav a {
+  font-size: 0.95rem;
+  color: muted;
+  text-decoration: none;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+.site-nav a:hover {
+  color: ink;
+  text-decoration: underline;
+}
+
+.site-nav a[aria-current="page"] {
+  color: ink;
+  text-decoration: underline;
+}
+
+// ── Sticky footer ────────────────────────────────────────────
+
+.site-main {
+  flex: 1;
+}
+
+// ── Hero (home) ──────────────────────────────────────────────
+
+.hero {
+  padding: 5.5r 0 3.5r;
+  border-bottom: 1px solid line;
+}
+
+.hero__title {
+  font-family: font-display;
+  font-size: 3rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: ink;
+  margin: 0;
+  max-width: 20ch;
+}
+
+.hero__lead {
+  margin: 1.25rem 0 0;
+  max-width: 38r;
+  font-size: 1.15rem;
+  color: muted;
+}
+
+.hero__lead strong {
+  color: ink;
+  font-weight: 600;
+}
+
+// ── Recent posts (home) ──────────────────────────────────────
+
+.recent {
+  padding: 3.5r 0 4.5r;
+}
+
+.recent h2 {
+  font-family: font-display;
+  font-size: 1.75rem;
+  font-weight: 500;
+  color: ink;
+  margin: 0 0 0.5rem;
+}
+
+.post-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid line;
+}
+
+.post-list__item {
+  padding: 1.5rem 0;
+  border-bottom: 1px solid line;
+}
+
+.post-list__title {
+  font-family: font-display;
+  font-size: 1.4rem;
+  font-weight: 500;
+  margin: 0;
+}
+
+.post-list__title a {
+  color: ink;
+  text-decoration: none;
+}
+
+.post-list__title a:hover {
+  color: accent;
+}
+
+.post-list__meta {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: muted;
+}
+
+.post-list__excerpt {
+  margin: 0.5rem 0 0;
+  color: body;
+  max-width: 40r;
+}
+
+// ── Single post ──────────────────────────────────────────────
+
+.post {
+  max-width: measure;
+  margin: 0 auto;
+  padding: 3.5r 0 4.5r;
+}
+
+.post__header {
+  border-bottom: 1px solid line;
+  padding-bottom: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.post__title {
+  font-family: font-display;
+  font-size: 2.5rem;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  color: ink;
+  margin: 0 0 1rem;
+}
+
+.post__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+  align-items: center;
+  margin: 0;
+  font-size: 0.88rem;
+  color: muted;
+}
+
+.post__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.post__body {
+  font-family: font-display;
+  font-size: 1.06rem;
+  line-height: 1.9;
+  color: body;
+}
+
+.post__body h1 {
+  font-family: font-display;
+  color: ink;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 2.2em 0 0.6em;
+  font-size: 1.9rem;
+}
+
+.post__body h2 {
+  font-family: font-display;
+  color: ink;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 2.2em 0 0.6em;
+  font-size: 1.55rem;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid line;
+}
+
+.post__body h3 {
+  font-family: font-display;
+  color: ink;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 2.2em 0 0.6em;
+  font-size: 1.25rem;
+}
+
+.post__body h4 {
+  font-family: font-display;
+  color: ink;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 2.2em 0 0.6em;
+  font-size: 1.1rem;
+}
+
+.post__body p {
+  margin: 0 0 1.25em;
+}
+
+.post__body a {
+  color: accent;
+  text-decoration: underline;
+}
+
+.post__body a:hover {
+  color: accent-deep;
+}
+
+.post__body code {
+  font-family: font-mono;
+  font-size: 0.88em;
+  background: code-bg;
+  padding: 0.15em 0.4em;
+  border-radius: 2px;
+}
+
+.post__body kbd {
+  font-family: font-mono;
+  font-size: 0.88em;
+  background: code-bg;
+  padding: 0.15em 0.4em;
+  border-radius: 2px;
+}
+
+.post__body samp {
+  font-family: font-mono;
+  font-size: 0.88em;
+  background: code-bg;
+  padding: 0.15em 0.4em;
+  border-radius: 2px;
+}
+
+.post__body pre {
+  background: code-bg;
+  border: 1px solid line;
+  border-radius: 2px;
+  padding: 1.25rem 1.4rem;
+  overflow-x: auto;
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+
+.post__body pre code {
+  background: none;
+  padding: 0;
+  font-size: 1em;
+}
+
+.post__body blockquote {
+  margin: 1.5em 0;
+  padding: 0.25em 0 0.25em 1.25rem;
+  border-left: 3px solid accent;
+  color: muted;
+  font-style: italic;
+}
+
+.post__body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1.5em 0;
+  font-size: 0.95rem;
+}
+
+.post__body th {
+  border-bottom: 1px solid line;
+  border-top: 1px solid line;
+  padding: 0.55rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  font-weight: 600;
+  color: ink;
+}
+
+.post__body td {
+  border-bottom: 1px solid line;
+  padding: 0.55rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.post__body hr {
+  border: 0;
+  border-top: 1px solid line;
+  margin: 2.5rem 0;
+}
+
+.post__nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid line;
+  font-size: 0.95rem;
+}
+
+.post__nav a {
+  color: muted;
+  text-decoration: none;
+}
+
+.post__nav a:hover {
+  color: accent;
+}
+
+.post__nav-next {
+  margin-left: auto;
+  text-align: right;
+}
+
+// ── Footer ───────────────────────────────────────────────────
+
+.site-footer {
+  border-top: 1px solid line;
+  padding: 2.25r 0;
+  font-size: 0.9rem;
+  color: muted;
+}
+
+.site-footer__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.site-footer__copy {
+  margin: 0;
+}
+
+.site-footer__socials {
+  display: flex;
+  gap: 1.25rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.site-footer__socials a {
+  color: muted;
+  text-decoration: none;
+}
+
+.site-footer__socials a:hover {
+  color: accent;
+}
+
+// ── 404 ──────────────────────────────────────────────────────
+
+.notfound {
+  text-align: center;
+  padding: 6rem 0;
+}
+
+.notfound__code {
+  font-family: font-display;
+  font-size: 5rem;
+  font-weight: 500;
+  color: accent;
+  margin: 0;
+  letter-spacing: 0.05em;
+}
+
+.notfound__lead {
+  color: muted;
+  font-size: 1.1rem;
+  margin: 0.75rem 0 1.5rem;
+}
+
+.notfound a {
+  color: accent;
+}
+
+// ── DSL components ───────────────────────────────────────────
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16r, 1fr));
+  gap: 1.5rem;
+}
+
+.card {
+  background: surface;
+  border: 1px solid line;
+  border-radius: 2px;
+  padding: 1.6rem;
+}
+
+.card h4 {
+  font-family: font-display;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: ink;
+  margin: 0 0 0.5rem;
+}
+
+.card-body p {
+  color: muted;
+  font-size: 0.95rem;
+  margin: 0 0 1.1rem;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.5rem 1.1rem;
+  border: 1px solid accent;
+  border-radius: 2px;
+  color: accent;
+  background: transparent;
+  font-size: 0.95rem;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: accent-soft;
+  color: accent-deep;
+  border-color: accent-deep;
+}
+
+.btn-primary {
+  background: accent;
+  color: #ffffff;
+}
+
+.btn-primary:hover {
+  background: accent-deep;
+  color: #ffffff;
+}
+
+.tag-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0;
+  margin: 0;
+}
+
+.tag {
+  display: inline-block;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid line;
+  border-radius: 2px;
+  color: muted;
+  text-decoration: none;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid line;
+  border-radius: 2px;
+  color: muted;
+  text-decoration: none;
+}
+
+a.tag:hover {
+  color: accent;
+  border-color: accent;
+}
+
+a.badge:hover {
+  color: accent;
+  border-color: accent;
+}
+
+.breadcrumb {
+  font-size: 0.9rem;
+  color: muted;
+}
+
+.breadcrumb ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.breadcrumb li + li::before {
+  content: "·";
+  margin-right: 0.5rem;
+  color: line;
+}
+
+.breadcrumb li.active {
+  color: ink;
+}
+
+.progress-wrapper {
+  margin: 1rem 0;
+}
+
+.progress-label {
+  display: block;
+  font-size: 0.85rem;
+  color: muted;
+  margin-bottom: 0.4rem;
+}
+
+progress {
+  width: 100%;
+  height: 0.5rem;
+  border: 1px solid line;
+  border-radius: 2px;
+  background: surface;
+}
+
+progress::-webkit-progress-bar {
+  background: surface;
+  border-radius: 2px;
+}
+
+progress::-webkit-progress-value {
+  background: accent;
+}
+
+progress::-moz-progress-bar {
+  background: accent;
+}
+
+.alert {
+  padding: 0.85rem 1.1rem;
+  border: 1px solid line;
+  border-left: 3px solid accent;
+  border-radius: 2px;
+  margin: 1.25rem 0;
+  font-size: 0.95rem;
+}
+
+.icon {
+  font-size: 1.15em;
+  line-height: 1;
+}
+
+// ── Dark mode ────────────────────────────────────────────────
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #16150f;
+    color: #d6d2c6;
+  }
+
+  ::selection {
+    background: #2c3a33;
+    color: #ece9e1;
+  }
+
+  .site-header {
+    border-color: #2b2820;
+  }
+
+  .site-footer {
+    border-color: #2b2820;
+  }
+
+  .brand {
+    color: #ece9e1;
+  }
+
+  .hero__title {
+    color: #ece9e1;
+  }
+
+  .recent h2 {
+    color: #ece9e1;
+  }
+
+  .post__title {
+    color: #ece9e1;
+  }
+
+  .post__body h1 {
+    color: #ece9e1;
+  }
+
+  .post__body h2 {
+    color: #ece9e1;
+  }
+
+  .post__body h3 {
+    color: #ece9e1;
+  }
+
+  .post__body h4 {
+    color: #ece9e1;
+  }
+
+  .card h4 {
+    color: #ece9e1;
+  }
+
+  .hero__lead {
+    color: #9b968a;
+  }
+
+  .post__meta {
+    color: #9b968a;
+  }
+
+  .post-list__meta {
+    color: #9b968a;
+  }
+
+  .notfound__lead {
+    color: #9b968a;
+  }
+
+  .site-footer {
+    color: #9b968a;
+  }
+
+  .site-footer__copy {
+    color: #9b968a;
+  }
+
+  .site-nav a:hover {
+    color: #cfd8d2;
+  }
+
+  .site-nav a[aria-current="page"] {
+    color: #cfd8d2;
+  }
+
+  .post-list__title a:hover {
+    color: #cfd8d2;
+  }
+
+  .post__body a {
+    color: #a3c4b3;
+  }
+
+  .notfound a {
+    color: #a3c4b3;
+  }
+
+  .post__nav a:hover {
+    color: #a3c4b3;
+  }
+
+  .site-footer__socials a:hover {
+    color: #a3c4b3;
+  }
+
+  .card {
+    background: #1d1b14;
+    border-color: #2b2820;
+  }
+
+  .tag {
+    background: #1d1b14;
+    border-color: #2b2820;
+  }
+
+  .badge {
+    background: #1d1b14;
+    border-color: #2b2820;
+  }
+
+  progress {
+    background: #1d1b14;
+    border-color: #2b2820;
+  }
+
+  .post__body code {
+    background: #201e17;
+    border-color: #2b2820;
+  }
+
+  .post__body pre {
+    background: #201e17;
+    border-color: #2b2820;
+  }
+
+  .post__body blockquote {
+    border-left-color: #5d8876;
+  }
+
+  .post__body th {
+    color: #ece9e1;
+  }
+
+  .btn-primary {
+    background: #3c6a5a;
+    color: #ffffff;
+  }
+}
+
+// ── Responsive ───────────────────────────────────────────────
+
+@media (max-width: 640px) {
+  .hero__title {
+    font-size: 2.25rem;
+  }
+
+  .post__title {
+    font-size: 2rem;
+  }
+
+  .site-header__inner {
+    height: auto;
+    padding: 1rem 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .site-nav ul {
+    gap: 1.1rem;
+    flex-wrap: wrap;
+  }
+
+  .site-footer__inner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .post__nav {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .post__nav-next {
+    margin-left: 0;
+    text-align: left;
+  }
+
+  .hero {
+    padding: 4rem 0 3rem;
+  }
+}
+
+// ── Print ────────────────────────────────────────────────────
+
+@media print {
+  .site-header {
+    display: none;
+  }
+
+  .site-footer {
+    display: none;
+  }
+
+  .post__nav {
+    display: none;
+  }
+
+  body {
+    background: #ffffff;
+    color: #000000;
+    font-size: 12pt;
+  }
+
+  .post__body a {
+    color: #000000;
+  }
+}

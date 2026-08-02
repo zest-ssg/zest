@@ -46,6 +46,9 @@ module TemplateManager =
             for (fnName, fn) in config.Filters do
                 (engine :> ITemplateEngine).RegisterFilter fnName fn
             Some (engine :> ITemplateEngine)
+        | "hbs" | "handlebars" | "mustache" ->
+            let engine = HbsEngine()
+            Some (engine :> ITemplateEngine)
         | _ ->
             None
 

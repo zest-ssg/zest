@@ -73,6 +73,50 @@ module ParserCore =
     let warnPat       = Regex(@"^@warn\s+(.+?)\s*;?\s*$", RegexOptions.Compiled)
     let debugPat      = Regex(@"^@debug\s+(.+?)\s*;?\s*$", RegexOptions.Compiled)
     let rspBpMap      = dict ["sm","(min-width:640px)";"md","(min-width:768px)";"lg","(min-width:1024px)";"xl","(min-width:1280px)";"2xl","(min-width:1536px)"]
+    // Frequently used patterns — compiled once, reused across all parses
+    let dollarRefRe   = Regex(@"\$([\w-]+)", RegexOptions.Compiled)
+    let bareRefRe     = Regex(@"(?<![a-zA-Z0-9#-])([\w-]+)(?![\w-])", RegexOptions.Compiled)
+    // CSS property names/keywords that must never be treated as bare variable
+    // references. Hoisted to module level — building this set per-call was a
+    // hot-path allocation (it runs for every declaration value).
+    let cssKeywords = set [
+        "none"; "auto"; "inherit"; "initial"; "unset"; "transparent"; "currentColor"
+        "block"; "inline"; "flex"; "grid"; "table"; "contents"; "list-item"
+        "row"; "column"; "row-reverse"; "column-reverse"; "wrap"; "nowrap"
+        "center"; "left"; "right"; "top"; "bottom"; "stretch"; "baseline"
+        "space-between"; "space-around"; "space-evenly"; "flex-start"; "flex-end"
+        "absolute"; "relative"; "fixed"; "sticky"; "static"
+        "hidden"; "visible"; "scroll"; "clip"
+        "bold"; "normal"; "italic"; "underline"; "overline"; "line-through"
+        "uppercase"; "lowercase"; "capitalize"; "full-width"
+        "solid"; "dashed"; "dotted"; "double"; "groove"; "ridge"; "inset"; "outset"
+        "cover"; "contain"; "fill"; "scale-down"
+        "ease"; "ease-in"; "ease-out"; "ease-in-out"; "linear"; "step-start"; "step-end"
+        "forwards"; "backwards"; "both"; "infinite"; "alternate"; "reverse"
+        "border-box"; "content-box"; "padding-box"; "margin-box"
+        "multiply"; "screen"; "overlay"; "darken"; "lighten"; "color-dodge"; "color-burn"
+        "hard-light"; "soft-light"; "difference"; "exclusion"; "hue"; "saturation"
+        "color"; "luminosity"; "normal"
+        "repeat"; "repeat-x"; "repeat-y"; "no-repeat"; "space"; "round"
+        "local"; "fixed"; "content-box"; "border-box"; "padding-box"
+        "ellipsis"; "clip"; "break-word"; "keep-all"
+        "pre"; "pre-wrap"; "pre-line"; "nowrap"
+        "disc"; "circle"; "square"; "decimal"; "decimal-leading-zero"
+        "lower-roman"; "upper-roman"; "lower-alpha"; "upper-alpha"
+        "ltr"; "rtl"; "horizontal-tb"; "vertical-rl"; "vertical-lr"
+        "flat"; "preserve-3d"
+        "open-quote"; "close-quote"; "no-open-quote"; "no-close-quote"
+        "show"; "hide"
+        "collapse"; "separate"
+        "avoid"; "always"; "auto"; "all"
+        "text"; "all"; "none"; "punctuation"
+        "strict"; "loose"; "anywhere"
+        "balance"; "auto"; "pretty";
+        "isolate"; "isolate-override"; "plaintext"; "mixed"; "bidi-override";
+        "sideways"; "sideways-lr"; "sideways-rl"; "upright"; "use-glyph-orientation"
+        "optimizeSpeed"; "optimizeQuality"; "crisp-edges"; "geometricPrecision"
+        "pixelated"; "smooth"; "high-quality"; "crispEdges"
+    ]
 
     // ── Variable extraction and resolution ──────────────────
 
@@ -108,55 +152,17 @@ module ParserCore =
     /// a CSS keyword/property name (to avoid corrupting CSS values).
     let resolveVarRefs (rawVal: string) (d: IDictionary<string, string>) : string =
         // First resolve $name references (SCSS-style) — always safe
-        let v1 = Regex.Replace(rawVal, @"\$([\w-]+)", fun mm ->
+        let v1 = dollarRefRe.Replace(rawVal, fun mm ->
             match d.TryGetValue(mm.Groups.[1].Value) with true, vv -> vv | _ -> mm.Value)
         // Then resolve bare variable names (F#-style) — but only if:
         // 1. The name is a known variable in the dictionary
         // 2. The name is NOT a CSS property name or keyword
         // 3. The name is not preceded by a hyphen (part of a property name like margin-top)
-        let cssKeywords = set [
-            "none"; "auto"; "inherit"; "initial"; "unset"; "transparent"; "currentColor"
-            "block"; "inline"; "flex"; "grid"; "table"; "contents"; "list-item"
-            "row"; "column"; "row-reverse"; "column-reverse"; "wrap"; "nowrap"
-            "center"; "left"; "right"; "top"; "bottom"; "stretch"; "baseline"
-            "space-between"; "space-around"; "space-evenly"; "flex-start"; "flex-end"
-            "absolute"; "relative"; "fixed"; "sticky"; "static"
-            "hidden"; "visible"; "scroll"; "clip"
-            "bold"; "normal"; "italic"; "underline"; "overline"; "line-through"
-            "uppercase"; "lowercase"; "capitalize"; "full-width"
-            "solid"; "dashed"; "dotted"; "double"; "groove"; "ridge"; "inset"; "outset"
-            "cover"; "contain"; "fill"; "scale-down"
-            "ease"; "ease-in"; "ease-out"; "ease-in-out"; "linear"; "step-start"; "step-end"
-            "forwards"; "backwards"; "both"; "infinite"; "alternate"; "reverse"
-            "border-box"; "content-box"; "padding-box"; "margin-box"
-            "multiply"; "screen"; "overlay"; "darken"; "lighten"; "color-dodge"; "color-burn"
-            "hard-light"; "soft-light"; "difference"; "exclusion"; "hue"; "saturation"
-            "color"; "luminosity"; "normal"
-            "repeat"; "repeat-x"; "repeat-y"; "no-repeat"; "space"; "round"
-            "local"; "fixed"; "content-box"; "border-box"; "padding-box"
-            "ellipsis"; "clip"; "break-word"; "keep-all"
-            "pre"; "pre-wrap"; "pre-line"; "nowrap"
-            "disc"; "circle"; "square"; "decimal"; "decimal-leading-zero"
-            "lower-roman"; "upper-roman"; "lower-alpha"; "upper-alpha"
-            "ltr"; "rtl"; "horizontal-tb"; "vertical-rl"; "vertical-lr"
-            "flat"; "preserve-3d"
-            "open-quote"; "close-quote"; "no-open-quote"; "no-close-quote"
-            "show"; "hide"
-            "collapse"; "separate"
-            "avoid"; "always"; "auto"; "all"
-            "text"; "all"; "none"; "punctuation"
-            "strict"; "loose"; "anywhere"
-            "balance"; "auto"; "pretty";
-            "isolate"; "isolate-override"; "plaintext"; "mixed"; "bidi-override";
-            "sideways"; "sideways-lr"; "sideways-rl"; "upright"; "use-glyph-orientation"
-            "optimizeSpeed"; "optimizeQuality"; "crisp-edges"; "geometricPrecision"
-            "pixelated"; "smooth"; "high-quality"; "crispEdges"
-        ]
         // Lookahead excludes hyphen (`(?![\w-])`) so that a hyphenated
         // variable name such as `font-size` matches as ONE token rather than
         // splitting at the hyphen. The lookbehind already excludes `-`/`#`,
         // making both boundaries treat hyphen as a word char.
-        Regex.Replace(v1, @"(?<![a-zA-Z0-9#-])([\w-]+)(?![\w-])", fun mm ->
+        bareRefRe.Replace(v1, fun mm ->
             let name = mm.Groups.[1].Value
             if cssKeywords.Contains name then mm.Value
             else
@@ -186,7 +192,7 @@ module ParserCore =
         d
 
     let resolveVars (value: string) (vars: IDictionary<string, string>) =
-        Regex.Replace(value, @"\$([\w-]+)", fun m ->
+        dollarRefRe.Replace(value, fun m ->
             match vars.TryGetValue(m.Groups.[1].Value) with true, v -> v | _ -> m.Value)
 
     /// Parse a declaration line. Supports both `prop: value` and `prop = value` (F#/C# style).

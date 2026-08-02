@@ -1,28 +1,23 @@
-# Chinese locale for Zest oxygen theme
-# Usage in templates: {{ 'nav.home' | t('zh') }}
-# Usage in DSL scripts: t_lang "nav.home" "zh"
-
 [nav]
 home = "首页"
-blog = "博客"
-features = "功能"
+posts = "文章"
 about = "关于"
 
 [meta]
-site_desc = "一个基于 Zest SSG 构建的快速、极简博客。"
-read_more = "阅读更多"
+recent_posts = "最新文章"
+no_posts = "还没有文章。"
 min_read = "分钟阅读"
-recent_posts = "最近文章"
-no_posts = "暂无文章。"
 
 [notfound]
-title = "页面未找到"
-message = "抱歉，您要找的页面不存在。"
+message = "你访问的页面不存在。"
 back_home = "返回首页"
 
+[post]
+prev = "上一篇"
+next = "下一篇"
+
 [footer]
-built_with = "基于"
+built_with = "由 Zest 构建"
 
 [a11y]
-skip_to_content = "跳到主要内容"
-primary_nav = "主导航"
+main_nav = "主导航"

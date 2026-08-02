@@ -1,17 +1,20 @@
 <header class="site-header">
-    <div class="site-header__inner">
-        <a class="site-header__brand" href="/">{{ site.title }}</a>
-        <nav class="site-nav" aria-label="{{ 'a11y.primary_nav' | t }}">
-            {% if nav and nav.items %}
-            {% for item in nav.items %}
-            <a class="site-nav__link" href="{{ item.url }}"{% if page.url == item.url %} aria-current="page"{% endif %}>{{ item.label }}</a>
-            {% endfor %}
-            {% else %}
-            <a class="site-nav__link" href="/" {% if page.url == "/" %}aria-current="page"{% endif %}>{{ 'nav.home' | t }}</a>
-            <a class="site-nav__link" href="/posts/" {% if page.url startsWith "/posts/" %}aria-current="page"{% endif %}>{{ 'nav.blog' | t }}</a>
-            <a class="site-nav__link" href="/features/" {% if page.url startsWith "/features/" %}aria-current="page"{% endif %}>{{ 'nav.features' | t }}</a>
-            <a class="site-nav__link" href="/about/" {% if page.url startsWith "/about/" %}aria-current="page"{% endif %}>{{ 'nav.about' | t }}</a>
-            {% endif %}
-        </nav>
-    </div>
+  <div class="container site-header__inner">
+    <a class="brand" href="/" rel="home">{{ site.title }}</a>
+    <nav class="site-nav" aria-label="Main navigation">
+      {% if nav %}
+      <ul>
+        {% for item in nav.items %}
+        <li><a href="{{ item.url }}" {% if item.url == page.url %}aria-current="page"{% endif %}>{{ item.label }}</a></li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <ul>
+        <li><a href="/" {% if page.url == "/" %}aria-current="page"{% endif %}>Home</a></li>
+        <li><a href="/posts/">Posts</a></li>
+        <li><a href="/about/">About</a></li>
+      </ul>
+      {% endif %}
+    </nav>
+  </div>
 </header>

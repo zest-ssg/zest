@@ -155,6 +155,12 @@ module LayoutEngine =
             let isFsx =
                 path.EndsWith(FileExtensions.ZestScript, StringComparison.OrdinalIgnoreCase)
                 || path.EndsWith(FileExtensions.FSharpScript, StringComparison.OrdinalIgnoreCase)
+            // `.hbs` / `.mustache` layouts run on the standalone Hbs engine
+            // (native Mustache/Handlebars semantics); everything else that is
+            // not an F# layout runs on the Nunjucks compat layer.
+            let isHbs =
+                path.EndsWith(FileExtensions.Handlebars, StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith(FileExtensions.Mustache, StringComparison.OrdinalIgnoreCase)
 
             let rendered =
                 if isFsx then
@@ -166,16 +172,27 @@ module LayoutEngine =
                         eprintfn "[Zest] F# layout error in '%s': %s" name e
                         sprintf "<!-- F# layout error: %s -->" e
                 else
-                    let engine = TemplateManager.getOrCreateEngine "nunjucks" {
-                        Engine = "nunjucks"
+                    let engineName = if isHbs then "hbs" else "nunjucks"
+                    let engine = TemplateManager.getOrCreateEngine engineName {
+                        Engine = engineName
                         EnableCache = true
-                        Extension = FileExtensions.Nunjucks
+                        Extension = if isHbs then FileExtensions.Handlebars else FileExtensions.Nunjucks
                         Filters = []
                     }
                     match engine with
                     | Some e ->
+                        // Hbs layouts load `{{> name}}` partials from the
+                        // includes dictionary directly (no conversion step).
+                        if isHbs then
+                            match e with
+                            | :? HbsEngine as h ->
+                                h.SetPartialLoader(fun name ->
+                                    match includes.TryGetValue name with
+                                    | true, src -> Some src
+                                    | _ -> None)
+                            | _ -> ()
                         let engineKey = e.GetHashCode().ToString()
-                        if registeredLayoutEngines.Add(engineKey) then
+                        if not isHbs && registeredLayoutEngines.Add(engineKey) then
                             FilterRegistry.registerAllFilters e
 
                         let pairs = ResizeArray<string * obj>()

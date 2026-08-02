@@ -7,7 +7,7 @@
 // Social links displayed in the footer.
 addGlobal "socials" [|
     {| label = "GitHub";  url = "https://github.com/zest-ssg";  icon = "github" |}
-    {| label = "Twitter"; url = "https://twitter.com/zest_ssg"; icon = "twitter" |}
+    {| label = "X";       url = "https://x.com/zest_ssg";        icon = "x" |}
     {| label = "RSS";     url = "/rss.xml";                      icon = "rss" |}
 |]
 

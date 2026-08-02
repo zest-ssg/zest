@@ -36,23 +36,8 @@ module Processor =
         int64 h
 
     /// Resolve user file @use imports relative to a base directory.
-    let private resolveUserImport (baseDir: string option) (path: string) : string option =
-        // Try built-in modules first
-        match Utilities.resolveUse path with
-        | Some _ as result -> result
-        | None ->
-            // Not a built-in — try file path relative to baseDir
-            match baseDir with
-            | Some dir ->
-                let fullPath = Path.GetFullPath(Path.Combine(dir, path))
-                if File.Exists fullPath then
-                    Some (File.ReadAllText(fullPath))
-                else
-                    eprintfn "[ZCSS WARN] @use import not found: '%s' (resolved: %s)" path fullPath
-                    None
-            | None ->
-                eprintfn "[ZCSS WARN] @use import '%s' skipped — no source file context" path
-                None
+    /// Single source of truth lives in Modules.getModuleSource.
+    let private resolveUserImport = Modules.getModuleSource
 
     /// Process ZCSS source text with a known base directory for @use resolution.
     /// (Uncached inner implementation — the public `processText` wraps this with
@@ -62,9 +47,10 @@ module Processor =
         // Step 1: Extract and remove @use lines, collect imported contents.
         // Capture aliases (group 2) so namespaced variables (e.g. `p.primary`
         // from `@use "zest:palette" as p;`) can be resolved later.
-        let userSource, importedContents, useDirectives =
+        let userSource, importedContents, importedByPath, useDirectives =
             let uses = usePat.Matches(source)
             let imported = ResizeArray<string>()
+            let byPath = Dictionary<string, string>()
             let directives = ResizeArray<Modules.UseDirective>()
             let userSrc = usePat.Replace(source, "")
             for m in uses do
@@ -72,9 +58,11 @@ module Processor =
                 let alias = if m.Groups.[2].Success then Some m.Groups.[2].Value else None
                 directives.Add({ Modules.Path = path; Modules.Alias = alias })
                 match resolveUserImport baseDir path with
-                | Some content -> imported.Add(content)
+                | Some content ->
+                    imported.Add(content)
+                    byPath.[path] <- content
                 | None -> ()
-            userSrc, List.ofSeq imported, List.ofSeq directives
+            userSrc, List.ofSeq imported, Map.ofSeq (seq { for kv in byPath -> kv.Key, kv.Value }), List.ofSeq directives
 
         // Step 2: Parse imported modules with mode-detected parser and collect their AST + variables
         let importedNodes, importedVars =
@@ -109,7 +97,7 @@ module Processor =
         // Merge imported vars + namespaced vars + user vars (user vars take
         // precedence for !default). Namespaced vars register `alias.name`
         // keys so `@use "zest:palette" as p;` makes `p.primary` resolvable.
-        let namespacedVars = Modules.buildNamespacedVars baseDir useDirectives
+        let namespacedVars = Modules.buildNamespacedVars baseDir useDirectives (Some importedByPath)
         let mergedVars =
             let d = new Dictionary<string, string>()
             for kv in importedVars do d.[kv.Key] <- kv.Value
@@ -121,9 +109,17 @@ module Processor =
         // merged variable dictionary. This makes user-defined variables
         // (e.g. `$primary: #6c63ff`) visible inside utility classes
         // (e.g. `.text-primary { color: $primary }`).
+        // A declaration value only needs re-resolution when it may reference
+        // variables (SCSS `$name`, namespaced `alias.name`, pipes, conditionals
+        // or let-bindings). Plain CSS values skip the whole resolver pipeline.
+        let needsResolve (v: string) =
+            v.Contains('$') || v.Contains("|>") || v.Contains('(') ||
+            v.StartsWith("if ", StringComparison.Ordinal) || v.Contains("let ")
+
         let rec resolveNodeValues (n: ZcssNode) : ZcssNode =
             let resolveDeclValue (d: Declaration) : Declaration =
-                { d with Value = Evaluator.resolveValue d.Value mergedVars }
+                if needsResolve d.Value then { d with Value = Evaluator.resolveValue d.Value mergedVars }
+                else d
             match n with
             | RuleSet(sel, decls, children, pos) ->
                 RuleSet(sel, decls |> List.map resolveDeclValue,

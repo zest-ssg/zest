@@ -49,11 +49,11 @@ module FileExtensions =
     [<Literal>]
     let Liquid = ".liquid"
 
-    /// Handlebars template (auto-converted to Nunjucks).
+    /// Handlebars template (rendered by HbsEngine).
     [<Literal>]
     let Handlebars = ".hbs"
 
-    /// Mustache template (auto-converted to Nunjucks).
+    /// Mustache template (rendered by HbsEngine).
     [<Literal>]
     let Mustache = ".mustache"
 

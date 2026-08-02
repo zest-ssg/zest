@@ -1,28 +1,23 @@
-# English locale for Zest oxygen theme
-# Usage in templates: {{ 'nav.home' | t }}
-# Usage in DSL scripts: t "nav.home"
-
 [nav]
 home = "Home"
-blog = "Blog"
-features = "Features"
+posts = "Posts"
 about = "About"
 
 [meta]
-site_desc = "A fast, minimal blog built with Zest SSG."
-read_more = "Read more"
-min_read = "min read"
 recent_posts = "Recent posts"
 no_posts = "No posts yet."
+min_read = "min read"
 
 [notfound]
-title = "Page not found"
-message = "Sorry, the page you were looking for does not exist."
+message = "The page you were looking for could not be found."
 back_home = "Back to home"
 
+[post]
+prev = "Older post"
+next = "Newer post"
+
 [footer]
-built_with = "Built with"
+built_with = "Built with Zest"
 
 [a11y]
-skip_to_content = "Skip to main content"
-primary_nav = "Primary navigation"
+main_nav = "Main navigation"

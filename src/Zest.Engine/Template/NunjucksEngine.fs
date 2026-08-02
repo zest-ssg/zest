@@ -847,19 +847,18 @@ module private NunjucksImpl =
 
     // ── Block collector (for extends/block inheritance) ──
     /// Collect all top-level `{% block NAME %}...{% endblock %}` blocks
-    /// from a token list. Returns a map from block name to its body tokens.
-    let rec private collectBlocks (tokens: Token list) : IDictionary<string, Token list> =
-        let arr = tokens |> Array.ofList
+    /// from a token array. Returns a map from block name to its body tokens.
+    let rec private collectBlocks (tokens: Token[]) : IDictionary<string, Token list> =
         let blocks = Dictionary<string, Token list>()
-        let len = arr.Length
+        let len = tokens.Length
         let mutable i = 0
         while i < len do
-            match arr.[i] with
+            match tokens.[i] with
             | TagToken("block", args, _) when args.Length > 0 ->
                 let name = args.[0].Trim('"', '\'')
-                let endIdx = findMatchingEnd (i+1) "block" (arr |> Array.toList)
+                let endIdx = findMatchingEnd (i+1) "block" tokens
                 if endIdx > i then
-                    let body = arr.[i+1..endIdx-1] |> Array.toList
+                    let body = tokens.[i+1..endIdx-1] |> Array.toList
                     blocks.[name] <- body
                     i <- endIdx + 1
                 else i <- i + 1
@@ -868,7 +867,9 @@ module private NunjucksImpl =
             | _ -> i <- i + 1
         blocks :> IDictionary<string, Token list>
 
-    and findMatchingEnd (start: int) (tagName: string) (tokens: Token list) : int =
+    // Array-indexed (O(1) per element) version of findMatchingEnd. The old
+    // list-based version indexed a linked list on every step — O(n²) per tag.
+    and findMatchingEnd (start: int) (tagName: string) (tokens: Token[]) : int =
         let len = tokens.Length
         let mutable depth = 0
         let mutable result = len
@@ -902,7 +903,7 @@ module private NunjucksImpl =
                         let pargs = if argsPart = "" then [] else argsPart.Split(',') |> Array.map (fun x -> x.Trim()) |> Array.toList
                         name, pargs
                     else macroText.Trim(), []
-                let eIdx = findMatchingEnd (i+1) "macro" (tsArr |> Array.toList)
+                let eIdx = findMatchingEnd (i+1) "macro" tsArr
                 let body = if eIdx > i+1 then tsArr.[i+1..eIdx-1] |> Array.toList else []
                 result <- (mname, margs, body) :: result
                 i <- if eIdx > i then eIdx + 1 else i + 1
@@ -928,7 +929,12 @@ module private NunjucksImpl =
     }
 
     // ── Main renderer ──────────────────────────────────────
+    // The recursive core works on a Token[] (O(1) indexing, single conversion
+    // per render). The list wrapper keeps the public signature unchanged.
     let rec renderTokens (tokens: Token list) (env: RenderEnv) : Result<string, string> =
+        renderTokensArr (List.toArray tokens) env
+
+    and renderTokensArr (tokens: Token[]) (env: RenderEnv) : Result<string, string> =
         let sb = StringBuilder()
         let len = tokens.Length
         let mutable idx = 0
@@ -1007,17 +1013,16 @@ module private NunjucksImpl =
                     idx <- idx + 1
 
             | TagToken(tag, args, _) ->
-                let arr = tokens |> Array.ofList
                 let isBlock = blockTags.Contains(tag)
                 let endIdx =
-                    if isBlock then findMatchingEnd (idx+1) tag (arr |> Array.toList)
+                    if isBlock then findMatchingEnd (idx+1) tag tokens
                     else idx
                 // A block tag whose matching end was not found: report a precise error.
                 if isBlock && endIdx >= len && len > idx then
                     error <- Some(sprintf "Unclosed block tag '{%% %s %%}'" tag)
                 else
                 let bodyTokens =
-                    if isBlock && endIdx > idx+1 then arr.[idx+1..endIdx-1] |> Array.toList
+                    if isBlock && endIdx > idx+1 then tokens.[idx+1..endIdx-1] |> Array.toList
                     else []
                 let bodyHtml =
                     if isBlock then
@@ -1031,7 +1036,7 @@ module private NunjucksImpl =
                     // Split the body into (condition, branchTokens) at top-level
                     // elif/else boundaries, then render the first matching branch.
                     let condExpr = args |> String.concat " "
-                    let branches = splitIfBranches condExpr bodyTokens
+                    let branches = splitIfBranches condExpr (List.toArray bodyTokens)
                     let chosen =
                         branches |> List.tryPick (fun (cond, toks) ->
                             let matched =
@@ -1054,7 +1059,7 @@ module private NunjucksImpl =
                         if inIdx >= 0 then ls.[..inIdx-1].Trim(), ls.[inIdx+4..]
                         else ls, ""
                     let iter = evalExpr iterExpr env.Variables |> seqOf |> Array.ofSeq
-                    let loopTokens = forLoopBody bodyTokens
+                    let loopTokens = forLoopBody (List.toArray bodyTokens)
                     // Support "key, value" destructuring for dict/pair iteration.
                     let varNames = loopVar.Split(',') |> Array.map (fun v -> v.Trim())
                     if iter.Length > 0 then
@@ -1090,7 +1095,7 @@ module private NunjucksImpl =
                             | Error e -> error <- Some e
                     else
                         // else body of for
-                        let elseBody = forElseBody bodyTokens
+                        let elseBody = forElseBody (List.toArray bodyTokens)
                         match renderTokens elseBody env with
                         | Ok h -> sb.Append(h) |> ignore
                         | Error e -> error <- Some e
@@ -1113,9 +1118,9 @@ module private NunjucksImpl =
                     let path = if args.Length > 0 then args.[0].Trim('"', '\'') else ""
                     match env.LoadTemplate (path, env.Depth + 1) with
                     | Ok txt ->
-                        let parentTokens = tokenize txt
+                        let parentArr = tokenize txt |> Array.ofList
                         // Collect blocks from the parent (for super()) and the child
-                        let parentBlocks = collectBlocks parentTokens
+                        let parentBlocks = collectBlocks parentArr
                         let childBlocks = collectBlocks tokens
                         // Render parent with child blocks available for override
                         let parentEnv = { env with
@@ -1123,7 +1128,7 @@ module private NunjucksImpl =
                                             Blocks = parentBlocks
                                             Depth = env.Depth + 1
                                             BlockStack = [] }
-                        match renderTokens parentTokens parentEnv with
+                        match renderTokensArr parentArr parentEnv with
                         | Ok h -> sb.Append(h) |> ignore
                         | Error e -> error <- Some e
                         // extends replaces the whole template: stop rendering the
@@ -1152,9 +1157,9 @@ module private NunjucksImpl =
                     else
                         // Block assignment: {% set name %}...{% endset %}
                         let sname = setText.Trim().Trim('"', '\'')
-                        let endIdx = findMatchingEnd (idx+1) "set" (arr |> Array.toList)
+                        let endIdx = findMatchingEnd (idx+1) "set" tokens
                         if endIdx > idx then
-                            let body = arr.[idx+1..endIdx-1] |> Array.toList
+                            let body = tokens.[idx+1..endIdx-1] |> Array.toList
                             match renderTokens body env with
                             | Ok h -> env.Variables.[sname] <- box h
                             | Error e -> error <- Some e
@@ -1275,8 +1280,7 @@ module private NunjucksImpl =
     /// Split an if-block body into ordered branches, each tagged with an
     /// optional condition (None = the final `else`). Nested if/for blocks are
     /// skipped so their inner elif/else tags don't split the outer branch.
-    and splitIfBranches (firstCond: string) (tokens: Token list) : (string option * Token list) list =
-        let arr = tokens |> Array.ofList
+    and splitIfBranches (firstCond: string) (arr: Token[]) : (string option * Token list) list =
         let n = arr.Length
         let branches = ResizeArray<string option * Token list>()
         let mutable curCond : string option = Some firstCond
@@ -1300,8 +1304,7 @@ module private NunjucksImpl =
 
     /// Extract the `{% else %}` body of a for-loop (depth-aware). Returns the
     /// tokens after a top-level else, or an empty list when none is present.
-    and forElseBody (tokens: Token list) : Token list =
-        let arr = tokens |> Array.ofList
+    and forElseBody (arr: Token[]) : Token list =
         let n = arr.Length
         let mutable depth = 0
         let mutable elseIdx = -1
@@ -1316,8 +1319,7 @@ module private NunjucksImpl =
         if elseIdx >= 0 && elseIdx + 1 < n then arr.[elseIdx+1..] |> Array.toList else []
 
     /// Extract the loop body of a for-loop, stopping at a top-level else.
-    and forLoopBody (tokens: Token list) : Token list =
-        let arr = tokens |> Array.ofList
+    and forLoopBody (arr: Token[]) : Token list =
         let n = arr.Length
         let mutable depth = 0
         let mutable elseIdx = -1
@@ -1329,7 +1331,7 @@ module private NunjucksImpl =
             | TagToken("else", _, _) when depth = 0 -> elseIdx <- i
             | _ -> ()
             i <- i + 1
-        if elseIdx >= 0 then arr.[..elseIdx-1] |> Array.toList else tokens
+        if elseIdx >= 0 then arr.[..elseIdx-1] |> Array.toList else Array.toList arr
 
 
 // ── Public engine class ────────────────────────────────────────────────

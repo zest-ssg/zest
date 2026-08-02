@@ -102,31 +102,11 @@ module ScriptEvaluator =
         (filePath: string)
         (ext: string)
         : string =
-        // Pre-process format-specific syntax before Nunjucks
-        let templateText =
-            match ext.ToLowerInvariant() with
-            | FileExtensions.Handlebars -> HandlebarsMustacheConverter.convertHandlebars bodyText
-            | FileExtensions.Mustache   -> HandlebarsMustacheConverter.convertMustache bodyText
-            | FileExtensions.Liquid     ->
-                // Liquid whitespace control: {%- → {%  and -%} → %}
-                bodyText.Replace("{%-", "{%").Replace("-%}", " %}")
-            | FileExtensions.WebC       ->
-                // WebC SSR: strip script/webc:setup, normalize template tags
-                let step1 = Regex.Replace(bodyText, @"<script[^>]*webc:setup[^>]*>.*?</script>", "", RegexOptions.Singleline)
-                let step2 = Regex.Replace(step1, @"<template[^>]*webc:nocss[^>]*>", "<!-- webc:nocss -->")
-                step2.Replace("</template>", "<!-- /webc -->")
-            | FileExtensions.Haml       -> HamlConverter.convert bodyText
-            | FileExtensions.Pug        -> PugConverter.convert bodyText
-            | _                         -> bodyText
-        match TemplateManager.getOrCreateEngine "nunjucks" {
-            Engine = "nunjucks"
-            EnableCache = true
-            Extension = FileExtensions.Nunjucks
-            Filters = []
-        } with
-        | Some engine ->
-            ensureFiltersRegistered engine
-
+        // ── .hbs / .mustache → standalone Hbs engine (native Mustache/Handlebars
+        //    semantics: {{{ }}}, sections, ../, @index, partials, {{#if}} …),
+        //    no Nunjucks conversion. Other formats are pre-processed and rendered
+        //    with the Nunjucks engine.
+        let buildPairs () =
             let pairs = ResizeArray<string * obj>()
             let siteCtx = getNunjucksSiteContext config globalData
             pairs.AddRange(siteCtx)
@@ -139,14 +119,55 @@ module ScriptEvaluator =
             pairs.Add("pages", box (PageQuery.getPagesForNunjucks () |> Array.map box))
             pairs.Add("tags", box (PageQuery.getTagsForNunjucks ()))
             pairs.Add("collections", box (PageQuery.getCollectionsForNunjucks ()))
-            let ctx = TemplateManager.buildNestedContext pairs
-            match engine.Render templateText ctx with
-            | Ok html -> html
-            | Error err ->
-                eprintfn "[Zest] Nunjucks error in content '%s': %O" filePath err
+            TemplateManager.buildNestedContext pairs
+        match ext.ToLowerInvariant() with
+        | FileExtensions.Handlebars | FileExtensions.Mustache ->
+            match TemplateManager.getOrCreateEngine "hbs" {
+                Engine = "hbs"
+                EnableCache = true
+                Extension = ext
+                Filters = []
+            } with
+            | Some engine ->
+                let ctx = buildPairs ()
+                match engine.Render bodyText ctx with
+                | Ok html -> html
+                | Error err ->
+                    eprintfn "[Zest] Hbs error in content '%s': %O" filePath err
+                    bodyText
+            | None -> bodyText
+        | _ ->
+            // Pre-process format-specific syntax before Nunjucks
+            let templateText =
+                match ext.ToLowerInvariant() with
+                | FileExtensions.Liquid ->
+                    // Liquid whitespace control: {%- → {%  and -%} → %}
+                    bodyText.Replace("{%-", "{%").Replace("-%}", " %}")
+                | FileExtensions.WebC       ->
+                    // WebC SSR: strip script/webc:setup, normalize template tags
+                    let step1 = Regex.Replace(bodyText, @"<script[^>]*webc:setup[^>]*>.*?</script>", "", RegexOptions.Singleline)
+                    let step2 = Regex.Replace(step1, @"<template[^>]*webc:nocss[^>]*>", "<!-- webc:nocss -->")
+                    step2.Replace("</template>", "<!-- /webc -->")
+                | FileExtensions.Haml       -> HamlConverter.convert bodyText
+                | FileExtensions.Pug        -> PugConverter.convert bodyText
+                | _                         -> bodyText
+            match TemplateManager.getOrCreateEngine "nunjucks" {
+                Engine = "nunjucks"
+                EnableCache = true
+                Extension = FileExtensions.Nunjucks
+                Filters = []
+            } with
+            | Some engine ->
+                ensureFiltersRegistered engine
+
+                let ctx = buildPairs ()
+                match engine.Render templateText ctx with
+                | Ok html -> html
+                | Error err ->
+                    eprintfn "[Zest] Nunjucks error in content '%s': %O" filePath err
+                    templateText
+            | None ->
                 templateText
-        | None ->
-            templateText
 
     let private resolveContentDir (config: SiteConfig) =
         Path.GetFullPath(
