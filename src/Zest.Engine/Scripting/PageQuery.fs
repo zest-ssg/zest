@@ -99,7 +99,7 @@ module PageQuery =
 
     let mutable private _cachedPagesForNunjucks : IDictionary<string, obj>[] option = None
     let mutable private _cachedTagsForNunjucks : string[] option = None
-    let mutable private _cachedCollectionsForNunjucks : string[] option = None
+    let mutable private _cachedCollectionsForNunjucks : IDictionary<string, obj> option = None
 
     /// Reset cached Nunjucks data (call at build start).
     let internal resetNunjucksCache () =
@@ -123,15 +123,24 @@ module PageQuery =
             _cachedTagsForNunjucks <- Some result
             result
 
-    let getCollectionsForNunjucks () : string[] =
+    /// Collection pages keyed by collection name, newest first — enables
+    /// `{% for post in collections.posts %}` and prev/next pagination via
+    /// the `prevPost` / `nextPost` filters.
+    let getCollectionsForNunjucks () : IDictionary<string, obj> =
         match _cachedCollectionsForNunjucks with
         | Some cached -> cached
         | None ->
-            let result =
-                !allPagesRef
-                |> List.map (fun p ->
-                    let parts = p.Url.Trim('/').Split('/')
-                    if parts.Length > 0 && parts.[0] <> "" then parts.[0] else "root")
-                |> List.distinct |> List.sort |> Array.ofList
-            _cachedCollectionsForNunjucks <- Some result
-            result
+            let result = Dictionary<string, obj>()
+            for name in getAllCollections () do
+                let pages =
+                    getPagesByCollection name
+                    // Exclude the collection's own index page (e.g. `/posts/`),
+                    // so pagination/listing navigate between actual posts only.
+                    |> List.filter (fun p -> not (p.Url.Trim('/').Equals(name, StringComparison.OrdinalIgnoreCase)))
+                    |> List.sortByDescending (fun p -> p.Date |> Option.defaultValue DateTime.MinValue)
+                    |> List.map pageToNunjucksDict
+                    |> Array.ofList
+                result.[name] <- box pages
+            let boxed = result :> IDictionary<string, obj>
+            _cachedCollectionsForNunjucks <- Some boxed
+            boxed

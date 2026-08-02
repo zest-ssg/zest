@@ -4,6 +4,10 @@
 // Warm paper background, ink text, a single jade accent, serif
 // headings, hairline rules. Deliberately quiet: no transitions,
 // no shadows, no hover lifts, no scaling, no smooth scrolling.
+//
+// ZCSS keeps an F# flavor: rule bodies use `[ ]` blocks and
+// variables are declared with `let`. Comma-grouped selectors are
+// expanded per rule, and nesting works with `&` or plain space.
 // ─────────────────────────────────────────────────────────────
 
 let bg          = #faf9f5
@@ -26,15 +30,15 @@ let measure = 44r
 
 // ── Reset & base ─────────────────────────────────────────────
 
-* {
+* [
   box-sizing: border-box;
-}
+]
 
-html {
+html [
   -webkit-text-size-adjust: 100%;
-}
+]
 
-body {
+body [
   margin: 0;
   display: flex;
   flex-direction: column;
@@ -44,92 +48,87 @@ body {
   font-family: font-ui;
   font-size: 17px;
   line-height: 1.65;
-}
+]
 
-::selection {
+::selection [
   background: sel-bg;
   color: ink;
-}
+]
 
-:focus-visible {
+:focus-visible [
   outline: 2px solid accent;
   outline-offset: 2px;
-}
+]
 
-img {
+img [
   max-width: 100%;
   height: auto;
-}
+]
 
-.container {
+.container [
   width: 100%;
   max-width: 72r;
   margin: 0 auto;
   padding: 0 1.25r;
-}
+]
 
 // ── Header ───────────────────────────────────────────────────
 
-.site-header {
+.site-header [
   border-bottom: 1px solid line;
-}
+]
 
-.site-header__inner {
+.site-header__inner [
   display: flex;
   align-items: center;
   justify-content: space-between;
   height: 4.25r;
-}
+]
 
-.brand {
+.brand [
   font-family: font-display;
   font-size: 1.2rem;
   font-weight: 600;
   color: ink;
   letter-spacing: -0.01em;
   text-decoration: none;
-}
+]
 
-.site-nav ul {
+.site-nav ul [
   display: flex;
   gap: 1.75rem;
   list-style: none;
   margin: 0;
   padding: 0;
-}
+]
 
-.site-nav a {
+.site-nav a [
   font-size: 0.95rem;
   color: muted;
   text-decoration: none;
   padding-top: 0.25rem;
   padding-bottom: 0.25rem;
-}
+]
 
-.site-nav a:hover {
+.site-nav a:hover, .site-nav a[aria-current="page"] [
   color: ink;
   text-decoration: underline;
-}
-
-.site-nav a[aria-current="page"] {
-  color: ink;
-  text-decoration: underline;
-}
+]
 
 // ── Sticky footer ────────────────────────────────────────────
 
-.site-main {
+.site-main [
   flex: 1;
-}
+]
 
 // ── Hero (home) ──────────────────────────────────────────────
 
-.hero {
+.hero [
   padding: 5.5r 0 3.5r;
   border-bottom: 1px solid line;
-}
+]
 
-.hero__title {
+.hero__title [
   font-family: font-display;
   font-size: 3rem;
   font-weight: 500;
@@ -138,89 +137,89 @@ img {
   color: ink;
   margin: 0;
   max-width: 20ch;
-}
+]
 
-.hero__lead {
+.hero__lead [
   margin: 1.25rem 0 0;
   max-width: 38r;
   font-size: 1.15rem;
   color: muted;
-}
+]
 
-.hero__lead strong {
+.hero__lead strong [
   color: ink;
   font-weight: 600;
-}
+]
 
 // ── Recent posts (home) ──────────────────────────────────────
 
-.recent {
+.recent [
   padding: 3.5r 0 4.5r;
-}
+]
 
-.recent h2 {
+.recent h2 [
   font-family: font-display;
   font-size: 1.75rem;
   font-weight: 500;
   color: ink;
   margin: 0 0 0.5rem;
-}
+]
 
-.post-list {
+.post-list [
   list-style: none;
   margin: 0;
   padding: 0;
   border-top: 1px solid line;
-}
+]
 
-.post-list__item {
+.post-list__item [
   padding: 1.5rem 0;
   border-bottom: 1px solid line;
-}
+]
 
-.post-list__title {
+.post-list__title [
   font-family: font-display;
   font-size: 1.4rem;
   font-weight: 500;
   margin: 0;
-}
+]
 
-.post-list__title a {
+.post-list__title a [
   color: ink;
   text-decoration: none;
-}
+]
 
-.post-list__title a:hover {
+.post-list__title a:hover [
   color: accent;
-}
+]
 
-.post-list__meta {
+.post-list__meta [
   margin: 0.35rem 0 0;
   font-size: 0.85rem;
   color: muted;
-}
+]
 
-.post-list__excerpt {
+.post-list__excerpt [
   margin: 0.5rem 0 0;
   color: body;
   max-width: 40r;
-}
+]
 
 // ── Single post ──────────────────────────────────────────────
 
-.post {
+.post [
   max-width: measure;
   margin: 0 auto;
   padding: 3.5r 0 4.5r;
-}
+]
 
-.post__header {
+.post__header [
   border-bottom: 1px solid line;
   padding-bottom: 1.5rem;
   margin-bottom: 2rem;
-}
+]
 
-.post__title {
+.post__title [
   font-family: font-display;
   font-size: 2.5rem;
   font-weight: 500;
@@ -228,9 +227,9 @@ img {
   line-height: 1.2;
   color: ink;
   margin: 0 0 1rem;
-}
+]
 
-.post__meta {
+.post__meta [
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem 1rem;
@@ -238,31 +237,31 @@ img {
   margin: 0;
   font-size: 0.88rem;
   color: muted;
-}
+]
 
-.post__tags {
+.post__tags [
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
-}
+]
 
-.post__body {
+.post__body [
   font-family: font-display;
   font-size: 1.06rem;
   line-height: 1.9;
   color: body;
-}
+]
 
-.post__body h1 {
+.post__body h1 [
   font-family: font-display;
   color: ink;
   font-weight: 600;
   line-height: 1.3;
   margin: 2.2em 0 0.6em;
   font-size: 1.9rem;
-}
+]
 
-.post__body h2 {
+.post__body h2 [
   font-family: font-display;
   color: ink;
   font-weight: 600;
@@ -271,64 +270,48 @@ img {
   font-size: 1.55rem;
   padding-bottom: 0.3em;
   border-bottom: 1px solid line;
-}
+]
 
-.post__body h3 {
+.post__body h3 [
   font-family: font-display;
   color: ink;
   font-weight: 600;
   line-height: 1.3;
   margin: 2.2em 0 0.6em;
   font-size: 1.25rem;
-}
+]
 
-.post__body h4 {
+.post__body h4 [
   font-family: font-display;
   color: ink;
   font-weight: 600;
   line-height: 1.3;
   margin: 2.2em 0 0.6em;
   font-size: 1.1rem;
-}
+]
 
-.post__body p {
+.post__body p [
   margin: 0 0 1.25em;
-}
+]
 
-.post__body a {
+.post__body a [
   color: accent;
   text-decoration: underline;
-}
+]
 
-.post__body a:hover {
+.post__body a:hover [
   color: accent-deep;
-}
+]
 
-.post__body code {
+.post__body code, .post__body kbd, .post__body samp [
   font-family: font-mono;
   font-size: 0.88em;
   background: code-bg;
   padding: 0.15em 0.4em;
   border-radius: 2px;
-}
+]
 
-.post__body kbd {
-  font-family: font-mono;
-  font-size: 0.88em;
-  background: code-bg;
-  padding: 0.15em 0.4em;
-  border-radius: 2px;
-}
-
-.post__body samp {
-  font-family: font-mono;
-  font-size: 0.88em;
-  background: code-bg;
-  padding: 0.15em 0.4em;
-  border-radius: 2px;
-}
-
-.post__body pre {
+.post__body pre [
   background: code-bg;
   border: 1px solid line;
   border-radius: 2px;
@@ -336,30 +319,30 @@ img {
   overflow-x: auto;
   font-size: 0.9rem;
   line-height: 1.7;
-}
+]
 
-.post__body pre code {
+.post__body pre code [
   background: none;
   padding: 0;
   font-size: 1em;
-}
+]
 
-.post__body blockquote {
+.post__body blockquote [
   margin: 1.5em 0;
   padding: 0.25em 0 0.25em 1.25rem;
   border-left: 3px solid accent;
   color: muted;
   font-style: italic;
-}
+]
 
-.post__body table {
+.post__body table [
   border-collapse: collapse;
   width: 100%;
   margin: 1.5em 0;
   font-size: 0.95rem;
-}
+]
 
-.post__body th {
+.post__body th [
   border-bottom: 1px solid line;
   border-top: 1px solid line;
   padding: 0.55rem 0.75rem;
@@ -367,22 +350,24 @@ img {
   vertical-align: top;
   font-weight: 600;
   color: ink;
-}
+]
 
-.post__body td {
+.post__body td [
   border-bottom: 1px solid line;
   padding: 0.55rem 0.75rem;
   text-align: left;
   vertical-align: top;
-}
+]
 
-.post__body hr {
+.post__body hr [
   border: 0;
   border-top: 1px solid line;
   margin: 2.5rem 0;
-}
+]
 
-.post__nav {
+// ── Post navigation (prev / next) ────────────────────────────
+
+.post__nav [
   display: flex;
   justify-content: space-between;
   gap: 1rem;
@@ -390,116 +375,138 @@ img {
   padding-top: 1.5rem;
   border-top: 1px solid line;
   font-size: 0.95rem;
-}
+]
 
-.post__nav a {
+.post__nav-link [
+  display: block;
   color: muted;
   text-decoration: none;
+  max-width: 45%;
 }
 
-.post__nav a:hover {
+.post__nav-link:hover [
   color: accent;
-}
+]
 
-.post__nav-next {
+.post__nav-label [
+  display: block;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+  color: muted;
+]
+
+.post__nav-title [
+  display: block;
+  font-family: font-display;
+  font-weight: 500;
+  color: ink;
+]
+
+.post__nav-link:hover .post__nav-title [
+  color: accent;
+]
+
+.post__nav-link--next [
   margin-left: auto;
   text-align: right;
-}
+]
 
 // ── Footer ───────────────────────────────────────────────────
 
-.site-footer {
+.site-footer [
   border-top: 1px solid line;
   padding: 2.25r 0;
   font-size: 0.9rem;
   color: muted;
-}
+]
 
-.site-footer__inner {
+.site-footer__inner [
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
-}
+]
 
-.site-footer__copy {
+.site-footer__copy [
   margin: 0;
-}
+]
 
-.site-footer__socials {
+.site-footer__socials [
   display: flex;
   gap: 1.25rem;
   list-style: none;
   margin: 0;
   padding: 0;
-}
+]
 
-.site-footer__socials a {
+.site-footer__socials a [
   color: muted;
   text-decoration: none;
-}
+]
 
-.site-footer__socials a:hover {
+.site-footer__socials a:hover [
   color: accent;
-}
+]
 
 // ── 404 ──────────────────────────────────────────────────────
 
-.notfound {
+.notfound [
   text-align: center;
   padding: 6rem 0;
-}
+]
 
-.notfound__code {
+.notfound__code [
   font-family: font-display;
   font-size: 5rem;
   font-weight: 500;
   color: accent;
   margin: 0;
   letter-spacing: 0.05em;
-}
+]
 
-.notfound__lead {
+.notfound__lead [
   color: muted;
   font-size: 1.1rem;
   margin: 0.75rem 0 1.5rem;
-}
+]
 
-.notfound a {
+.notfound a [
   color: accent;
-}
+]
 
 // ── DSL components ───────────────────────────────────────────
 
-.grid {
+.grid [
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(16r, 1fr));
   gap: 1.5rem;
-}
+]
 
-.card {
+.card [
   background: surface;
   border: 1px solid line;
   border-radius: 2px;
   padding: 1.6rem;
-}
+]
 
-.card h4 {
+.card h4 [
   font-family: font-display;
   font-size: 1.15rem;
   font-weight: 600;
   color: ink;
   margin: 0 0 0.5rem;
-}
+]
 
-.card-body p {
+.card-body p [
   color: muted;
   font-size: 0.95rem;
   margin: 0 0 1.1rem;
-}
+]
 
-.btn {
+.btn [
   display: inline-block;
   padding: 0.5rem 1.1rem;
   border: 1px solid accent;
@@ -509,34 +516,34 @@ img {
   font-size: 0.95rem;
   text-decoration: none;
   cursor: pointer;
-}
+]
 
-.btn:hover {
+.btn:hover [
   background: accent-soft;
   color: accent-deep;
   border-color: accent-deep;
-}
+]
 
-.btn-primary {
+.btn-primary [
   background: accent;
   color: #ffffff;
-}
+]
 
-.btn-primary:hover {
+.btn-primary:hover [
   background: accent-deep;
   color: #ffffff;
-}
+]
 
-.tag-list {
+.tag-list [
   list-style: none;
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
   padding: 0;
   margin: 0;
-}
+]
 
-.tag {
+.tag, .badge [
   display: inline-block;
   font-size: 0.78rem;
   padding: 0.2rem 0.65rem;
@@ -544,317 +551,215 @@ img {
   border-radius: 2px;
   color: muted;
   text-decoration: none;
-}
+]
 
-.badge {
-  display: inline-block;
-  font-size: 0.78rem;
-  padding: 0.2rem 0.65rem;
-  border: 1px solid line;
-  border-radius: 2px;
-  color: muted;
-  text-decoration: none;
-}
-
-a.tag:hover {
+a.tag:hover, a.badge:hover [
   color: accent;
   border-color: accent;
-}
+]
 
-a.badge:hover {
-  color: accent;
-  border-color: accent;
-}
-
-.breadcrumb {
+.breadcrumb [
   font-size: 0.9rem;
   color: muted;
-}
+]
 
-.breadcrumb ol {
+.breadcrumb ol [
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
   list-style: none;
   margin: 0;
   padding: 0;
-}
+]
 
-.breadcrumb li + li::before {
+.breadcrumb li + li::before [
   content: "·";
   margin-right: 0.5rem;
   color: line;
-}
+]
 
-.breadcrumb li.active {
+.breadcrumb li.active [
   color: ink;
-}
+]
 
-.progress-wrapper {
+.progress-wrapper [
   margin: 1rem 0;
-}
+]
 
-.progress-label {
+.progress-label [
   display: block;
   font-size: 0.85rem;
   color: muted;
   margin-bottom: 0.4rem;
-}
+]
 
-progress {
+progress [
   width: 100%;
   height: 0.5rem;
   border: 1px solid line;
   border-radius: 2px;
   background: surface;
-}
+]
 
-progress::-webkit-progress-bar {
+progress::-webkit-progress-bar [
   background: surface;
   border-radius: 2px;
-}
+]
 
-progress::-webkit-progress-value {
+progress::-webkit-progress-value [
   background: accent;
-}
+]
 
-progress::-moz-progress-bar {
+progress::-moz-progress-bar [
   background: accent;
-}
+]
 
-.alert {
+.alert [
   padding: 0.85rem 1.1rem;
   border: 1px solid line;
   border-left: 3px solid accent;
   border-radius: 2px;
   margin: 1.25rem 0;
   font-size: 0.95rem;
-}
+]
 
-.icon {
+.icon [
   font-size: 1.15em;
   line-height: 1;
-}
+]
 
 // ── Dark mode ────────────────────────────────────────────────
 
-@media (prefers-color-scheme: dark) {
-  body {
+@media (prefers-color-scheme: dark) [
+  body [
     background: #16150f;
     color: #d6d2c6;
-  }
+  ]
 
-  ::selection {
+  ::selection [
     background: #2c3a33;
     color: #ece9e1;
-  }
+  ]
 
-  .site-header {
+  .site-header, .site-footer [
     border-color: #2b2820;
-  }
+  ]
 
-  .site-footer {
-    border-color: #2b2820;
-  }
-
-  .brand {
+  .brand, .hero__title, .recent h2, .post__title, .post__body h1, .post__body h2, .post__body h3, .post__body h4, .card h4 [
     color: #ece9e1;
-  }
+  ]
 
-  .hero__title {
-    color: #ece9e1;
-  }
-
-  .recent h2 {
-    color: #ece9e1;
-  }
-
-  .post__title {
-    color: #ece9e1;
-  }
-
-  .post__body h1 {
-    color: #ece9e1;
-  }
-
-  .post__body h2 {
-    color: #ece9e1;
-  }
-
-  .post__body h3 {
-    color: #ece9e1;
-  }
-
-  .post__body h4 {
-    color: #ece9e1;
-  }
-
-  .card h4 {
-    color: #ece9e1;
-  }
-
-  .hero__lead {
+  .hero__lead, .post__meta, .post-list__meta, .notfound__lead, .site-footer, .site-footer__copy, .post__nav-label [
     color: #9b968a;
-  }
+  ]
 
-  .post__meta {
-    color: #9b968a;
-  }
-
-  .post-list__meta {
-    color: #9b968a;
-  }
-
-  .notfound__lead {
-    color: #9b968a;
-  }
-
-  .site-footer {
-    color: #9b968a;
-  }
-
-  .site-footer__copy {
-    color: #9b968a;
-  }
-
-  .site-nav a:hover {
+  .site-nav a:hover, .site-nav a[aria-current="page"] [
     color: #cfd8d2;
-  }
+  ]
 
-  .site-nav a[aria-current="page"] {
+  .post-list__title a:hover [
     color: #cfd8d2;
-  }
+  ]
 
-  .post-list__title a:hover {
-    color: #cfd8d2;
-  }
-
-  .post__body a {
+  .post__body a, .notfound a, .post__nav-link:hover, .site-footer__socials a:hover [
     color: #a3c4b3;
-  }
+  ]
 
-  .notfound a {
-    color: #a3c4b3;
-  }
-
-  .post__nav a:hover {
-    color: #a3c4b3;
-  }
-
-  .site-footer__socials a:hover {
-    color: #a3c4b3;
-  }
-
-  .card {
+  .card, .tag, .badge [
     background: #1d1b14;
     border-color: #2b2820;
-  }
+  ]
 
-  .tag {
+  progress [
     background: #1d1b14;
     border-color: #2b2820;
-  }
+  ]
 
-  .badge {
-    background: #1d1b14;
-    border-color: #2b2820;
-  }
-
-  progress {
-    background: #1d1b14;
-    border-color: #2b2820;
-  }
-
-  .post__body code {
+  .post__body code, .post__body pre [
     background: #201e17;
     border-color: #2b2820;
-  }
+  ]
 
-  .post__body pre {
-    background: #201e17;
-    border-color: #2b2820;
-  }
-
-  .post__body blockquote {
+  .post__body blockquote [
     border-left-color: #5d8876;
-  }
+  ]
 
-  .post__body th {
+  .post__body th [
     color: #ece9e1;
-  }
+  ]
 
-  .btn-primary {
+  .post__nav-title [
+    color: #ece9e1;
+  ]
+
+  .post__nav-link:hover .post__nav-title [
+    color: #a3c4b3;
+  ]
+
+  .btn-primary [
     background: #3c6a5a;
     color: #ffffff;
-  }
-}
+  ]
+]
 
 // ── Responsive ───────────────────────────────────────────────
 
-@media (max-width: 640px) {
-  .hero__title {
+@media (max-width: 640px) [
+  .hero__title [
     font-size: 2.25rem;
-  }
+  ]
 
-  .post__title {
+  .post__title [
     font-size: 2rem;
-  }
+  ]
 
-  .site-header__inner {
+  .site-header__inner [
     height: auto;
     padding: 1rem 0;
     flex-direction: column;
     align-items: flex-start;
     gap: 0.5rem;
-  }
+  ]
 
-  .site-nav ul {
+  .site-nav ul [
     gap: 1.1rem;
     flex-wrap: wrap;
-  }
+  ]
 
-  .site-footer__inner {
+  .site-footer__inner [
     flex-direction: column;
     align-items: flex-start;
-  }
+  ]
 
-  .post__nav {
+  .post__nav [
     flex-direction: column;
     align-items: flex-start;
-  }
+  ]
 
-  .post__nav-next {
+  .post__nav-link--next [
     margin-left: 0;
     text-align: left;
-  }
+  ]
 
-  .hero {
+  .hero [
     padding: 4rem 0 3rem;
-  }
-}
+  ]
+]
 
 // ── Print ────────────────────────────────────────────────────
 
-@media print {
-  .site-header {
+@media print [
+  .site-header, .site-footer, .post__nav [
     display: none;
-  }
+  ]
 
-  .site-footer {
-    display: none;
-  }
-
-  .post__nav {
-    display: none;
-  }
-
-  body {
+  body [
     background: #ffffff;
     color: #000000;
     font-size: 12pt;
-  }
+  ]
 
-  .post__body a {
+  .post__body a [
     color: #000000;
-  }
-}
+  ]
+]

@@ -44,6 +44,34 @@ module private NunjucksImpl =
     let private reIndent  = Regex(@"^", RegexOptions.Compiled ||| RegexOptions.Multiline)
     let private reUrl     = Regex(@"(https?://[^\s<>""']+)", RegexOptions.Compiled)
 
+    // ── strftime → .NET format conversion ──────────────────
+    // The `date` filter accepts both C strftime tokens (%Y-%m-%d)
+    // and .NET tokens (yyyy-MM-dd). When `%` is present, translate.
+    let private strftimeToDotnet (fmt: string) : string =
+        let sb = StringBuilder()
+        let n = fmt.Length
+        let mutable i = 0
+        while i < n do
+            if fmt.[i] = '%' && i + 1 < n then
+                let tok = fmt.Substring(i + 1, 1)
+                let mapped =
+                    match tok with
+                    | "Y" -> "yyyy" | "y" -> "yy"
+                    | "m" -> "MM"   | "b" -> "MMM" | "B" -> "MMMM"
+                    | "d" -> "dd"   | "e" -> "d"
+                    | "a" -> "ddd"  | "A" -> "dddd"
+                    | "H" -> "HH"   | "I" -> "hh"
+                    | "M" -> "mm"   | "S" -> "ss"
+                    | "p" -> "tt"   | "z" -> "zzz" | "Z" -> "zzz"
+                    | "%" -> "%"
+                    | t -> "%" + t   // unknown token → keep literal
+                sb.Append(mapped) |> ignore
+                i <- i + 2
+            else
+                sb.Append(fmt.[i]) |> ignore
+                i <- i + 1
+        sb.ToString()
+
     // ── Token types ────────────────────────────────────────
     // Each token carries its 1-based source line so runtime/syntax errors can
     // be reported with a meaningful location instead of line 0.
@@ -791,9 +819,10 @@ module private NunjucksImpl =
                 if isNull value then fb
                 else match value with :? string as sv when sv = "" -> fb | _ -> value
 
-        // Date filter
+        // Date filter — accepts strftime tokens (%Y-%m-%d) or .NET tokens
         | "date" ->
-            let fmt = if args.Length > 0 then toStr args.[0] else "yyyy-MM-dd"
+            let rawFmt = if args.Length > 0 then toStr args.[0] else "yyyy-MM-dd"
+            let fmt = if rawFmt.Contains("%") then strftimeToDotnet rawFmt else rawFmt
             let dt = match value with
                      | :? DateTime as d -> d
                      | :? string as sv ->

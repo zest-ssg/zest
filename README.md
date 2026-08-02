@@ -70,16 +70,19 @@ render [
 let accent = #3c6a5a
 let measure = 44r
 
-.post__title {
+.post__title, .post__meta [
   font-family: font-display;
   color: ink;
-  [ a { color: accent } ]
-}
+  a [
+    color: accent
+  ]
+]
 ```
 
-ZCSS is a small SCSS-like preprocessor: variables, nesting, color functions
-(`darken()`, `lighten()`), `r` as a shorthand for `rem` — compiled to plain
-CSS by the engine itself.
+ZCSS is a small SCSS-like preprocessor: variables, nesting, comma-grouped
+selectors, color functions (`darken()`, `lighten()`), and `r` as a shorthand
+for `rem` — compiled to plain CSS by the engine itself. Rule bodies use
+F#-style `[ ]` blocks.
 
 ### Data
 

@@ -2,9 +2,9 @@
   <div class="container site-footer__inner">
     <p class="site-footer__copy">{{ 'footer.built_with' | t }}</p>
     <ul class="site-footer__socials">
-      <li><a href="https://github.com/zest-ssg" rel="me">GitHub</a></li>
-      <li><a href="https://x.com/zest_ssg" rel="me">X</a></li>
-      <li><a href="/rss.xml" rel="me">RSS</a></li>
+      {% for s in site.socials %}
+      <li><a href="{{ s.url }}" rel="me">{{ s.label }}</a></li>
+      {% endfor %}
     </ul>
   </div>
 </footer>

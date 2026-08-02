@@ -108,6 +108,69 @@ module Compiler =
                 | _ -> () ]
         collect allNodes
 
+    // ── Selector nesting helpers ─────────────────────────────
+    // Support comma-grouped selectors: `.a, .b { .x { } }` must
+    // expand to `.a .x, .b .x` — prefix every top-level comma part.
+
+    /// Split a selector string on top-level commas (respecting parens, brackets, quotes).
+    let private splitTopLevel (s: string) : string list =
+        let parts = ResizeArray<string>()
+        let sb = StringBuilder()
+        let mutable depth = 0
+        let mutable inS = false
+        let mutable inD = false
+        for c in s do
+            if inS then
+                if c = '\'' then inS <- false
+                sb.Append(c) |> ignore
+            elif inD then
+                if c = '"' then inD <- false
+                sb.Append(c) |> ignore
+            elif c = '\'' then
+                inS <- true
+                sb.Append(c) |> ignore
+            elif c = '"' then
+                inD <- true
+                sb.Append(c) |> ignore
+            elif c = '(' || c = '[' || c = '{' then
+                depth <- depth + 1
+                sb.Append(c) |> ignore
+            elif c = ')' || c = ']' || c = '}' then
+                depth <- max 0 (depth - 1)
+                sb.Append(c) |> ignore
+            elif c = ',' && depth = 0 then
+                parts.Add(sb.ToString())
+                sb.Clear() |> ignore
+            else
+                sb.Append(c) |> ignore
+        parts.Add(sb.ToString())
+        parts
+        |> Seq.map (fun p -> p.Trim())
+        |> Seq.filter (fun p -> p.Length > 0)
+        |> List.ofSeq
+
+    /// Combine a parent prefix with one child selector part.
+    let private combineSelector (parent: string) (child: string) : string =
+        if String.IsNullOrEmpty parent then child
+        elif String.IsNullOrEmpty child then parent
+        elif child.StartsWith("&") then parent + child.Substring(1)
+        elif child.StartsWith(":") || child.StartsWith("::") then parent + child
+        elif child.StartsWith("@") then child
+        else parent + " " + child
+
+    /// Prepend `parent` to every top-level comma-separated part of `selector`.
+    let private withParent (parent: string) (selector: string) : string =
+        if String.IsNullOrEmpty parent then selector
+        elif String.IsNullOrEmpty selector then parent
+        elif selector.StartsWith("@") then selector
+        else
+            let parentParts = splitTopLevel parent
+            let childParts = splitTopLevel selector
+            [ for pp in parentParts do
+                for cp in childParts do
+                    yield combineSelector pp cp ]
+            |> String.concat ", "
+
     /// Expand @include by resolving mixin body with argument substitution
     let private expandMixin
         (name: string)
@@ -314,13 +377,7 @@ module Compiler =
                     sb.AppendLine("}") |> ignore
 
                 | RuleSet(selector, decls, children, _) ->
-                    let fullSel =
-                        if String.IsNullOrEmpty parent then selector
-                        elif String.IsNullOrEmpty selector then parent
-                        elif selector.StartsWith("&") then parent + selector.Substring(1)
-                        elif selector.StartsWith(":") || selector.StartsWith("::") then parent + selector
-                        elif selector.StartsWith("@") then selector
-                        else parent + " " + selector
+                    let fullSel = withParent parent selector
 
                     // Expand @include / @content in children
                     let expandedChildren =

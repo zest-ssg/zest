@@ -187,6 +187,28 @@ module InitEngine =
           AfterBuildCommands = afterCmds |> Seq.toList
           HasErrors = hasErrors; Errors = errors }
 
+    /// Convert a JSON element into native .NET objects (Dictionary/array/primitives)
+    /// so that template engines and DSL queries can iterate/access them directly.
+    /// Otherwise `JsonElement` values leak into the global data and break
+    /// iteration (e.g. `{% for s in site.socials %}`).
+    let rec private jsonToObj (el: JsonElement) : obj =
+        match el.ValueKind with
+        | JsonValueKind.String  -> box (el.GetString())
+        | JsonValueKind.Number  ->
+            match el.TryGetInt64() with
+            | true, l -> box l
+            | _ -> box (el.GetDouble())
+        | JsonValueKind.True    -> box true
+        | JsonValueKind.False   -> box false
+        | JsonValueKind.Null    -> null
+        | JsonValueKind.Array   ->
+            el.EnumerateArray() |> Seq.map jsonToObj |> Seq.toArray |> box
+        | JsonValueKind.Object  ->
+            let d = Dictionary<string, obj>()
+            for p in el.EnumerateObject() do d.[p.Name] <- jsonToObj p.Value
+            box d
+        | _ -> box (el.ToString())
+
     /// Parse the JSON result file written by `__writeResult ()`.
     let private readResultFile (tmpResult: string) : IDictionary<string, obj> =
         if File.Exists tmpResult then
@@ -195,13 +217,9 @@ module InitEngine =
                 let parsed = JsonSerializer.Deserialize<IDictionary<string, JsonElement>>(text)
                 let dict = Dictionary<string, obj>()
                 for kv in parsed do
-                    match kv.Value.ValueKind with
-                    | JsonValueKind.String -> dict.[kv.Key] <- box (kv.Value.GetString())
-                    | JsonValueKind.Number -> dict.[kv.Key] <- box (kv.Value.GetDouble())
-                    | JsonValueKind.True  -> dict.[kv.Key] <- box true
-                    | JsonValueKind.False -> dict.[kv.Key] <- box false
-                    | JsonValueKind.Null -> ()
-                    | _ -> dict.[kv.Key] <- box kv.Value
+                    match jsonToObj kv.Value with
+                    | null -> ()
+                    | v -> dict.[kv.Key] <- v
                 dict :> IDictionary<string, obj>
             with _ ->
                 dict [] :> IDictionary<string, obj>

@@ -19,7 +19,7 @@
       <header class="post__header">
         <h1 class="post__title">{{ page.title }}</h1>
         <p class="post__meta">
-          {% if page.date %}<time datetime="{{ page.date | date('yyyy-MM-dd') }}">{{ page.date | date('MMMM d, yyyy') }}</time>{% endif %}
+          {% if page.date %}<time datetime="{{ page.date | date('%Y-%m-%d') }}">{{ page.date | date('%B %e, %Y') }}</time>{% endif %}
           {% if page.tags %}<span class="post__tags">{% for tag in page.tags %}<a class="tag" href="/tags/{{ tag }}/">{{ tag }}</a>{% endfor %}</span>{% endif %}
           <span class="post__reading">{{ content | readingTime }} {{ 'meta.min_read' | t }}</span>
         </p>
@@ -27,6 +27,22 @@
       <div class="post__body">
         {{ content | safe }}
       </div>
+      <nav class="post__nav" aria-label="{{ 'post.prev' | t }}">
+        {% set older = collections.posts | prevPost(page.url) %}
+        {% set newer = collections.posts | nextPost(page.url) %}
+        {% if older %}
+        <a class="post__nav-link" href="{{ older.url }}">
+          <span class="post__nav-label">{{ 'post.prev' | t }}</span>
+          <span class="post__nav-title">{{ older.title }}</span>
+        </a>
+        {% endif %}
+        {% if newer %}
+        <a class="post__nav-link post__nav-link--next" href="{{ newer.url }}">
+          <span class="post__nav-label">{{ 'post.next' | t }}</span>
+          <span class="post__nav-title">{{ newer.title }}</span>
+        </a>
+        {% endif %}
+      </nav>
     </article>
   </main>
   {{ include footer.html }}
