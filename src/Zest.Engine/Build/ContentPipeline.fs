@@ -136,7 +136,7 @@ module ContentPipeline =
             // Parallel: read file + extract meta concurrently
             // Uses Partitioner for better chunk distribution than Parallel.ForEach on arrays.
             allFiles
-            |> Array.map (fun f ->
+            |> Array.Parallel.map (fun f ->
                 try
                     let text = File.ReadAllText(f)
                     fileContentCache.[f] <- text

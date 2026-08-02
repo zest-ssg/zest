@@ -119,7 +119,7 @@ public abstract class HttpServer : IDisposable
             $"http://{Host}:{Port}/",
             ("Host", Host),
             ("Port", Port.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-            ("Root", outputDir),
+            ("Output", outputDir),
             ("Verbose", LogWriter.Verbose ? "ON" : "off")
         );
 

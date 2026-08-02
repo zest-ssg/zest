@@ -187,8 +187,31 @@ module InitEngine =
           AfterBuildCommands = afterCmds |> Seq.toList
           HasErrors = hasErrors; Errors = errors }
 
+    /// Parse the JSON result file written by `__writeResult ()`.
+    let private readResultFile (tmpResult: string) : IDictionary<string, obj> =
+        if File.Exists tmpResult then
+            try
+                let text = File.ReadAllText(tmpResult)
+                let parsed = JsonSerializer.Deserialize<IDictionary<string, JsonElement>>(text)
+                let dict = Dictionary<string, obj>()
+                for kv in parsed do
+                    match kv.Value.ValueKind with
+                    | JsonValueKind.String -> dict.[kv.Key] <- box (kv.Value.GetString())
+                    | JsonValueKind.Number -> dict.[kv.Key] <- box (kv.Value.GetDouble())
+                    | JsonValueKind.True  -> dict.[kv.Key] <- box true
+                    | JsonValueKind.False -> dict.[kv.Key] <- box false
+                    | JsonValueKind.Null -> ()
+                    | _ -> dict.[kv.Key] <- box kv.Value
+                dict :> IDictionary<string, obj>
+            with _ ->
+                dict [] :> IDictionary<string, obj>
+        else
+            dict [] :> IDictionary<string, obj>
+
     /// Core FSI execution: builds preamble, runs the given script path in a
     /// `dotnet fsi` subprocess, and parses the JSON result file.
+    /// Prefers the long-running FsiSession (avoids FSI cold start per build);
+    /// falls back to a one-shot `--exec` process when the session is unavailable.
     let private executeScript (scriptPath: string) (globalData: IDictionary<string, obj>) : InitResult =
         try
             let tmpResult = Path.Combine(Path.GetTempPath(), sprintf "zest-init-%s.json" (Guid.NewGuid().ToString("N")))
@@ -199,60 +222,54 @@ module InitEngine =
                 let userScript = File.ReadAllText(scriptPath)
                 File.WriteAllText(tmpFsx, preamble + "\n" + userScript + "\n__writeResult ()", Encoding.UTF8)
 
-                let psi = ProcessStartInfo("dotnet", sprintf "fsi --quiet --nologo --exec \"%s\"" tmpFsx)
-                psi.UseShellExecute <- false
-                psi.RedirectStandardOutput <- true
-                psi.RedirectStandardError <- true
-                psi.StandardOutputEncoding <- Encoding.UTF8
-                psi.StandardErrorEncoding <- Encoding.UTF8
-                psi.CreateNoWindow <- true
+                // Preferred path: reuse the shared FSI session.
+                let sessionResult =
+                    match FsiSession.tryRunScript tmpFsx with
+                    | Some (Ok _) -> Some (splitResult (readResultFile tmpResult) false [])
+                    | Some (Error msg) ->
+                        Some { emptyResult with HasErrors = true; Errors = [sprintf "%s failed: %s" (Path.GetFileName scriptPath) msg] }
+                    | None -> None
 
-                use proc = Process.Start(psi)
-                let stdoutTask = proc.StandardOutput.ReadToEndAsync()
-                let stderrTask = proc.StandardError.ReadToEndAsync()
+                match sessionResult with
+                | Some initRes -> initRes
+                | None ->
+                    // Fallback: one-shot `--exec` process (original behavior).
+                    let psi = ProcessStartInfo("dotnet", sprintf "fsi --quiet --nologo --exec \"%s\"" tmpFsx)
+                    psi.UseShellExecute <- false
+                    psi.RedirectStandardOutput <- true
+                    psi.RedirectStandardError <- true
+                    psi.StandardOutputEncoding <- Encoding.UTF8
+                    psi.StandardErrorEncoding <- Encoding.UTF8
+                    psi.CreateNoWindow <- true
 
-                if not (proc.WaitForExit(60_000)) then
-                    try proc.Kill() with _ -> ()
-                    { emptyResult with HasErrors = true; Errors = [sprintf "%s timed out (60s)" (Path.GetFileName scriptPath)] }
-                else
-                    let stderr = stderrTask.Result
+                    use proc = Process.Start(psi)
+                    let stdoutTask = proc.StandardOutput.ReadToEndAsync()
+                    let stderrTask = proc.StandardError.ReadToEndAsync()
 
-                    if !verboseRef && not (String.IsNullOrEmpty stderr) then
-                        Console.ForegroundColor <- ConsoleColor.DarkGray
-                        Console.Error.WriteLine(sprintf "[init] ---- stderr (%s) ----" (Path.GetFileName scriptPath))
-                        Console.Error.WriteLine(stderr)
-                        Console.Error.WriteLine("[init] ---- end stderr ----")
-                        Console.ResetColor()
-
-                    let extraGlobals =
-                        if File.Exists tmpResult then
-                            try
-                                let text = File.ReadAllText(tmpResult)
-                                let parsed = JsonSerializer.Deserialize<IDictionary<string, JsonElement>>(text)
-                                let dict = Dictionary<string, obj>()
-                                for kv in parsed do
-                                    match kv.Value.ValueKind with
-                                    | JsonValueKind.String -> dict.[kv.Key] <- box (kv.Value.GetString())
-                                    | JsonValueKind.Number -> dict.[kv.Key] <- box (kv.Value.GetDouble())
-                                    | JsonValueKind.True  -> dict.[kv.Key] <- box true
-                                    | JsonValueKind.False -> dict.[kv.Key] <- box false
-                                    | JsonValueKind.Null -> ()
-                                    | _ -> dict.[kv.Key] <- box kv.Value
-                                dict :> IDictionary<string, obj>
-                            with _ ->
-                                dict [] :> IDictionary<string, obj>
-                        else
-                            dict [] :> IDictionary<string, obj>
-
-                    if proc.ExitCode = 0 then
-                        splitResult extraGlobals false []
+                    if not (proc.WaitForExit(60_000)) then
+                        try proc.Kill() with _ -> ()
+                        { emptyResult with HasErrors = true; Errors = [sprintf "%s timed out (60s)" (Path.GetFileName scriptPath)] }
                     else
-                        let errLines =
-                            stderr.Split('\n')
-                            |> Array.filter (fun l -> not (String.IsNullOrWhiteSpace l))
-                            |> Array.truncate 20
-                            |> Array.toList
-                        splitResult extraGlobals true errLines
+                        let stderr = stderrTask.Result
+
+                        if !verboseRef && not (String.IsNullOrEmpty stderr) then
+                            Console.ForegroundColor <- ConsoleColor.DarkGray
+                            Console.Error.WriteLine(sprintf "[init] ---- stderr (%s) ----" (Path.GetFileName scriptPath))
+                            Console.Error.WriteLine(stderr)
+                            Console.Error.WriteLine("[init] ---- end stderr ----")
+                            Console.ResetColor()
+
+                        let extraGlobals = readResultFile tmpResult
+
+                        if proc.ExitCode = 0 then
+                            splitResult extraGlobals false []
+                        else
+                            let errLines =
+                                stderr.Split('\n')
+                                |> Array.filter (fun l -> not (String.IsNullOrWhiteSpace l))
+                                |> Array.truncate 20
+                                |> Array.toList
+                            splitResult extraGlobals true errLines
 
             finally
                 if File.Exists tmpFsx then File.Delete tmpFsx

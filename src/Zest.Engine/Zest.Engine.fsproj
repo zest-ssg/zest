@@ -65,6 +65,7 @@
     <Compile Include="Html/TemplateData.fs" />
 
     <!-- Scripting (depends on Domain, Routing, Parsing, Template, Html) -->
+    <Compile Include="Scripting/FsiSession.fs" />
     <Compile Include="Scripting/InitEngine.fs" />
     <Compile Include="Scripting/PageQuery.fs" />
     <Compile Include="Resources/ZestPjax.fs" />

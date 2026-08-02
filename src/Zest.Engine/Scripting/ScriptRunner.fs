@@ -103,9 +103,14 @@ module ScriptRunner =
         psi.EnvironmentVariables.["DOTNET_GCHeapCount"] <- "1"
         psi.EnvironmentVariables.["DOTNET_GCDynamicAdaptationMode"] <- "0"
 
-    // ── FSI: single-exec mode (used for both individual and batch scripts) ─
+    // ── FSI execution ──────────────────────────────────────────────────────
+    //   Preferred path: reuse the long-running FsiSession (avoids the 3-10s
+    //   `dotnet fsi` cold start on every build). Falls back to a one-shot
+    //   `--exec` process when the session is unavailable. Both modes emit the
+    //   script's stdout identically (`--quiet` suppresses FSI's own banner and
+    //   `val it` lines, leaving only user printf output).
 
-    let private runFsi (scriptPath: string) : Result<string, string> =
+    let private runFsiOnce (scriptPath: string) : Result<string, string> =
         let psi = ProcessStartInfo("dotnet", sprintf "fsi --quiet --nologo --exec \"%s\"" scriptPath)
         configureFsiProcess psi
         use proc = Process.Start(psi)
@@ -146,6 +151,11 @@ module ScriptRunner =
                     Console.Error.WriteLine(formattedErrors)
                     Console.ResetColor()
                 Error(formattedErrors)
+
+    let private runFsi (scriptPath: string) : Result<string, string> =
+        match FsiSession.tryRunScript scriptPath with
+        | Some res -> res
+        | None -> runFsiOnce scriptPath
 
     // ── Context file path (per-build, shared) ─────────────────────────────
 

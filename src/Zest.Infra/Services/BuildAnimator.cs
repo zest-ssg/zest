@@ -33,7 +33,6 @@ public static class BuildAnimator
     private static int _frame;
     private static Stopwatch _sw = new();
     private static bool _enabled;
-    private static BuildProgress? _progress;
 
     /// <summary>Whether animation is currently active.</summary>
     public static bool IsActive => _enabled;
@@ -52,10 +51,10 @@ public static class BuildAnimator
         if (Console.IsOutputRedirected) return;
         if (LogWriter.Quiet) return;
 
-        var p = ProgressTracker.tryGet();
-        if (p is null || Microsoft.FSharp.Core.FSharpOption<BuildProgress>.get_IsNone(p)) return;
-
-        _progress = p.Value;
+        // Note: the BuildProgress singleton is created inside BuildEngine.execute
+        // (ProgressTracker.start), which runs AFTER this method in BuildService.
+        // Redraw() therefore polls ProgressTracker.tryGet() live instead of
+        // capturing a snapshot here.
         _enabled = true;
         _frame = 0;
         _sw.Restart();
@@ -93,7 +92,6 @@ public static class BuildAnimator
 
         _sw.Stop();
         PrintSummary(result);
-        _progress = null;
     }
 
     // ── Animation rendering ────────────────────────────────────
@@ -104,9 +102,14 @@ public static class BuildAnimator
     /// </summary>
     private static void Redraw()
     {
-        if (!_enabled || _progress is null) return;
+        if (!_enabled) return;
 
-        var p = _progress;
+        // Poll the live singleton — it may not exist yet on the first tick
+        // (BuildEngine.execute creates it via ProgressTracker.start).
+        var maybe = ProgressTracker.tryGet();
+        if (maybe is null || Microsoft.FSharp.Core.FSharpOption<BuildProgress>.get_IsNone(maybe)) return;
+        var p = maybe.Value;
+
         int total = p.TotalFiles;
         int done = p.Processed + p.Cached;
         double pct = total > 0 ? (double)done / total : 0;
@@ -246,7 +249,7 @@ public static class BuildAnimator
         if (result.Errors.IsEmpty)
         {
             // Output directory (only show on success to reduce noise)
-            var outDir = _progress?.OutputDir;
+            var outDir = result.OutputDir;
             if (string.IsNullOrEmpty(outDir) && result.TotalPages > 0)
                 outDir = Path.GetFullPath(Path.Combine(
                     Directory.GetCurrentDirectory(), "_site"));
