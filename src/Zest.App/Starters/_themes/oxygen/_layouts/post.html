@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0074d9" />
     <title>{{ page.title }} — {{ site.title }}</title>
     <meta name="description" content="{{ page.description | default(site.description) }}" />
     <link rel="stylesheet" href="/assets/css/main.css" />
@@ -13,15 +14,17 @@
     <meta property="og:title" content="{{ page.title }}" />
     <meta property="og:description" content="{{ page.description | default(site.description) }}" />
     <meta property="og:url" content="{{ site.base_url }}{{ page.url }}" />
+    <meta property="article:published_time" content="{{ page.date }}" />
     {% if page.image %}<meta property="og:image" content="{{ page.image }}" />{% endif %}
     <meta name="twitter:card" content="{% if page.image %}summary_large_image{% else %}summary{% endif %}" />
     {% if page.image %}<meta name="twitter:image" content="{{ page.image }}" />{% endif %}
     {{ pjaxScript | safe }}
 </head>
 <body>
+    <a href="#main-content" class="skip-link">{{ 'a11y.skip_to_content' | t }}</a>
     <div class="layout-wrapper">
         {{ include header.html }}
-        <main class="site-main">
+        <main class="site-main" id="main-content">
             <div class="container">
                 <article class="post">
                     <header class="post__header">
@@ -31,12 +34,12 @@
                             {% if page.tags %}
                             <span class="post__tags">
                                 {% for tag in page.tags %}
-                                <span class="post__tag">#{{ tag }}</span>
+                                <a href="/tags/{{ tag | slug }}/" class="post__tag">#{{ tag }}</a>
                                 {% endfor %}
                             </span>
                             {% endif %}
                             <span class="post__reading-time">
-                                &middot; {{ content | readingTime }} min read
+                                &middot; {{ content | readingTime }} {{ 'meta.min_read' | t }}
                             </span>
                         </div>
                     </header>
@@ -48,10 +51,10 @@
                         {% assign prev = posts | prevPost(page.url) %}
                         {% assign next = posts | nextPost(page.url) %}
                         {% if prev %}
-                        <a href="{{ prev.url }}" class="post__prev">&larr; {{ prev.title }}</a>
+                        <a href="{{ prev.url }}" class="post__prev" rel="prev">&larr; {{ prev.title }}</a>
                         {% endif %}
                         {% if next %}
-                        <a href="{{ next.url }}" class="post__next">{{ next.title }} &rarr;</a>
+                        <a href="{{ next.url }}" class="post__next" rel="next">{{ next.title }} &rarr;</a>
                         {% endif %}
                     </footer>
                 </article>

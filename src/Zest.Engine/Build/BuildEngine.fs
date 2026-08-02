@@ -13,6 +13,7 @@ open BuildCache
 open BuildData
 open BuildAssets
 open BuildLayout
+open ProgressTracker
 
 /// Core build pipeline with parallel content processing and optimised I/O.
 module BuildEngine =
@@ -23,7 +24,13 @@ module BuildEngine =
         let mutable processed = 0
         let mutable cached    = 0
         let mutable assets    = 0
+
+        // ── Initialize progress tracking for the build animator ──
+        let progress = ProgressTracker.start ()
+
         try
+            progress.Phase <- BuildPhase.Initializing
+
             ScriptRunner.resetSession()
             ScriptEvaluator.resetNunjucksCache()
 
@@ -53,6 +60,8 @@ module BuildEngine =
             // ── Resolve theme directory (if configured) ────
             let themeDir = ThemeResolver.resolve root config.Theme
 
+            progress.OutputDir <- outputDir
+
             Directory.CreateDirectory(outputDir) |> ignore
             // Load persistent cache for incremental builds
             if config.EnableIncrementalBuild then loadCache outputDir
@@ -73,7 +82,23 @@ module BuildEngine =
                     Map.fold (fun acc k v -> Map.add k v acc) themeLayouts projectLayouts
                 | None -> loadLayouts layoutsDir
 
-            let globalData = loadGlobalData dataDir
+            // Load global data: theme _data first (as defaults), then project _data overwrites.
+            // This mirrors the layouts/includes pattern: theme provides presets,
+            // project files with the same key take priority.
+            let globalData =
+                match themeDir with
+                | Some td ->
+                    let themeDataDir = Path.Combine(td, "_data")
+                    if Directory.Exists themeDataDir then
+                        let themeData = loadGlobalData themeDataDir
+                        let projectData = loadGlobalData dataDir
+                        // Merge: project keys overwrite theme keys.
+                        let merged = Dictionary<string, obj>(themeData)
+                        for kv in projectData do merged.[kv.Key] <- kv.Value
+                        merged :> IDictionary<string, obj>
+                    else
+                        loadGlobalData dataDir
+                | None -> loadGlobalData dataDir
             let includes =
                 match themeDir with
                 | Some td ->
@@ -128,12 +153,34 @@ module BuildEngine =
 
             PageQuery.setGlobalData gDict
 
-            // ── Execute theme _theme.zest.fsx (before user _init.zest.fsx) ──
-            // Theme scripts can register filters/globals that user scripts
-            // may then override or extend.
+            // ── Execute theme init: _theme.toml (preferred) then _theme.zest.fsx (legacy) ──
+            // _theme.toml is declarative: metadata, data, filters, afterBuild hooks.
+            // _theme.zest.fsx (if present) runs after and can register additional
+            // globals/functions via F# code. Theme data is merged before user
+            // _init.zest.fsx so user scripts can override or extend.
             let mutable themeAfterBuild : (string * string) list = []
             match themeDir with
             | Some td ->
+                // ── Load _theme.toml (declarative theme config) ──
+                let themeTomlPath = Path.Combine(td, "_theme.toml")
+                if File.Exists themeTomlPath then
+                    let manifest = ThemeConfigLoader.load td
+                    // Expose theme metadata as `site.theme.*` globals.
+                    let themeMeta = System.Collections.Generic.Dictionary<string, obj>()
+                    for kv in manifest.Meta do themeMeta.[kv.Key] <- kv.Value
+                    // Only set if not already present (user config takes priority later).
+                    if not (gDict.ContainsKey "theme") then
+                        gDict.["theme"] <- box themeMeta
+                    // Merge theme [data] section as top-level globals.
+                    for kv in manifest.Data do
+                        if not (gDict.ContainsKey kv.Key) then
+                            gDict.[kv.Key] <- kv.Value
+                    // Register theme filters (user init filters will overwrite).
+                    FilterRegistry.addInitFilters manifest.Filters
+                    themeAfterBuild <- manifest.AfterBuild
+                    PageQuery.setGlobalData gDict
+
+                // ── Legacy: run _theme.zest.fsx if present (backward compat) ──
                 let themeScript = Path.Combine(td, "_theme.zest.fsx")
                 if File.Exists themeScript then
                     let themeResult = InitEngine.runScript themeScript gDict
@@ -149,7 +196,8 @@ module BuildEngine =
                             gDict.[kv.Key] <- kv.Value
                     // Register theme filters; user init script filters will overwrite.
                     FilterRegistry.addInitFilters themeResult.Filters
-                    themeAfterBuild <- themeResult.AfterBuildCommands
+                    if List.isEmpty themeAfterBuild then
+                        themeAfterBuild <- themeResult.AfterBuildCommands
                     PageQuery.setGlobalData gDict
             | None -> ()
 
@@ -188,8 +236,9 @@ module BuildEngine =
             let afterBuildCmds = themeAfterBuild @ initResult.AfterBuildCommands
 
             // ── Content pipeline: discover → evaluate → write output ──
+            progress.Phase <- BuildPhase.Discovering
             let struct(total, contentProcessed, contentCached, evalResults) =
-                ContentPipeline.processContent contentDir outputDir config gDict layouts includes
+                ContentPipeline.processContent contentDir outputDir config gDict layouts includes progress
 
             processed <- contentProcessed
             cached    <- contentCached
@@ -201,6 +250,7 @@ module BuildEngine =
                 | _ -> ()
 
             // ── Copy theme assets first, then project assets overwrite ──
+            progress.Phase <- BuildPhase.Assets
             match themeDir with
             | Some td ->
                 let themeAssetsDir = Path.Combine(td, "assets")
@@ -209,6 +259,7 @@ module BuildEngine =
             | None -> ()
 
             assets <- copyAssets root outputDir
+            progress.AssetsCopied <- assets
             if config.EnableIncrementalBuild then saveCache outputDir
 
             // ── CSS/JS post-processing ──
@@ -238,6 +289,8 @@ module BuildEngine =
                         with ex ->
                             eprintfn "[Zest] Asset processing failed for '%s': %s" file ex.Message
 
+            progress.Phase <- BuildPhase.Finalizing
+
             // ── Execute afterBuild commands (e.g. sitemap, search index) ──
             for (cmd, args) in afterBuildCmds do
                 try
@@ -260,20 +313,24 @@ module BuildEngine =
                     eprintfn "[Zest] afterBuild '%s %s' threw: %s" cmd args ex.Message
 
             sw.Stop()
+            ProgressTracker.clear ()
             { TotalPages     = total
               ProcessedPages = processed
               CachedPages    = cached
               AssetsCopied   = assets
               AssetsProcessed = assetsProcessed
               DurationMs     = sw.ElapsedMilliseconds
+              OutputDir      = outputDir
               Errors         = errors |> Seq.toList }
         with ex ->
             errors.Add(sprintf "Build failed: %s" ex.Message)
             sw.Stop()
+            ProgressTracker.clear ()
             { TotalPages     = 0
               ProcessedPages = processed
               CachedPages    = cached
               AssetsCopied   = assets
               AssetsProcessed = 0
               DurationMs     = sw.ElapsedMilliseconds
+              OutputDir      = ""
               Errors         = errors |> Seq.toList }

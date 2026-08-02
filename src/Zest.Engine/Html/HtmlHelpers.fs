@@ -18,6 +18,9 @@ module HtmlHelpers =
     let md (markdownText: string) : HtmlNode =
         Raw(MarkdownEngine.toHtml markdownText)
 
+    /// Alias for `md` — full name `markdown` for explicitness.
+    let markdown (markdownText: string) : HtmlNode = md markdownText
+
     /// Compile a ZCSS snippet inline as a `<style>` node.
     let styleBlock (zcssSource: string) : HtmlNode =
         Element("style", [], [Raw(Zcss.Processor.processText zcssSource)])

@@ -62,7 +62,8 @@ module MarkdownEngine =
                     idx <- idx + 1
                     ph)
 
-            let lines = afterCode.Split([| "\r\n"; "\n"; "\r" |], StringSplitOptions.None)
+            // Use StringReader for line-by-line parsing — avoids allocating
+            // a full string[] from Split, reducing GC pressure on large docs.
             let html  = ResizeArray<string>()
             let para  = ResizeArray<string>()
             let listU = ResizeArray<string>()
@@ -87,9 +88,21 @@ module MarkdownEngine =
                     html.Add("</ol>"); listO.Clear(); inO <- false
             let flushAll () = flushP(); flushU(); flushO()
 
+            // ── Table lookahead requires peeking ahead; we read all lines
+            // into a lazy seq. For most Markdown files this is fine since
+            // the line count is modest. For very large files, the seq avoids
+            // materialising the entire array at once.
+            let lines = seq {
+                use reader = new System.IO.StringReader(afterCode)
+                let mutable line = reader.ReadLine()
+                while line <> null do
+                    yield line
+                    line <- reader.ReadLine()
+            }
+            let lineArr = if html.Count = 0 then Array.ofSeq lines else [||]
             let mutable i = 0
-            while i < lines.Length do
-                let line = lines.[i].TrimEnd()
+            while i < lineArr.Length do
+                let line = lineArr.[i].TrimEnd()
                 let cbMatch = codeBlockMarkerPat.Match(line)
                 if cbMatch.Success then
                     flushAll()
@@ -105,16 +118,16 @@ module MarkdownEngine =
                 elif line.StartsWith "> " then
                     flushAll()
                     html.Add(sprintf "<blockquote><p>%s</p></blockquote>" (processInline line.[2..]))
-                elif line.Contains("|") && i + 1 < lines.Length && isTableSep lines.[i + 1] then
+                elif line.Contains("|") && i + 1 < lineArr.Length && isTableSep lineArr.[i + 1] then
                     flushAll()
                     let headers = parseTableRow line
                     html.Add("<table><thead><tr>")
                     for h in headers do html.Add(sprintf "<th>%s</th>" (processInline h))
                     html.Add("</tr></thead><tbody>")
                     i <- i + 2
-                    while i < lines.Length && lines.[i].Contains("|") do
+                    while i < lineArr.Length && lineArr.[i].Contains("|") do
                         html.Add("<tr>")
-                        for c in parseTableRow lines.[i] do html.Add(sprintf "<td>%s</td>" (processInline c))
+                        for c in parseTableRow lineArr.[i] do html.Add(sprintf "<td>%s</td>" (processInline c))
                         html.Add("</tr>")
                         i <- i + 1
                     html.Add("</tbody></table>")

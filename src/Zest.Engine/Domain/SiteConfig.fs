@@ -158,6 +158,9 @@ module SiteConfigDefaults =
           Menus = dict []
           Author = ""
           Language = "en"
+          // Pure annotation for the primary template language (native → .zest.fsx,
+          // nunjucks → .njk, liquid → .liquid, ...). No effect on build routing —
+          // layouts are routed by file extension in LayoutEngine.
           TemplateEngine = "native"
           // Compat flags default off — users opt in via [compat] table.
           CompatJekyll = false

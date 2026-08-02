@@ -51,12 +51,9 @@ public static class WatchAgent
             {
                 var svc = new BuildService();
                 var r = svc.Execute(config);
+                // PrintResult stops the animator and prints summary + errors.
+                // No need to re-iterate errors here.
                 BuildService.PrintResult(r, config);
-                if (r.Errors.Length > 0)
-                {
-                    foreach (var err in r.Errors)
-                        LogWriter.Error("Watch", err);
-                }
             }
             catch (Exception ex)
             {

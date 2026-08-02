@@ -1,0 +1,41 @@
+# _theme.toml — Oxygen theme manifest
+#
+# Declarative theme configuration loaded by ThemeConfigLoader.
+# Replaces the old _theme.zest.fsx approach with a simpler TOML format.
+#
+# Sections:
+#   [theme]       — metadata exposed as {{ site.theme.* }} in templates
+#   [data]        — arbitrary key/value pairs exposed as top-level globals
+#   [filters]     — filter declarations (name = "module::function")
+#   [[afterBuild]] — post-build command entries
+
+# ── Theme metadata ───────────────────────────────────
+# Exposed to templates as {{ site.theme.name }}, {{ site.theme.version }}, etc.
+[theme]
+name    = "oxygen"
+version = "2.0.0"
+author  = "Zest SSG"
+desc    = "A clean, minimal blog theme with refined typography and responsive layout."
+
+# ── Theme-level data ─────────────────────────────────
+# These keys are merged into global data, accessible as {{ <key> }}
+# in Nunjucks templates or `globals.<key>` in F# scripts.
+# User _init.zest.fsx / _config.toml values with the same key take priority.
+[data]
+# Theme-specific reading-time label (overridable by site config).
+reading_time_label = "min read"
+# Default OG image fallback (overridable per-page).
+default_og_image = ""
+
+# ── Theme filters ────────────────────────────────────
+# Declare custom Nunjucks filters provided by the theme.
+# Format: filter_name = "assembly::namespace.function"
+# These are registered before user _init.zest.fsx filters.
+[filters]
+# (Oxygen uses built-in Zest filters; no custom filters needed.)
+
+# ── Post-build hooks ─────────────────────────────────
+# Commands to run after the build completes.
+# [[afterBuild]]
+# cmd = "node"
+# args = "scripts/generate-search-index.js"

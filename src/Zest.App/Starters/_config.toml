@@ -1,4 +1,4 @@
-# Zest site configuration — duo-inspired starter
+# Zest site configuration — oxygen starter
 [site]
 title = "My Zest Blog"
 description = "A fast, minimal blog built with Zest SSG."
@@ -13,16 +13,21 @@ enable_html_formatting = true
 enable_asset_formatting = true
 
 [template]
-# Native mode: .zest.fsx files are F# templates evaluated directly,
-# and .html layouts are processed by the Nunjucks engine.
+# The `engine` value is a PURE ANNOTATION for the primary template language.
+# It has NO effect on the build — layout routing is decided by file extension:
+#   native   → primary language is .zest.fsx (F# script templates)
+#   nunjucks → primary language is Nunjucks (.njk / .html layouts)
+#   liquid   → primary language is Liquid (.liquid layouts)
+# ...any value is accepted; it only labels the template language.
 engine = "native"
 
 # ── Theme ────────────────────────────────────────────
-# The duo theme is self-contained under _themes/duo/.
+# The oxygen theme is self-contained under _themes/oxygen/.
 # Layouts, includes, locales, and assets are loaded from
 # the theme; project files with the same name take priority.
+# Theme config is declarative via _theme.toml.
 [theme]
-name = "duo"
+name = "oxygen"
 source = "local"
 
 [build]

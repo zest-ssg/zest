@@ -254,15 +254,16 @@ module ScriptEvaluator =
         with ex ->
             Error(sprintf "Failed to build page '%s': %s" filePath ex.Message)
 
-    /// Evaluate a single content file into a Page (returns Error on failure).
-    let evaluate
+    /// Evaluate a content file using pre-loaded text — avoids redundant disk I/O
+    /// when the caller (e.g. ContentPipeline) already has the file text cached.
+    let evaluateWithText
         (filePath:   string)
         (config:     SiteConfig)
         (globalData: IDictionary<string, obj>)
+        (text:       string)
         : Result<ContentPage, string> =
 
         try
-            let text       = File.ReadAllText(filePath)
             let ext        = Path.GetExtension(filePath).ToLowerInvariant()
             let contentDir = resolveContentDir config
 
@@ -372,5 +373,19 @@ module ScriptEvaluator =
                         Draft        = meta.Draft
                         Slug         = slug }
 
+        with ex ->
+            Error(sprintf "Failed to evaluate '%s': %s" filePath ex.Message)
+
+    /// Evaluate a single content file into a Page (returns Error on failure).
+    /// Reads file content from disk. Delegates to evaluateWithText after reading.
+    let evaluate
+        (filePath:   string)
+        (config:     SiteConfig)
+        (globalData: IDictionary<string, obj>)
+        : Result<ContentPage, string> =
+
+        try
+            let text = File.ReadAllText(filePath)
+            evaluateWithText filePath config globalData text
         with ex ->
             Error(sprintf "Failed to evaluate '%s': %s" filePath ex.Message)

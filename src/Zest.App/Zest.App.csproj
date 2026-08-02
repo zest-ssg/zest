@@ -81,30 +81,33 @@
     <EmbeddedResource Include="Starters\_data\nav.toml">
       <LogicalName>Zest.App.Starters._data\nav.toml</LogicalName>
     </EmbeddedResource>
-    <!-- Theme: Duo (self-contained under _themes/duo/) -->
-    <EmbeddedResource Include="Starters\_themes\duo\_theme.zest.fsx">
-      <LogicalName>Zest.App.Starters._themes\duo\_theme.zest.fsx</LogicalName>
+    <!-- Theme: Oxygen (self-contained under _themes/oxygen/) -->
+    <EmbeddedResource Include="Starters\_themes\oxygen\_theme.toml">
+      <LogicalName>Zest.App.Starters._themes\oxygen\_theme.toml</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_themes\duo\_layouts\default.html">
-      <LogicalName>Zest.App.Starters._themes\duo\_layouts\default.html</LogicalName>
+    <EmbeddedResource Include="Starters\_themes\oxygen\_data\nav.toml">
+      <LogicalName>Zest.App.Starters._themes\oxygen\_data\nav.toml</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_themes\duo\_layouts\post.html">
-      <LogicalName>Zest.App.Starters._themes\duo\_layouts\post.html</LogicalName>
+    <EmbeddedResource Include="Starters\_themes\oxygen\_layouts\default.html">
+      <LogicalName>Zest.App.Starters._themes\oxygen\_layouts\default.html</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_themes\duo\_includes\header.html">
-      <LogicalName>Zest.App.Starters._themes\duo\_includes\header.html</LogicalName>
+    <EmbeddedResource Include="Starters\_themes\oxygen\_layouts\post.html">
+      <LogicalName>Zest.App.Starters._themes\oxygen\_layouts\post.html</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_themes\duo\_includes\footer.html">
-      <LogicalName>Zest.App.Starters._themes\duo\_includes\footer.html</LogicalName>
+    <EmbeddedResource Include="Starters\_themes\oxygen\_includes\header.html">
+      <LogicalName>Zest.App.Starters._themes\oxygen\_includes\header.html</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_themes\duo\_locales\en.toml">
-      <LogicalName>Zest.App.Starters._themes\duo\_locales\en.toml</LogicalName>
+    <EmbeddedResource Include="Starters\_themes\oxygen\_includes\footer.html">
+      <LogicalName>Zest.App.Starters._themes\oxygen\_includes\footer.html</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_themes\duo\_locales\zh.toml">
-      <LogicalName>Zest.App.Starters._themes\duo\_locales\zh.toml</LogicalName>
+    <EmbeddedResource Include="Starters\_themes\oxygen\_locales\en.toml">
+      <LogicalName>Zest.App.Starters._themes\oxygen\_locales\en.toml</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_themes\duo\assets\css\main.zcss">
-      <LogicalName>Zest.App.Starters._themes\duo\assets\css\main.zcss</LogicalName>
+    <EmbeddedResource Include="Starters\_themes\oxygen\_locales\zh.toml">
+      <LogicalName>Zest.App.Starters._themes\oxygen\_locales\zh.toml</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\_themes\oxygen\assets\css\main.zcss">
+      <LogicalName>Zest.App.Starters._themes\oxygen\assets\css\main.zcss</LogicalName>
     </EmbeddedResource>
     <!-- Content pages -->
     <EmbeddedResource Include="Starters\content\index.zest.fsx">

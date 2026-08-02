@@ -162,13 +162,8 @@ public class PreviewService : HttpServer
             try
             {
                 var result = _buildService.Execute(_config);
+                // PrintResult stops the animator and prints summary + errors.
                 BuildService.PrintResult(result, _config);
-
-                if (result.Errors.Length > 0)
-                {
-                    foreach (var err in result.Errors)
-                        LogWriter.Error("Build", err);
-                }
 
                 Interlocked.Increment(ref _rebuildCount);
 

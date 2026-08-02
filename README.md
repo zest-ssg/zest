@@ -17,7 +17,6 @@
 ## Features
 
 - **Template as Code** — `.zest.fsx` are real F# scripts executed at build time via `dotnet fsi`. Full F#: list comprehensions, pattern matching, string interpolation, arbitrary computation.
-- **`.zhtml` Lightweight Pages** — Pure HTML pages with optional Nunjucks template syntax. No FSI overhead.
 - **HTML DSL** — Compose HTML declaratively: `render [ h1 []; p [] ]`.
 - **Inline Markdown** — Write Markdown directly inside a `.zest.fsx` page with the `md` helper and mix it with the HTML DSL: `md """# Title\n**bold**"""`.
 - **Markdown** — Standard `.md` files with frontmatter support.
@@ -143,8 +142,8 @@ my-site/
 │   ├── index.zest.fsx     # Home page (F# script template)
 │   ├── about.md            # About page (Markdown)
 │   └── posts/
-│       ├── hello-world.zest.fsx
-│       └── contact.zhtml   # Pure HTML (no FSI overhead)
+│       │
+│       └── hello-world.zest.fsx
 ├── _layouts/
 │   ├── default.html        # Layouts (Nunjucks or native replace)
 │   └── post.html
@@ -221,12 +220,18 @@ dotnet publish src/Zest.App/Zest.App.csproj -c Release -r win-x64 --self-contain
 | Conditionals | `@if`, `@else` |
 | Built-in modules | `@use "zest:utilities"`, `@use "zest:palette"`, etc. |
 
-### Layout Engines
+### Template Language Annotation
 
-| Engine | Config Value | Features |
-|--------|-------------|----------|
-| **Nunjucks** (default) | `template_engine = "nunjucks"` | Filters, expressions, `{% if %}`, `{% for %}`, macros, template inheritance, Zest API filters (`pages_by_tag`, `recent`, `by_collection`, `search`, `where`) — also handles `.liquid`, `.hbs`, `.mustache`, `.webc`, `.haml`, `.pug` via auto-conversion |
-| **Native Replace** | `template_engine = "replace"` | Simple `{{ variable }}` substitution |
+The `template_engine` (top-level) or `[template] engine` field in `_config.toml` is a **pure annotation** for the site's primary template language. It does **not** affect the build — layout routing is decided by file extension only:
+
+| Config Value | Labels (primary template language) |
+|--------------|-------------------------------------|
+| `native` | `.zest.fsx` — F# script templates |
+| `nunjucks` | Nunjucks — `.njk` / `.html` layouts |
+| `liquid` | Liquid — `.liquid` layouts |
+| *(any value)* | Pure label; no effect on the build |
+
+**No behavioral impact — annotation only.** All non-`.zest.fsx` layouts (`.html`, `.njk`, `.liquid`, `.hbs`, `.mustache`, `.webc`, `.haml`, `.pug`) are rendered through the Nunjucks compat layer regardless of this field, while `.zest.fsx`/`.fsx` layouts are always evaluated as F# scripts.
 
 ### HTML DSL Reference
 
@@ -269,7 +274,6 @@ else
 **Zest is not a general-purpose static site generator.** It is a specific answer to specific constraints.
 
 1. **F# as the Template** — The template is the program. `.zest.fsx` files are real F# code, not strings.
-2. **ZCSS as the Layout Engine** — Not a CSS pre-processor, but a layout engine that emits CSS.
 3. **TOML as the Contract** — No YAML. Ever.
 4. **JavaScript as Order** — No Node.js, no npm, no bundlers. JavaScript exists only for client-side interactivity.
 5. **The Zealous Few** — Built for those who love F#, hate YAML, and prefer simple tools.

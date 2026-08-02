@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0074d9" />
     <title>{% if page.url != "/" %}{{ page.title }} — {% endif %}{{ site.title }}</title>
     <meta name="description" content="{{ page.description | default(site.description) }}" />
     <link rel="stylesheet" href="/assets/css/main.css" />
@@ -19,9 +20,10 @@
     {{ pjaxScript | safe }}
 </head>
 <body>
+    <a href="#main-content" class="skip-link">{{ 'a11y.skip_to_content' | t }}</a>
     <div class="layout-wrapper">
         {{ include header.html }}
-        <main class="site-main">
+        <main class="site-main" id="main-content">
             <div class="container">
                 {{ content | safe }}
             </div>

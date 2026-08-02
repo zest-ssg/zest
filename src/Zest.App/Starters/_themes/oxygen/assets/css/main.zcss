@@ -1,8 +1,9 @@
-// main.zcss — duo-inspired Zest blog theme
+// main.zcss — Oxygen theme for Zest SSG
 //
-// Inspired by the Eleventy Duo theme (yinkakun/eleventy-duo),
-// ported to ZCSS. Clean typography, restrained colour palette,
-// and a fixed reading measure that centres content gracefully.
+// A refined, minimal blog theme with clean typography, restrained
+// colour palette, and a fixed reading measure. Built on the ZCSS
+// preprocessor with design tokens, dark-mode support, and
+// accessibility-first styling.
 //
 // ── Authoring conventions ───────────────────────────
 // 1. Root font-size must be absolute (px or %), never `r`/`rem`,
@@ -11,14 +12,23 @@
 // 3. The `r` unit shorthand compiles to `rem`.
 
 // ── Design tokens ──────────────────────────────────
-let accent      = #0074d9          // primary accent (links, code)
-let heading     = rgb(6, 6, 6)     // headings / titles
-let bodyColor   = rgb(41, 41, 41)  // body text
-let muted       = rgb(117, 117, 117) // secondary/meta text
-let borderColor = rgb(230, 230, 230) // hairline borders
-let codeBg      = rgba(41, 41, 41, 0.05)  // inline code background
-let bg          = #fffffe          // page background
-let measure     = 48.75r           // max-width reading column (780px)
+let accent       = #0074d9          // primary accent (links, code)
+let accentHover  = darken(accent, 12%)
+let heading      = rgb(6, 6, 6)     // headings / titles
+let bodyColor    = rgb(41, 41, 41)  // body text
+let muted        = rgb(117, 117, 117) // secondary/meta text
+let borderColor  = rgb(230, 230, 230) // hairline borders
+let codeBg       = rgba(41, 41, 41, 0.05)  // inline code background
+let bg           = #fffffe          // page background
+let measure      = 48.75r           // max-width reading column (780px)
+
+// ── Dark mode tokens ───────────────────────────────
+let darkBg       = #0d1117
+let darkBody     = rgb(201, 209, 217)
+let darkHeading  = #f0f6fc
+let darkMuted    = rgb(139, 148, 158)
+let darkBorder   = rgb(48, 54, 61)
+let darkCodeBg   = rgba(139, 148, 158, 0.12)
 
 // ── Reset & base ───────────────────────────────────
 *, *:before, *:after [
@@ -46,10 +56,26 @@ body [
   text-rendering = optimizeLegibility
   -webkit-font-smoothing = antialiased
   min-height = 100%
+  transition = background-color 200ms ease, color 200ms ease
+]
+
+// ── Skip link (accessibility) ──────────────────────
+.skip-link [
+  position = absolute
+  top = -100px
+  left = 0
+  padding = 0.5r 1r
+  background = accent
+  color = #fff
+  text-decoration = none
+  z-index = 1000
+  border-radius = 0 0 4px 0
+  &:focus [
+    top = 0
+  ]
 ]
 
 // ── Layout: sticky footer via flex ─────────────────
-// Body is a flex column; main flexes to fill available space.
 .layout-wrapper [
   display = flex
   flex-direction = column
@@ -57,7 +83,6 @@ body [
 ]
 
 // ── Fixed-width container ──────────────────────────
-// All sections share the same max-width for visual consistency.
 .container [
   width = 100%
   max-width = measure
@@ -66,8 +91,6 @@ body [
 ]
 
 // ── Header ─────────────────────────────────────────
-// Border-bottom is placed inside the content area,
-// not across the full viewport, matching the duo approach.
 .site-header [
   margin-bottom = 4r
 ]
@@ -104,8 +127,15 @@ body [
 .site-nav__link [
   color = muted
   text-decoration = none
+  padding = 0.25r 0.5r
+  border-radius = 3px
+  transition = color 150ms ease, background-color 150ms ease
   &:hover [
     color = heading
+  ]
+  &[aria-current="page"] [
+    color = accent
+    font-weight = 500
   ]
 ]
 
@@ -121,13 +151,13 @@ a [
   text-decoration = underline
   transition = color 200ms linear
   &:hover [
-    color = darken(accent, 15%)
+    color = accentHover
   ]
 ]
 
 // Links inside prose content should be underlined;
 // navigation links are not.
-nav a, .site-header__brand, .site-footer a [
+nav a, .site-header__brand, .site-footer a, .site-nav__link [
   text-decoration = none
 ]
 
@@ -136,6 +166,7 @@ img, video [
   display = block
   max-width = 100%
   height = auto
+  border-radius = 4px
 ]
 
 // ── Typography ─────────────────────────────────────
@@ -162,7 +193,6 @@ p [
 ]
 
 // ── Code ───────────────────────────────────────────
-// Inline code: subtle highlight, accent colour.
 code, kbd [
   font-family = ui-monospace, SFMono-Regular, Menlo, Consolas, monospace
   font-size = 0.95em
@@ -182,6 +212,7 @@ pre [
   font-size = 0.95r
   background = codeBg
   border = 1px solid borderColor
+  border-radius = 4px
   padding = 1r
   margin-top = 2r
   margin-bottom = 2r
@@ -207,6 +238,9 @@ blockquote [
   border-left = 3px solid accent
   color = rgba(41, 41, 41, 0.8)
   font-style = italic
+  & > *:last-child [
+    margin-bottom = 0
+  ]
 ]
 
 // ── Lists ──────────────────────────────────────────
@@ -216,6 +250,8 @@ ul [
   list-style-type = square
   list-style-position = inside
 ]
+
+li > ul, li > ol [ margin-top = 0.5r ]
 
 // ── Tables ─────────────────────────────────────────
 table [
@@ -234,6 +270,10 @@ td, th [
 ]
 
 th [ font-weight = 500 ]
+
+tbody tr:nth-child(even) [
+  background = codeBg
+]
 
 // ── Horizontal rule ────────────────────────────────
 hr [
@@ -266,7 +306,6 @@ hr [
 ]
 
 // ── Post list ──────────────────────────────────────
-// Each item separated by a hairline, clean and uncluttered.
 .post-list [
   list-style = none
   margin = 0
@@ -330,15 +369,23 @@ hr [
   font-size = 0.9r
   color = muted
   opacity = 0.8
+  display = flex
+  flex-wrap = wrap
+  align-items = center
+  gap = 0.5r
 ]
 
 .post__tags [
-  margin-left = 0.75r
+  margin-left = 0.25r
   opacity = 0.8
 ]
 
 .post__tag [
   color = muted
+  text-decoration = none
+  &:hover [
+    color = accent
+  ]
 ]
 
 .post__body [
@@ -352,7 +399,7 @@ hr [
   text-decoration = underline
   color = accent
   &:hover [
-    color = darken(accent, 10%)
+    color = accentHover
   ]
 ]
 
@@ -452,7 +499,12 @@ hr [
 .card [
   padding = 1.25r
   border = 1px solid borderColor
-  border-radius = 4px
+  border-radius = 6px
+  transition = box-shadow 200ms ease, transform 200ms ease
+  &:hover [
+    box-shadow = 0 4px 12px rgba(0, 0, 0, 0.08)
+    transform = translateY(-2px)
+  ]
 ]
 
 .card h3 [
@@ -487,9 +539,13 @@ hr [
   font-size = 0.95r
   cursor = pointer
   border = none
+  transition = background 200ms ease, transform 100ms ease
   &:hover [
-    background = darken(accent, 10%)
+    background = accentHover
     color = #fff
+  ]
+  &:active [
+    transform = scale(0.97)
   ]
 ]
 
@@ -564,6 +620,71 @@ hr [
   width = 1px
 ]
 
+// ── Dark mode ──────────────────────────────────────
+@media (prefers-color-scheme: dark) [
+  body [
+    background-color = darkBg
+    color = darkBody
+  ]
+  h1, h2, h3, h4, h5, h6 [
+    color = darkHeading
+  ]
+  .site-header__inner, .site-footer__inner [
+    border-color = darkBorder
+  ]
+  .site-header__brand, .post-list__title a, .post__title [
+    color = darkHeading
+  ]
+  .site-nav__link, .post-list__meta, .site-footer__copy, .breadcrumb [
+    color = darkMuted
+  ]
+  .post-list__item [
+    border-color = darkBorder
+  ]
+  .post__body [
+    color = darkBody
+  ]
+  code, kbd [
+    background = darkCodeBg
+    color = lighten(accent, 15%)
+  ]
+  pre [
+    background = darkCodeBg
+    border-color = darkBorder
+  ]
+  .card [
+    border-color = darkBorder
+    &:hover [
+      box-shadow = 0 4px 12px rgba(0, 0, 0, 0.3)
+    ]
+  ]
+  .card p, .hero__lead [
+    color = rgba(201, 209, 217, 0.7)
+  ]
+  .code-block [
+    background = darkCodeBg
+  ]
+  blockquote [
+    color = rgba(201, 209, 217, 0.8)
+    border-left-color = accent
+  ]
+  hr [
+    background = rgba(139, 148, 158, 0.2)
+  ]
+  td, th [
+    border-color = darkBorder
+  ]
+  tbody tr:nth-child(even) [
+    background = darkCodeBg
+  ]
+  .progress [
+    background = darkBorder
+  ]
+  table [
+    border-color = darkBorder
+  ]
+]
+
 // ── Responsive ─────────────────────────────────────
 @media (max-width: 640px) [
   html [ font-size = 16px ]
@@ -585,5 +706,33 @@ hr [
   ]
   .card-grid [
     grid-template-columns = 1fr
+  ]
+  .post__meta [
+    flex-direction = column
+    align-items = flex-start
+    gap = 0.25r
+  ]
+  .post__tags [
+    margin-left = 0
+  ]
+]
+
+// ── Print ──────────────────────────────────────────
+@media print [
+  .site-header, .site-footer, .post__pagination, .skip-link [
+    display = none
+  ]
+  body [
+    color = #000
+    background = #fff
+    font-size = 12pt
+  ]
+  a [
+    color = #000
+    text-decoration = underline
+  ]
+  a[href]::after [
+    content = " (" attr(href) ")"
+    font-size = 0.8em
   ]
 ]

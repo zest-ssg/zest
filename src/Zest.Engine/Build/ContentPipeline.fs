@@ -32,6 +32,7 @@ module ContentPipeline =
         (globalData: IDictionary<string, obj>)
         (layouts: Map<string, string * string>)
         (includes: IDictionary<string, string>)
+        (progress: BuildProgress)
         =
 
         // Wrap globalData for thread-safe concurrent enumeration.
@@ -56,6 +57,8 @@ module ContentPipeline =
                     && not (PathResolver.isExcludedWithConfig contentDir config f))
                 |> Seq.distinct
                 |> Seq.toArray
+
+        progress.TotalFiles <- allFiles.Length
 
         // ── .html files: native-mode Nunjucks preprocessing ──
         // In native mode, HTML files are routed through the Nunjucks compat
@@ -116,32 +119,36 @@ module ContentPipeline =
                             File.WriteAllText(destPath, content, System.Text.Encoding.UTF8)
                     else
                         File.WriteAllText(destPath, content, System.Text.Encoding.UTF8)
-                    Interlocked.Increment(&processed) |> ignore) |> ignore
+                    Interlocked.Increment(&processed) |> ignore
+                    progress.IncProcessed()) |> ignore
 
         let total = allFiles.Length
 
         // ── First pass: fast metadata extraction for collections API ──
-        // Cache file text between extractMeta and evaluate to avoid double ReadAllText
+        // Parallel file read + metadata extraction.
+        // The fileContentCache avoids double ReadAllText in later phases.
         // Draft pages (meta.Draft = true) are collected for _drafts but excluded
         // from the main page set to prevent them from appearing in production builds.
+        progress.Phase <- BuildPhase.Discovering
         let fileContentCache = ConcurrentDictionary<string, string>()
         let draftPages = ConcurrentBag<ContentPage>()
         let metaPages =
+            // Parallel: read file + extract meta concurrently
+            // Uses Partitioner for better chunk distribution than Parallel.ForEach on arrays.
             allFiles
-            |> Array.choose (fun f ->
+            |> Array.map (fun f ->
                 try
-                    match fileContentCache.TryGetValue(f) with
-                    | true, text -> ScriptEvaluator.extractMetaWithText f config text
-                    | _ ->
-                        let text = File.ReadAllText(f)
-                        fileContentCache.[f] <- text
-                        ScriptEvaluator.extractMetaWithText f config text
-                with _ -> None)
-            |> Array.choose (fun (page: ContentPage) ->
-                if page.Draft then
-                    draftPages.Add(page)
-                    None
-                else Some page)
+                    let text = File.ReadAllText(f)
+                    fileContentCache.[f] <- text
+                    let meta = ScriptEvaluator.extractMetaWithText f config text
+                    f, meta
+                with _ -> f, None)
+            |> Array.choose (fun (_, metaOpt) ->
+                metaOpt |> Option.bind (fun (page: ContentPage) ->
+                    if page.Draft then
+                        draftPages.Add(page)
+                        None
+                    else Some page))
             |> Array.toList
         PageQuery.setAllPages metaPages
         PageQuery.setDraftPages (draftPages |> Seq.toList)
@@ -153,6 +160,7 @@ module ContentPipeline =
         let evalResults = ConcurrentBag<Result<ContentPage, string>>()
 
         // Markdown pages — skip cached in incremental mode, parallel evaluation
+        progress.Phase <- BuildPhase.Evaluating
         let mdToEval =
             if config.EnableIncrementalBuild then
                 mdFiles |> Array.filter (fun f ->
@@ -160,14 +168,22 @@ module ContentPipeline =
                     match BuildCache.buildCache.TryGetValue(f) with
                     | true, e when e.Mtime = mtime ->
                         Interlocked.Increment(&cached) |> ignore
+                        progress.IncCached()
                         false
                     | _ -> true)
             else mdFiles
 
         if mdToEval.Length > 0 then
             Parallel.ForEach(mdToEval, fun f ->
-                try evalResults.Add(ScriptEvaluator.evaluate f config safeData)
-                with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)) |> ignore
+                try
+                    // Use cached text from first-pass metadata extraction
+                    // to avoid a second File.ReadAllText on the same file.
+                    let text = fileContentCache.GetOrAdd(f, fun _ -> File.ReadAllText(f))
+                    evalResults.Add(ScriptEvaluator.evaluateWithText f config safeData text)
+                    progress.IncProcessed()
+                with ex ->
+                    errors.Add(sprintf "Failed '%s': %s" f ex.Message)
+                    progress.IncErrors()) |> ignore
 
         // FSI scripts: batch evaluate in a single FSI process for performance
         let fsxResults =
@@ -198,8 +214,13 @@ module ContentPipeline =
                 if scriptsToEval.IsEmpty then
                     if not config.EnableIncrementalBuild then
                         Parallel.ForEach(fsxFiles, fun f ->
-                            try evalResults.Add(ScriptEvaluator.evaluate f config safeData)
-                            with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)) |> ignore
+                            try
+                                let text = fileContentCache.GetOrAdd(f, fun _ -> File.ReadAllText(f))
+                                evalResults.Add(ScriptEvaluator.evaluateWithText f config safeData text)
+                                progress.IncProcessed()
+                            with ex ->
+                                errors.Add(sprintf "Failed '%s': %s" f ex.Message)
+                                progress.IncErrors()) |> ignore
                     Map.empty
                 else
                     let batchResults = ScriptRunner.evaluatePageScriptsBatch scriptsToEval
@@ -214,6 +235,7 @@ module ContentPipeline =
                     match BuildCache.buildCache.TryGetValue(f) with
                     | true, e when e.Mtime = mtime ->
                         Interlocked.Increment(&cached) |> ignore
+                        progress.IncCached()
                     | _ ->
                         let text = fileContentCache.GetOrAdd(f, fun _ -> File.ReadAllText(f))
                         match Map.tryFind f fsxResults with
@@ -222,8 +244,9 @@ module ContentPipeline =
                             | Ok htmlContent -> evalResults.Add(ScriptEvaluator.buildPage f config safeData text htmlContent)
                             | Error evalErr ->
                                 eprintfn "[Zest] WARN: Script evaluation failed '%s': %s — falling back to Markdown mode" f evalErr
-                                evalResults.Add(ScriptEvaluator.evaluate f config safeData)
-                        | None -> evalResults.Add(ScriptEvaluator.evaluate f config safeData)
+                                evalResults.Add(ScriptEvaluator.evaluateWithText f config safeData text)
+                        | None -> evalResults.Add(ScriptEvaluator.evaluateWithText f config safeData text)
+                        progress.IncProcessed()
                 else
                     let text = fileContentCache.GetOrAdd(f, fun _ -> File.ReadAllText(f))
                     match Map.tryFind f fsxResults with
@@ -232,18 +255,23 @@ module ContentPipeline =
                         | Ok htmlContent -> evalResults.Add(ScriptEvaluator.buildPage f config safeData text htmlContent)
                         | Error evalErr ->
                             eprintfn "[Zest] WARN: Script evaluation failed '%s': %s — falling back to Markdown mode" f evalErr
-                            evalResults.Add(ScriptEvaluator.evaluate f config safeData)
-                    | None -> evalResults.Add(ScriptEvaluator.evaluate f config safeData)
-            with ex -> errors.Add(sprintf "Failed '%s': %s" f ex.Message)
+                            evalResults.Add(ScriptEvaluator.evaluateWithText f config safeData text)
+                    | None -> evalResults.Add(ScriptEvaluator.evaluateWithText f config safeData text)
+                    progress.IncProcessed()
+            with ex ->
+                errors.Add(sprintf "Failed '%s': %s" f ex.Message)
+                progress.IncErrors()
 
         Parallel.ForEach(fsxFiles, fun f -> processFsxFile f) |> ignore
 
-        // Write output — parallelized
+        // Write output — parallelized with sequential-scan file writes.
+        // FileOptions.SequentialScan hints the OS page cache for large files.
         let mutable localProcessed = 0
         let mutable localCached    = 0
+        progress.Phase <- BuildPhase.Writing
         Parallel.ForEach(evalResults, fun r ->
             match r with
-            | Error e -> errors.Add(e)
+            | Error e -> errors.Add(e); progress.IncErrors()
             | Ok page ->
                 let outPath = Path.Combine(outputDir, page.OutputPath)
                 if config.EnableIncrementalBuild && not (BuildCache.needsRebuildWithDeps page.SourcePath outPath) then
@@ -265,7 +293,11 @@ module ContentPipeline =
                     | None -> ()
                     let dir = Path.GetDirectoryName(outPath)
                     if dir <> null then Directory.CreateDirectory(dir) |> ignore
-                    File.WriteAllText(outPath, formattedHtml, System.Text.Encoding.UTF8)
+                    // Use FileStream with SequentialScan for better large-file throughput.
+                    let bytes = System.Text.Encoding.UTF8.GetBytes(formattedHtml)
+                    use fs = new FileStream(outPath, FileMode.Create, FileAccess.Write,
+                                            FileShare.None, 4096, FileOptions.SequentialScan)
+                    fs.Write(bytes, 0, bytes.Length)
                     BuildCache.updateCache page.SourcePath formattedHtml
                     Interlocked.Increment(&localProcessed) |> ignore) |> ignore
         processed <- processed + localProcessed

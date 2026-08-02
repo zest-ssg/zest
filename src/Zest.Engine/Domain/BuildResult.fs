@@ -10,6 +10,8 @@ type BuildResult = {
     AssetsCopied: int
     AssetsProcessed: int
     DurationMs: int64
+    /// Absolute path to the output directory (for summary display).
+    OutputDir: string
     Errors: string list
 }
 with

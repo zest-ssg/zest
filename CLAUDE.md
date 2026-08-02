@@ -1,273 +1,122 @@
+# Zest SSG - AI 代码质量提升指南
+**版本**: 2.0
+**背景**: 你是资深 .NET/F# 工程师，正在重构 `zest-ssg/zest` 仓库（.NET 8+）。目标是在严格保持架构边界（C# 负责 CLI/基础设施，F# 负责引擎/DSL）的前提下，全面提升代码质量。
 
-# Zest SSG 代码质量提升指南
-## 📋 快速导航
-- [核心原则](#核心原则) - 开发必读
-- [命名规范](#命名规范) - 代码命名标准
-- [注释规范](#注释规范) - 文档编写标准
-- [代码审查](#代码审查) - 重构执行流程
-- [Git规范](#git规范) - 提交管理标准
-- [检查清单](#检查清单) - 快速验证表
+## 核心铁律（必须遵守）
+1.  **双词命名**: 所有新增或重构的文件、目录及核心类型，必须使用**两个**语义清晰的英文单词（类型/文件用 PascalCase，成员用 camelCase）。禁用单词命名，禁用三词以上组合。
+2.  **精准注释**: 编写简洁的英文注释，解释**“为什么”**而非**“做什么”**。公开 API 必须使用标准 XML 文档注释。
+3.  **架构纯净**: 严守 C# 与 F# 边界。F# 中优先使用管道符 (`|>`)，C# 中优先使用 LINQ。
+4.  **自然语言提交**: 像正常人说话一样写 Git 提交信息。**禁止使用** `feat:`、`fix:` 等前缀。
+
 ---
-## 核心原则
-### 项目背景
-- **仓库**: zest-ssg/zest
-- **平台**: .NET 8+
-- **架构**: C# (CLI/Infra) + F# (Engine/DSL)
-- **阶段**: 功能基本完成，进入质量提升期
-### 三大铁律
-1. **命名必须双词** - 所有新增/重构的文件、目录、核心类型必须使用两个语义清晰的英语单词
-2. **注释必须精准** - 编写简洁、语义干净的英语注释，解释"为什么"而非"怎么做"
-3. **架构必须清晰** - 保持 C#/F# 边界，不混用编程范式
+
+## 1. 命名规范
+### 基本规则
+*   **文件/类/目录**: `WordOneWordTwo` (PascalCase)
+*   **方法/变量**: `wordOneWordTwo` (camelCase)
+
+### 语义结构
+*   第一个词：**领域/对象** (Template, Config, Build)
+*   第二个词：**动作/角色** (Renderer, Parser, Manager)
+
+### 禁用模式
+*   **模糊单字**: `Utils`, `Helper`, `Data`, `Manager`。
+*   **冗长命名**: `TemplateRenderEngine` -> 改为 `TemplateRenderer`。
+*   **随意缩写**: `Tmp`, `Cfg`, `Req`。
+*   **模糊动词**: `process()`, `handle()`, `get()`。必须具体：`parseContent()`, `fetchMetadata()`。
+
+### 快速对照表
+| 上下文 | 错误示例 | 正确示例 |
+| :--- | :--- | :--- |
+| 文件 | `Render.fs` | `TemplateRenderer.fs` |
+| 类 | `Builder.cs` | `PageBuilder.cs` |
+| 目录 | `Zcss/` | `StyleCompiler/` |
+| 变量 | `temp` | `cacheBuffer` |
+
 ---
-## 命名规范
-### 双词命名法核心规则
-#### 格式要求
-```
-文件/类/目录: WordOneWordTwo (PascalCase)
-方法/变量:    wordOneWordTwo (camelCase)
-```
-#### 语义结构
-| 位置 | 含义 | 示例 |
-|------|------|------|
-| 第一个词 | 领域/对象 | Template, Config, Build, Content |
-| 第二个词 | 动作/角色/特性 | Renderer, Parser, Manager, Cache |
-#### ❌ 禁止项清单
-- **单字命名**: `Utils.fs`, `Helper.cs`, `Render.fs`, `Cache.cs`
-- **三词以上**: `TemplateRenderEngine.fs` → 改用 `TemplateRenderer.fs`
-- **非通用缩写**: `TmpParser.fs`, `CfgLoader.cs`
-- **模糊动词**: `get()`, `process()`, `handle()`
-### 命名对照表
-| 上下文 | 错误示例 | 正确示例 | 改进说明 |
-|--------|----------|----------|----------|
-| F# 文件 | `Utils.fs` | `CommonHelpers.fs` | 明确职责范围 |
-| F# 文件 | `Render.njk` | `TemplateRenderer.fs` | 使用全称+动作 |
-| C# 类 | `Builder.cs` | `PageBuilder.cs` | 添加领域限定 |
-| C# 命令 | `Migrate.cs` | `MigrationCommand.cs` | 明确类型角色 |
-| 目录 | `Template/` | `TemplateEngine/` | 表达完整概念 |
-| 目录 | `Zcss/` | `StyleCompiler/` | 或保留专有名词但内部双词 |
-| 函数 | `get()` | `fetchData()` | 明确数据来源 |
-| 函数 | `process()` | `parseOptions()` | 明确处理对象 |
-### 命名验证工具脚本
-```bash
-# 检查不符合双词命名的文件
-find . -name "*.fs" -o -name "*.cs" | grep -vE '([A-Z][a-z]+[A-Z][a-z]+\.fs|\.cs$)'
-```
----
-## 注释规范
-### 文件头注释模板
-```fsharp
-// <FileName>.fs
-//
-// <一句话概括模块职责>.
-// <可选：关键逻辑或依赖细节说明>.
-//
-// Dependencies: <关键外部模块或命名空间>
-```
-**示例**:
-```fsharp
-// ContentCollector.fs
-//
-// Traverses the content directory to discover source files and extract
-// frontmatter metadata for the build pipeline.
-//
-// Dependencies: System.IO, FSharp.Data
-```
-### 模块/类注释标准
-```fsharp
-/// <summary>
-/// 一句话概括功能（不超过 20 词）。
-/// </summary>
-module ModuleName =
-    // 实现...
-```
-**检查要点**:
-- ✅ 使用标准 XML 文档注释
-- ✅ 解释"是什么"和"为什么"
-- ❌ 不重复标识符名称
-### 函数注释最佳实践
-#### ✅ 正确示例
-```fsharp
-/// <summary>
-/// Reads the entire content of a file at the specified path.
-/// </summary>
-/// <param name="path">Absolute or relative path to the target file.</param>
-/// <returns>File content as string, or empty string if file not found.</returns>
-let readFile (path: string) : string =
-    // 实现...
-```
-#### ❌ 错误示例
-```fsharp
-/// <summary>
-/// This function takes a path string as input and returns a string.
-/// It reads the file content.
-/// </summary>
-/// <param name="path">The path.</param>
-let readFile (path: string) : string =
-    // 实现...
-```
-**关键差异**:
-- 去除冗余描述（如"This function..."）
-- 参数说明补充上下文（"Absolute or relative..."）
-- 返回值说明边界情况
-### 行内注释规则
-**黄金法则**: 解释"为什么这样做"，而非"代码在做什么"
-#### ✅ 正确：解释业务规则/设计决策
-```fsharp
-// Offset by 1 to convert from 0-based index to 1-based page number.
-let pageNumber = index + 1
-```
-#### ❌ 错误：描述显而易见
-```fsharp
-// increment i by 1
-let i = i + 1
-```
-### 特殊标记规范
-```fsharp
-// TODO: [描述未来计划，必须说明原因]
-// Example: TODO: Replace this regex with a proper parser to handle nested brackets.
-// HACK: [解释丑陋代码的必要性，说明外部限制]
-// Example: HACK: Bypassing the strict type checker here because the external API returns dynamic JSON.
-```
----
-## 代码审查
-### 重构执行流程（标准化步骤）
-#### 步骤 1: 命名合规性检查
-```bash
-1. 扫描所有新增/修改文件，验证是否双词命名
-2. 检查变量/函数命名，替换模糊词:
-   - data → requestData, contentData
-   - temp → buffer, cacheKey
-   - process → parseOptions, renderTemplate
-```
-#### 步骤 2: 注释质量清洗
-```bash
-1. 删除所有废话注释（"set variable", "return result"）
-2. 为所有公开 API 添加英语 XML 文档
-3. 翻译非英语注释为标准技术英语
-4. 验证文件头注释完整性
-```
-#### 步骤 3: 代码语义化改进
-```fsharp
-// F# 优先使用管道操作符
-let result = 
-    source
-    |> parseContent
-    |> validateData
-    |> renderTemplate
-// C# 优先使用 LINQ 和明确类型
-var result = items
-    .Where(item => item.IsValid)
-    .Select(item => Transform(item))
-    .ToList();
-```
-### 代码生成标准模板
+
+## 2. 文档与注释规范
+### 文件头注释
+每个文件必须包含头部注释，说明职责和依赖。
 ```fsharp
 // TemplateRenderer.fs
 //
-// Handles the compilation and rendering of template files using
-// the configured template engine (e.g., Nunjucks).
+// Compiles and renders templates using the Nunjucks engine.
+// Handles caching to prevent redundant disk I/O.
 //
-// Dependencies: Zest.Engine.Domain, Zest.Engine.Config
-namespace Zest.Engine.Template
-open System
-open Zest.Engine.Domain
+// Dependencies: Zest.Engine.Domain, System.IO
+```
+
+### API 文档注释
+所有公开接口使用 XML 文档。解释意图，而非实现细节。
+```fsharp
 /// <summary>
-/// Compiles template strings into executable render functions.
+/// Renders a template with the provided context data.
+/// Returns an empty string if the path is invalid to avoid build failure.
 /// </summary>
-module TemplateCompiler =
-    /// <summary>
-    /// Parses the template source and caches the compiled result.
-    /// Throws TemplateException if syntax is invalid.
-    /// </summary>
-    /// <param name="source">Raw template string content.</param>
-    /// <param name="path">File path used for error reporting.</param>
-    /// <returns>Compiled template ready for rendering.</returns>
-    let compile (source: string) (path: string) : CompiledTemplate =
-        // Normalize line endings to prevent cross-platform mismatch.
-        let normalizedSource = source.Replace("\r\n", "\n")
-        
-        try
-            // Actual compilation logic here...
-            { Id = path; Render = (fun _ -> "") }
-        with ex ->
-            // Rethrow with contextual information for easier debugging.
-            raise (TemplateException(path, ex.Message))
+/// <param name="templatePath">Absolute path to the .njk file.</param>
+/// <param name="context">Data bag for variable interpolation.</param>
+let renderTemplate templatePath context = ...
 ```
+
+### 行内注释
+**只解释“为什么”。**
+*   ✅ `// Offset by 1 for 1-based page numbering in UI.`
+*   ❌ `// Add 1 to index.`
+
+### 特殊标记
+*   `// TODO: [目标]. [原因].` (例：`TODO: Replace regex with parser for nested brackets.`)
+*   `// HACK: [为何必要]. [外部限制].` (例：`HACK: Ignore null check; legacy API guarantees non-null here.`)
+
 ---
-## Git规范
-### 提交消息格式
-```
-<type>(<scope>): <summary>
-<body>
-```
-### 类型定义表
-| Type | 含义 | 典型场景 | 示例 |
-|------|------|----------|------|
-| `feat` | 新功能 | 添加新特性 | `feat(theme): add git source support` |
-| `fix` | Bug 修复 | 修复缺陷 | `fix(cache): resolve TOCTOU race` |
-| `refactor` | 重构 | 改进结构不改变行为 | `refactor(layout): extract merge logic` |
-| `perf` | 性能优化 | 提升速度/内存 | `perf(build): parallelize asset copy` |
-| `test` | 测试 | 添加/修改测试 | `test(infra): add dev server tests` |
-| `docs` | 文档 | 更新说明 | `docs(themes): add theme guide` |
-| `style` | 格式 | 注释/命名调整 | `style(engine): clean up notes` |
-| `chore` | 杂务 | 依赖/构建变更 | `chore: bump xunit to 2.9.3` |
-### 高质量提交示例
-#### 功能添加
-```
-feat(theme): add local and git theme source support
-- _themes/{name}/ provides file-override fallback for layouts, includes, and assets
-- Git source clones to .zest/themes/{name}/ with depth-1 and single-branch for speed
-- Theme _theme.zest.fsx executes before user _init.zest.fsx; filters can be overridden
-```
-#### Bug 修复
-```
-fix(cache): replace lock keyword with Monitor.Enter/Exit
-The F# lock keyword caused indentation errors in BuildCache module when combined 
-with mutable state. Switch to explicit Monitor calls to fix compilation while 
-maintaining thread safety.
-```
-### 提交规则强制项
-1. **单一职责**: 一个提交 = 一个逻辑变更
-2. **编译通过**: 提交前必须 `dotnet build` 成功
-3. **测试分离**: 实现代码和测试代码分不同提交（回归测试除外）
+
+## 3. 重构执行流程
+执行重构时，严格遵循以下步骤：
+1.  **命名扫描**: 识别并重命名所有单字或模糊标识符。
+2.  **注释清洗**: 删除“废话”注释（如 `// loop through items`）。补全 XML 文档。将中文注释翻译为标准技术英语。
+3.  **语义流优化**: 将 F# 中的循环转换为管道 (`|>`)。将 C# 中的循环转换为 LINQ。
+
 ---
-## 检查清单
-### 代码提交前检查表
-#### 命名检查
-- [ ] 所有新增文件符合双词命名法
-- [ ] 无模糊变量名（data, temp, result, process）
-- [ ] 无禁止的缩写或单字命名
-- [ ] 目录名表达完整概念
-#### 注释检查
-- [ ] 文件头注释完整（职责+依赖）
-- [ ] 公开 API 有 XML 文档注释
-- [ ] 无废话注释（"set variable", "return"）
-- [ ] TODO/HACK 标记有明确说明
-- [ ] 注释使用标准英语
-#### 代码质量
-- [ ] 无编译警告
-- [ ] F# 代码优先使用管道操作符
-- [ ] C# 代码优先使用 LINQ
-- [ ] 无明显的性能问题
-#### Git 规范
-- [ ] 提交消息格式正确（type(scope): summary）
-- [ ] 提交内容单一职责
-- [ ] 不包含无关文件
+
+## 4. Git 提交信息规范（新标准）
+**停止使用 Conventional Commits（禁止使用 `feat:` 或 `fix:`）。**
+请像告知同事变更内容一样书写提交信息，保持简短、清晰、专业。
+
+### 规则
+1.  **首字母大写**: 句子开头大写。
+2.  **末尾句号**: 必须以英文句号 `.` 结束。
+3.  **无前缀**: 严禁使用 `feat:`、`fix:`、`refactor:` 等标签。
+4.  **自然语言**: 像人说话，而不是像机器生成日志。
+
+### 示例对照
+| 旧风格（禁止） | 新风格（要求） |
+| :--- | :--- |
+| `feat(theme): add git source` | `Theme supports Git sources now.` |
+| `fix(cache): resolve TOCTOU race` | `Fix race condition when writing cache files.` |
+| `refactor(core): clean utils` | `Split monolithic Utils module into smaller helpers.` |
+| `style: format code` | `Format code to match style guidelines.` |
+| `chore(deps): bump xunit` | `Update xUnit dependency to version 2.9.3.` |
+
+### 正文补充（可选）
+如需细节，在摘要后空一行，自然书写：
+```
+Fix race condition when writing cache files.
+
+Switch from 'lock' to 'Monitor.Enter' to prevent compiler errors in F#. This keeps the cache thread-safe without breaking the build pipeline.
+```
+
 ---
-## 附录：快速参考卡
-### 命名决策树
-```
-需要命名？
-├─ 是 → 是否文件/类/目录？
-│       ├─ 是 → 双词 PascalCase（TemplateRenderer）
-│       └─ 否 → 双词 camelCase（renderTemplate）
-└─ 否 → 不适用
-```
-### 注释决策树
-```
-需要注释？
-├─ 公开 API → 添加 XML 文档
-├─ 复杂逻辑 → 行内注释解释"为什么"
-├─ 文件头 → 添加模块摘要+依赖
-└─ 显而易见 → 不需要注释
-```
+
+## 5. 提交前检查清单
+- [ ] **命名**: 全部符合双词规范。无 `Utils`，无 `Temp`。
+- [ ] **注释**: 无废话注释。文件头完整。
+- [ ] **构建**: `dotnet build` 零警告通过。
+- [ ] **提交**: 信息是自然语句，以句号结尾。无前缀。
+
+---
+## 附录：AI 执行逻辑
+当收到重构或编写代码的指令时：
+1.  **扫描**: 立即检查命名违规。
+2.  **重写**: 若发现 `Helper.cs`，将其重命名为具体名称，如 `PathResolver.cs`。
+3.  **文档**: 补全文件头和 XML 注释。
+4.  **提交**: 暂存更改，并以简单自然的句子作为提交信息（如：`Rename helper classes to clarify their roles.`）。

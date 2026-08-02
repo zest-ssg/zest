@@ -1,4 +1,4 @@
-# English locale for Zest starter theme
+# English locale for Zest oxygen theme
 # Usage in templates: {{ 'nav.home' | t }}
 # Usage in DSL scripts: t "nav.home"
 
@@ -22,3 +22,7 @@ back_home = "Back to home"
 
 [footer]
 built_with = "Built with"
+
+[a11y]
+skip_to_content = "Skip to main content"
+primary_nav = "Primary navigation"

@@ -14,7 +14,9 @@ open Zest.Engine
 
 /// Configuration for the template engine.
 type TemplateConfig = {
-    /// Which engine to use. "nunjucks" or "native" (old placeholder system).
+    /// Pure annotation: the site's primary template language
+    /// ("native" → .zest.fsx, "nunjucks", "liquid", ...). Does NOT affect
+    /// routing — layouts are routed by file extension (see LayoutEngine).
     Engine: string
     /// Whether to cache parsed templates in memory.
     EnableCache: bool
@@ -85,23 +87,6 @@ module TemplateManager =
         match engines.TryGetValue engine with
         | true, e -> e.RenderFile filePath variables
         | _ -> Error(TemplateError.RuntimeError(sprintf "Engine '%s' not initialized" engine, 0))
-
-    /// Render a layout file, optionally using the Nunjucks engine when configured.
-    /// Falls back to the native placeholder system if the engine is "native" or not available.
-    let renderLayout (config: TemplateConfig) (layoutPath: string) (layoutText: string)
-                     (variables: IDictionary<string, string>) : Result<string, TemplateError> =
-
-        if config.Engine = "native" then
-            Error(TemplateError.RuntimeError("use_native_fallback", 0))
-        else
-            match getOrCreateEngine config.Engine config with
-            | Some engine ->
-                let objDict = Dictionary<string, obj>()
-                for kv in variables do
-                    objDict.[kv.Key] <- box kv.Value
-                engine.Render layoutText (objDict :> IDictionary<string, obj>)
-            | None ->
-                Error(TemplateError.RuntimeError("use_native_fallback", 0))
 
     /// Clear all engine caches (and the converter result cache).
     let clearCaches () =

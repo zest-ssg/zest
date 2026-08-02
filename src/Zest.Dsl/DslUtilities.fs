@@ -208,6 +208,10 @@ module DslUtilities =
     let md (markdownText: string) : string =
         Zest.Engine.Html.MarkdownEngine.toHtml markdownText
 
+    /// Alias for `md` — full name `markdown` for explicitness/readability.
+    /// `markdown """# Hello"""` is identical to `md """# Hello"""`.
+    let markdown (markdownText: string) : string = md markdownText
+
     /// Like `md`, but first strips common leading indentation via `dedent`.
     /// Use this when the triple-quoted Markdown body is indented to match the
     /// surrounding F# source (the recommended style), so ATX headings (`##`)
@@ -230,6 +234,10 @@ module DslUtilities =
     /// injection (it applies jsSafe internally).
     let js (code: string) : string =
         sprintf "<script>%s</script>" (dedent code |> jsSafe)
+
+    /// Alias for `js` — full name `javascript` for explicitness/readability.
+    /// `javascript """console.log('hi')"""` is identical to `js """..."""`.
+    let javascript (code: string) : string = js code
 
     /// Like `js`, but emits `<script type="module">` for ES module scripts
     /// (`import`/`export`, top-level `await`). Same dedent + jsSafe rules.

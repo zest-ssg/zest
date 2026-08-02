@@ -19,14 +19,6 @@ module LayoutEngine =
               FileExtensions.Handlebars; FileExtensions.Mustache
               FileExtensions.ZestScript; FileExtensions.FSharpScript ]
 
-    /// Extensions routed through the Nunjucks compat layer in native mode.
-    /// Excludes .haml / .pug (those convert-then-render via ScriptEvaluator).
-    let private nunjucksRenderExts =
-        [ FileExtensions.Nunjucks; FileExtensions.Liquid
-          FileExtensions.Handlebars; FileExtensions.Mustache
-          FileExtensions.Html; FileExtensions.HtmlLong
-          FileExtensions.WebC ]
-
     let private layoutCache2 = ConcurrentDictionary<string, struct(DateTime * Map<string, string * string>)>()
     let internal loadLayouts (layoutsDir: string) =
         if not (Directory.Exists layoutsDir) then Map.empty
@@ -152,18 +144,17 @@ module LayoutEngine =
         match layouts.TryFind name with
         | None -> content
         | Some (path, layoutText) ->
-            // In native mode, HTML layouts are routed through the Nunjucks
-            // compat layer so `{{ }}` / `{% %}` syntax works in plain HTML.
-            // `.zest.fsx`/`.fsx` layouts are F# and stay on the placeholder
-            // path (their HTML output is produced by the script evaluator).
-            // Nunjucks also handles the legacy `{{ page.title }}` placeholder
-            // syntax, so this is a strict compatibility improvement.
+            // Layouts are routed purely by file extension:
+            //   `.zest.fsx`/`.fsx` → F# layout, evaluated by FSI (`content`/`page`/`site`
+            //                        are injected as top-level bindings, see ScriptRunner).
+            //   everything else    → Nunjucks compat layer, so `{{ }}` / `{% %}` syntax
+            //                        (incl. legacy `{{ page.title }}` placeholders) works.
+            // The `template_engine` config field is a PURE ANNOTATION for the primary
+            // template language (native → .zest.fsx, nunjucks → .njk, liquid → .liquid, ...)
+            // and does not affect routing.
             let isFsx =
                 path.EndsWith(FileExtensions.ZestScript, StringComparison.OrdinalIgnoreCase)
                 || path.EndsWith(FileExtensions.FSharpScript, StringComparison.OrdinalIgnoreCase)
-            let isNunjucks =
-                nunjucksRenderExts
-                |> List.exists (fun e -> path.EndsWith(e, StringComparison.OrdinalIgnoreCase))
 
             let rendered =
                 if isFsx then
@@ -174,7 +165,7 @@ module LayoutEngine =
                     | Error e ->
                         eprintfn "[Zest] F# layout error in '%s': %s" name e
                         sprintf "<!-- F# layout error: %s -->" e
-                elif isNunjucks then
+                else
                     let engine = TemplateManager.getOrCreateEngine "nunjucks" {
                         Engine = "nunjucks"
                         EnableCache = true
@@ -243,17 +234,6 @@ module LayoutEngine =
                             match ctx.TryGetValue key with
                             | true, v -> v
                             | _ -> m.Value)
-                else
-                    let withIncludes = applyLayoutCached path layoutText includes
-                    let ctx = Dictionary<string, string>()
-                    for kv in replacements do ctx.[kv.Key] <- kv.Value
-                    ctx.["content"]      <- content
-                    ctx.["page.content"] <- content
-                    placeholderPattern.Replace(withIncludes, fun (m: Match) ->
-                        let key = m.Groups.[1].Value.ToLowerInvariant()
-                        match ctx.TryGetValue key with
-                        | true, v -> v
-                        | _ -> m.Value)
 
             // Check for nested layout via TOML front matter or HTML comment
             let nestedLayout =

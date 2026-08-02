@@ -260,6 +260,27 @@ type PageBuilder () =
     member _.Js(s: ContentPage, jsText: string) =
         { s with ContentNodes = s.ContentNodes @ [Element("script", [], [Raw jsText])] }
 
+    // ── javascript: alias for js (full name) ──────────────────────
+    /// Alias for `js` — full name `javascript` for explicitness.
+    /// Usage: `javascript "console.log('loaded')"`
+    [<CustomOperation "javascript">]
+    member _.JavaScript(s: ContentPage, jsText: string) =
+        { s with ContentNodes = s.ContentNodes @ [Element("script", [], [Raw jsText])] }
+
+    // ── md: inject Markdown rendered to HTML ──────────────────────
+    /// Inject Markdown content, rendered to HTML.
+    /// Usage: `md """# Hello\n\nWorld"""`
+    [<CustomOperation "md">]
+    member _.Md(s: ContentPage, mdText: string) =
+        { s with ContentNodes = s.ContentNodes @ [Raw(MarkdownEngine.toHtml mdText)] }
+
+    // ── markdown: alias for md (full name) ────────────────────────
+    /// Alias for `md` — full name `markdown` for explicitness.
+    /// Usage: `markdown """# Hello\n\nWorld"""`
+    [<CustomOperation "markdown">]
+    member _.Markdown(s: ContentPage, mdText: string) =
+        { s with ContentNodes = s.ContentNodes @ [Raw(MarkdownEngine.toHtml mdText)] }
+
 /// Partial view builder — render a reusable template fragment.
 /// Usage: `partial "card" { divC "card" [...] }`
 type PartialBuilder(name: string) =
