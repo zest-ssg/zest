@@ -4,6 +4,7 @@ namespace Zest.Dsl
 // DslComponents — Forms, media, layout components
 // ============================================================
 
+[<AutoOpen>]
 module DslComponents =
     open Dsl
 

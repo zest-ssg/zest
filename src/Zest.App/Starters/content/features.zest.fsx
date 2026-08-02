@@ -3,10 +3,6 @@
 // @description Zest SSG features — inline JS, JSON injection, new components, and syntax sugar.
 
 open Zest.Dsl
-open Zest.Dsl.DslCollections
-open Zest.Dsl.DslComponents
-open Zest.Dsl.DslSugar
-open Zest.Dsl.CompoundBuilder
 
 // Feature cards from site data
 let featureCards =

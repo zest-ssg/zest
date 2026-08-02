@@ -7,7 +7,6 @@
 // automatically when a route is not found.
 
 open Zest.Dsl
-open Zest.Dsl.DslSugar
 
 render [
     divC "notfound" [

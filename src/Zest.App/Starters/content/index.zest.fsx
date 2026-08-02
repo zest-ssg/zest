@@ -3,8 +3,6 @@
 // @description A fast, minimal blog built with Zest — where templates are real F#.
 
 open Zest.Dsl
-open Zest.Dsl.DslCollections
-open Zest.Dsl.DslSugar
 
 let recent = recent_pages 5
 

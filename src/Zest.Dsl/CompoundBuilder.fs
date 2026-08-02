@@ -4,6 +4,7 @@ namespace Zest.Dsl
 // CompoundBuilder — High-level component builders
 // ============================================================
 
+[<AutoOpen>]
 module CompoundBuilder =
     open Dsl
     open DslSugar

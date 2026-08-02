@@ -6,6 +6,7 @@ open System
 // DslCollections — Collection and page query APIs for FSI scripts
 // ============================================================
 
+[<AutoOpen>]
 module DslCollections =
     open Dsl
     open Context

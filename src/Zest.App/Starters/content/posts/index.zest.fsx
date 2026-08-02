@@ -3,8 +3,6 @@
 // @description All posts on the Zest Blog.
 
 open Zest.Dsl
-open Zest.Dsl.DslCollections
-open Zest.Dsl.DslSugar
 
 let posts =
     site_pages ()

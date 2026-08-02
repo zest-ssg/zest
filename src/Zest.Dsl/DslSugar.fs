@@ -7,6 +7,7 @@ open System.Text
 // DslSugar — Conditionals, loops, pipelines, and shortcuts
 // ============================================================
 
+[<AutoOpen>]
 module DslSugar =
     open Dsl
 

@@ -1,43 +1,78 @@
-# Zest
+<p align="center">
+  <img src="zest.png" alt="Zest" width="128" height="128">
+</p>
+<h1 align="center">Zest SSG</h1>
+<p align="center"><em>Zealous Efficient Static Toolkit</em></p>
+<p align="center">
+  <a href="LICENSE">License</a> · <a href="#quick-start">Quick Start</a> · <a href="#documentation">Docs</a>
+</p>
 
-**A quiet, fast static site generator for F#.**
+---
 
-Zest turns Markdown and F# source into a clean static site. No runtime, no
-build toolchain, no npm dependency tree — just `dotnet`, your content, and a
-template engine. It is built for people who like their tools to stay out of
-the way: pages are plain files, styles are plain ZCSS, and the output is
-plain HTML.
+**Zest** is a hybrid F# + C# static site generator where templates are real code — not strings.  
+
+Built on the philosophy that your templating language and your host language should be one and the same.
 
 ---
 
 ## Why Zest?
 
-- **Fast.** Compiles pages in parallel, caches aggressively, and ships a dev
-  server with live reload. Big sites stay snappy because the pipeline is
-  embarrassingly parallel by design.
-- **F# everywhere.** Pages can be written as real F# programs using a
-  type-safe HTML DSL — loops, conditionals, functions and data, with no
-  template-language hacks. Markdown is there when you just want to write.
-- **No lock-in.** The engine is template-engine agnostic: Nunjucks is the
-  default, Handlebars is available as an alternative, and output is static
-  HTML you can host anywhere.
-- **Quiet by default.** The bundled starter theme has no animation, no
-  shadows, no hover theatrics — typography and whitespace carry the page.
-- **A single binary.** One dotnet CLI tool does init, build, serve and clean.
+- **Fast.** Compiles pages in parallel, caches aggressively, and ships a dev server with live reload. Big sites stay snappy because the pipeline is embarrassingly parallel by design.
+
+- **F# everywhere.** Pages can be written as real F# programs using a type‑safe HTML DSL — loops, conditionals, functions and data, with no template‑language hacks. Markdown is there when you just want to write.
+
+- **No lock‑in.** The engine is template‑engine agnostic: Nunjucks is the default, with a compatible layer for 11ty‑style languages (Liquid, WebC, HAML, Pug) plus a standalone engine for native Handlebars/Mustache (`.hbs`, `.mustache`). Output is plain static HTML you can host anywhere.
+
+- **Quiet by default.** The bundled starter theme has no animation, no shadows, no hover theatrics — typography and whitespace carry the page.
+
+- **A single binary.** One `dotnet` CLI tool does init, build, serve, clean and preview.
 
 ---
 
-## Quick start
+## Features
+
+- **Template as Code** — `.zest.fsx` are real F# scripts executed at build time via `dotnet fsi`. Full F#: list comprehensions, pattern matching, string interpolation, arbitrary computation.
+
+- **HTML DSL** — Compose HTML declaratively: `render [ h1 []; p [] ]`.
+
+- **Inline Markdown** — Write Markdown directly inside a `.zest.fsx` page with the `md` helper and mix it with the HTML DSL: `md """# Title\n**bold**"""`.
+
+- **Markdown posts** — Standard `.md` files with frontmatter support.
+
+- **ZCSS** — A CSS superset with nesting, F#‑style `let` bindings, math expressions, color functions, and mixins — compiled to standard CSS.
+
+- **11ty‑compatible templates** — Full Nunjucks (.njk), Liquid (.liquid), Handlebars (.hbs), Mustache (.mustache), HAML (.haml), Pug (.pug), and WebC (.webc) support. Nunjucks, Liquid, HAML, Pug, and WebC are auto‑converted to the Nunjucks engine for filters, macros, template inheritance, and Zest API integration; `.hbs`/`.mustache` run on a dedicated Mustache/Handlebars engine that preserves their native syntax.
+
+- **`_init.fsx`** — Optional initialization script (runs before build) to inject dynamic data, load JSON/TOML, read env vars.
+
+- **TOML config** — Zero‑config defaults; customize via `_config.toml` and `_data/*.toml`. No YAML.
+
+- **Live reload** — `zest serve` watches for changes and auto‑rebuilds.
+
+- **Batch evaluation** — Multiple F# page scripts evaluated in a single FSI process for fast builds.
+
+- **Incremental builds** — File change detection skips unchanged pages and assets.
+
+- **Cross‑platform** — Builds for Windows x64, Linux x64/ARM64, macOS ARM64.
+
+---
+
+## Quick Start
 
 ```bash
-dotnet tool install --global Zest
-zest init my-blog
-cd my-blog
-zest serve          # http://localhost:8080 with live reload
-zest build          # static output in _site/
+# Scaffold a new project
+zest init my-site
+# Develop with live reload
+cd my-site && zest serve --port 8080
+# Build for production
+zest build
+# Preview the built site
+zest preview
 ```
 
-## Writing content
+---
+
+## Writing Content
 
 ### Markdown posts
 
@@ -48,7 +83,6 @@ date = 2026-01-15
 tags = ["zest", "fsharp"]
 layout = "post"
 +++
-
 This is a blog post.
 ```
 
@@ -57,26 +91,72 @@ This is a blog post.
 ```fsharp
 // @title About
 // @layout default
-
 render [
-    h1 [ text "About this site" ]
-    p [ text "Written in F#, rendered as HTML." ]
+  h1 [ text "About this site" ]
+  p  [ text "Written in F#, rendered as HTML." ]
+]
+```
+
+### Example: `.zest.fsx` page
+
+```fsharp
+// @title Hello World
+// @layout default
+// @description My first Zest page
+let pageTitle = "Hello from F#"
+let items = ["F#"; "Zest"; "SSG"]
+render [
+    h1 [ text pageTitle ]
+    p  [ text "This page is generated by real F# code at build time." ]
+    ul [ for i in items -> li [ text i ] ]
+]
+```
+
+### Example: Inline Markdown in `.zest.fsx`
+
+The `md` helper renders a Markdown string to an HTML string, so you can blend prose with the F# HTML DSL in the same page — `md` returns a plain `string`, just like every other DSL builder:
+
+```fsharp
+// @title About
+// @layout default
+open Zest.Dsl
+render [
+    divC "about" [
+        md """
+# About
+This page is a **native template** written in `.zest.fsx` (real F#), where
+Markdown and the HTML DSL live side by side.
+Learn more at the [Zest repository](https://github.com/zest-ssg/zest).
+"""
+    ]
 ]
 ```
 
 ### Styles as ZCSS (`.zcss`)
 
 ```zcss
-let accent = #3c6a5a
-let measure = 44r
+// F#-style let bindings with math expressions
+let primary    = #3b82f6
+let space1     = 0.25r
+let space4     = space1 * 4     // 1rem
+let primary-light = primary |> lighten(45%)
+// Two-letter property shorthands
+.tag
+  color: $primary
+  background-color: $primary-light
+  padding-block: $space4
+  border-radius: 9999px
+```
 
-.post__title, .post__meta [
-  font-family: font-display;
-  color: ink;
-  a [
-    color: accent
-  ]
-]
+Compiles to:
+
+```css
+.tag {
+  color: #3b82f6;
+  background-color: #adf4ff;
+  padding-block: 1rem;
+  border-radius: 9999px;
+}
 ```
 
 ### Data
@@ -85,7 +165,7 @@ let measure = 44r
 
 ```fsharp
 addGlobal "socials" [
-    {| label = "GitHub"; url = "https://github.com/zest"; icon = "github" |}
+  {| label = "GitHub"; url = "https://github.com/zest"; icon = "github" |}
 ]
 ```
 
@@ -95,8 +175,9 @@ Templates read it as `{{ site.socials }}`.
 
 ## Templates
 
-Layouts and partials are plain HTML processed by a template engine. Nunjucks
-is the default; Handlebars is available for projects that prefer it.
+Layouts and partials are plain HTML processed by a template engine.  
+
+Nunjucks is the default. Other 11ty‑compatible languages are auto‑converted to Nunjucks internally — except `.hbs` and `.mustache`, which run on a standalone Mustache/Handlebars engine (the Nunjucks converter cannot fully express their syntax).
 
 ```html
 <!DOCTYPE html>
@@ -116,65 +197,184 @@ is the default; Handlebars is available for projects that prefer it.
 </html>
 ```
 
-Supported Nunjucks constructs include `{{ include }}`, `{{ content }}`,
-`{% if %}` / `{% for %}`, `{% assign %}`, filters (`| t`, `| date`,
-`| readingTime`) and i18n strings from `_locales/*.toml`.
+Supported Nunjucks constructs include `{{ include }}`, `{{ content }}`, `{% if %}` / `{% for %}`, `{% assign %}`, filters (`| t`, `| date`, `| readingTime`) and i18n strings from `_locales/*.toml`.
 
-> Note: the `template_engine` field in `_config.toml` is declarative only —
+> **Note:** The `template_engine` field in `_config.toml` is declarative only —  
 > it documents which engine the templates were written for. Layout routing is
-> decided by file extension, so a project may mix Nunjucks and Handlebars
-> templates freely.
+> decided by file extension, so a project may freely mix Nunjucks and
+> Handlebars/liquid/etc. templates.
 
 ---
 
-## Project layout
+## Project Layout
 
 ```
 .
-├── zest.toml            # CLI configuration
-├── _config.toml         # site metadata and build options
-├── _init.zest.fsx       # pre-build script (global data, hooks)
-├── _data/               # global data (nav.toml, …)
-├── _themes/<name>/      # self-contained themes
-│   ├── _theme.toml      # theme manifest
-│   ├── _layouts/        # Nunjucks/Handlebars layouts
-│   ├── _includes/       # partials
-│   ├── _locales/        # i18n string tables
-│   └── assets/          # styles (ZCSS), images, fonts
-├── content/             # pages (.zest.fsx) and posts (.md)
-└── _site/               # build output
+├── zest.toml              # CLI configuration
+├── _config.toml           # site metadata and build options
+├── _init.zest.fsx         # pre-build script (global data, hooks)
+├── _data/                 # global data (nav.toml, …)
+├── _themes/<name>/        # self-contained themes
+│   ├── _theme.toml        # theme manifest
+│   ├── _layouts/          # template layouts (.njk / .liquid / .hbs / …)
+│   ├── _includes/         # partials
+│   ├── _locales/          # i18n string tables
+│   └── assets/            # styles (ZCSS), images, fonts
+├── content/               # pages (.zest.fsx) and posts (.md)
+└── _site/                 # build output
 ```
+
+---
 
 ## Commands
 
-| Command      | Description                           |
-|--------------|---------------------------------------|
-| `zest init`  | Scaffold a new site from a starter    |
-| `zest build` | Build the site into `_site/`          |
-| `zest serve` | Dev server with live reload           |
-| `zest clean` | Remove build output                   |
+| Command             | Description                                      |
+|---------------------|--------------------------------------------------|
+| `zest init <name>`  | Scaffold a new site from a starter               |
+| `zest build`        | Build the site into `_site/`                     |
+| `zest serve`        | Dev server with live reload                      |
+| `zest preview`      | Preview the built site                           |
+| `zest clean`        | Remove build output                              |
 
 ---
 
 ## Architecture
 
-| Project      | Role                                                        |
-|--------------|-------------------------------------------------------------|
-| `Zest.App`   | CLI, scaffolding, dev server, embedded starter templates    |
-| `Zest.Engine`| Build pipeline: content, layouts, ZCSS, Zcss, data, feeds   |
-| `Zest.Dsl`   | Type-safe HTML DSL for `.zest.fsx` pages                    |
-| `Zest.Infra` | Shared infrastructure (files, logging, hashing)             |
+| Project     | Language | Responsibility                                                                 |
+|-------------|----------|---------------------------------------------------------------------------------|
+| **Zest.App**   | C#       | CLI entry point, command routing, scaffolding, dev server, embedded starters    |
+| **Zest.Engine**| F#       | Build pipeline: content, layouts, ZCSS, data, feeds                             |
+| **Zest.Dsl**   | F#       | Type‑safe HTML DSL for `.zest.fsx` pages                                        |
+| **Zest.Infra** | C#       | Configuration loading, file watching, logging, hashing, shared infrastructure   |
 
-## Design philosophy
+---
 
-1. **Content is code, code is content.** The F# DSL and the template engine
-   share one data model, so nothing is lost at the boundary.
-2. **No magic.** Every transformation is a plain pipeline stage you can read
-   in the source. No hidden runtime, no implied dependencies.
-3. **Speed is a feature.** Parallel compilation, minimal allocations, and
-   caching are part of the core design, not an afterthought.
-4. **The output is the deliverable.** Static HTML, no JavaScript required,
-   host it anywhere.
+## Documentation
+
+### File Types
+
+| Extension   | Purpose                                                | Processing                                                                 |
+|-------------|--------------------------------------------------------|----------------------------------------------------------------------------|
+| `.zest.fsx` | F# script templates (F# + Markdown + HTML DSL)         | Compiled via `dotnet fsi`                                                  |
+| `.njk`      | Nunjucks templates (filters, macros, inheritance, Zest API) | Rendered via NunjucksEngine                                                |
+| `.liquid`   | Liquid templates (Jinja2 family, auto‑converted)       | Converted → NunjucksEngine                                                 |
+| `.hbs`      | Handlebars templates (native Mustache/Handlebars)     | HbsEngine — standalone, no conversion                                      |
+| `.mustache` | Mustache templates (native Mustache/Handlebars)       | HbsEngine — standalone, no conversion                                      |
+| `.webc`     | WebC components (SSR preprocessed)                     | WebC preprocessor → NunjucksEngine                                         |
+| `.haml`     | HAML templates (auto‑converted to HTML → Nunjucks)     | HamlConverter → NunjucksEngine                                             |
+| `.pug`      | Pug templates (auto‑converted to HTML → Nunjucks)      | PugConverter → NunjucksEngine                                              |
+| `.zcss`     | ZCSS stylesheets (CSS superset)                        | Compiled to `.css`                                                         |
+| `.md`       | Standard Markdown                                      | Rendered to HTML                                                           |
+| `.toml`     | Configuration and data (no YAML)                       | Parsed at build time      |
+---
+
+### ZCSS Reference
+
+| Feature             | Syntax / Example                                                |
+|---------------------|-----------------------------------------------------------------|
+| Variables (SCSS)    | `$name: value;`                                                 |
+| Variables (F#)      | `let name = value`                                              |
+| Math                | `let x = 0.25r * 4`                                             |
+| Color functions     | `lighten(#hex, %)`, `darken(#hex, %)`, `mix(a, b, %)`          |
+| Pipe operator       | `value \|> fn(args)` → `fn(value, args)`                        |
+| Unit shorthands     | `r`→`rem`, `p`→`%`                                              |
+| Property shorthands | `py`→`padding-block`, `mx`→`margin-inline`, `bgc`→`background-color` |
+| Nesting             | Indent or brace mode                                            |
+| Mixins              | `@mixin`, `@include`                                            |
+| Loops               | `@each`, `@for`                                                 |
+| Conditionals        | `@if`, `@else`                                                  |
+| Built‑in modules    | `@use "zest:utilities"`, `@use "zest:palette"`, etc.            |
+
+---
+
+### Template Language Annotation
+
+The `template_engine` (top-level) or `[template] engine` field in `_config.toml` is a **pure annotation** for the site’s primary template language.  
+
+It does **not** affect the build — layout routing is decided by file extension only:
+
+| Config Value | Labels (primary template language)            |
+|--------------|-----------------------------------------------|
+| `native`     | `.zest.fsx` — F# script templates             |
+| `nunjucks`   | Nunjucks — `.njk` / `.html` layouts           |
+| `liquid`     | Liquid — `.liquid` layouts                    |
+| *(any value)*| Pure label; no effect on the build            |
+
+Layouts are routed by file extension: `.hbs`/`.mustache` are rendered by the standalone HbsEngine, all other non‑`.zest.fsx` extensions (`.html`, `.njk`, `.liquid`, `.webc`, `.haml`, `.pug`) go through the Nunjucks compat layer, and `.zest.fsx` layouts are always evaluated as F# scripts.
+
+---
+
+### HTML DSL Reference
+
+```fsharp
+// Elements
+h1 [ text "Title" ]
+p  [ text "Paragraph" ]
+a  [ href "https://example.com"; text "Link" ]
+// Attributes
+div [ class' "container"; id "main" ] [ ... ]
+// CSS class shortcuts
+divC "card" [ p [ text "Content" ] ]   // <div class="card">
+spanC "badge" [ text "New" ]           // <span class="badge">
+// List comprehensions
+ul [ for item in items -> li [ text item ] ]
+// Conditionals
+if condition then
+    p [ text "Yes" ]
+else
+    p [ text "No" ]
+```
+
+---
+
+### `_init.fsx` API
+
+| Function           | Purpose                                           |
+|--------------------|----------------------------------------------------|
+| `addGlobal key value` | Inject key‑value into global data                 |
+| `loadJson path`    | Parse JSON file                                    |
+| `loadToml path`    | Parse TOML file                                    |
+| `loadEnv key`      | Read environment variable                          |
+| `console_log msg`  | Debug output to stderr                             |
+| `exec cmd args`    | Run shell command                                  |
+
+---
+
+## Build from Source
+
+```bash
+git clone https://github.com/zest-ssg/zest
+cd zest
+dotnet build Zest.sln
+# Publish for your platform
+dotnet publish src/Zest.App/Zest.App.csproj -c Release -r win-x64 --self-contained false
+# Linux:  -r linux-x64
+# macOS:  -r osx-arm64
+```
+
+---
+
+## Design Philosophy
+
+1. **Content is code, code is content.** The F# DSL and the template engine share one data model, so nothing is lost at the boundary.
+2. **No magic.** Every transformation is a plain pipeline stage you can read in the source. No hidden runtime, no implied dependencies.
+3. **Speed is a feature.** Parallel compilation, minimal allocations, and caching are part of the core design, not an afterthought.
+4. **The output is the deliverable.** Static HTML, no JavaScript required, host it anywhere.
+
+Zest is not a general‑purpose static site generator. It is a specific answer to specific constraints: F# as the template, TOML as the contract, no Node.js, no YAML.
+
+---
+
+## Acknowledgements
+
+Zest would not have been possible without the help of my capable AI assistants, who supported me through design, debugging, and documentation:
+
+- **Claude** — architecture and design review
+- **GLM** — research and experimentation
+- **DeepSeek** — debugging and performance tuning
+- **Hunyuan** — implementation and documentation support
+
+Thank you all for helping bring this project to life.
 
 ---
 

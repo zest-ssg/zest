@@ -3,7 +3,6 @@
 // @description About this Zest blog demo.
 
 open Zest.Dsl
-open Zest.Dsl.DslSugar
 
 render [
     h1 [ text (t "nav.about") ]
