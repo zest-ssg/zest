@@ -148,6 +148,51 @@ module BuildEngine =
                     |> String.concat ","
                 gDict.["menu." + kv.Key] <- box ("[" + json + "]")
 
+            // ── Inject [params] from _config.toml into globalData ──────
+            // Priority: theme _data/params.toml (defaults) < project
+            // _data/params.toml < _config.toml [params] (highest). Deep-merge
+            // so nested tables (e.g. [params.colors]) replace only the keys
+            // they specify, not the entire sub-table. Both the whole `params`
+            // object and flat `params.<key>` entries are set so Nunjucks can
+            // resolve `site.params` as an object and `site.params.colors.accent`
+            // via property traversal.
+            let rec deepMergeParams (src: IDictionary<string, obj>) (dst: Dictionary<string, obj>) =
+                for kv in src do
+                    match kv.Value with
+                    | :? IDictionary<string, obj> as srcSub ->
+                        match dst.TryGetValue kv.Key with
+                        | true, (:? Dictionary<string, obj> as dstSub) ->
+                            deepMergeParams srcSub dstSub
+                        | true, (:? IDictionary<string, obj> as dstSubIface) ->
+                            // Wrap mutable copy so deepMergeParams can recurse.
+                            let dstSub = Dictionary<string, obj>()
+                            for sk in dstSubIface do dstSub.[sk.Key] <- sk.Value
+                            deepMergeParams srcSub dstSub
+                            dst.[kv.Key] <- box dstSub
+                        | _ ->
+                            let copy = Dictionary<string, obj>()
+                            for sk in srcSub do copy.[sk.Key] <- sk.Value
+                            dst.[kv.Key] <- box copy
+                    | _ ->
+                        dst.[kv.Key] <- kv.Value
+
+            if config.Params.Count > 0 then
+                match gDict.TryGetValue "params" with
+                | true, (:? Dictionary<string, obj> as existing) ->
+                    deepMergeParams config.Params existing
+                | true, (:? IDictionary<string, obj> as existingIface) ->
+                    let merged = Dictionary<string, obj>()
+                    for kv in existingIface do merged.[kv.Key] <- kv.Value
+                    deepMergeParams config.Params merged
+                    gDict.["params"] <- box merged
+                | _ ->
+                    let copy = Dictionary<string, obj>()
+                    for kv in config.Params do copy.[kv.Key] <- kv.Value
+                    gDict.["params"] <- box copy
+                // Flat `params.<key>` entries override _data/params.toml keys.
+                for kv in config.Params do
+                    gDict.["params." + kv.Key] <- kv.Value
+
             // ── Inject pjax script as a global variable for templates ──
             gDict.["pjaxScript"] <- box Resources.ZestPjax.script
 
@@ -248,6 +293,13 @@ module BuildEngine =
                 match r with
                 | Error e -> errors.Add(e)
                 | _ -> ()
+
+            // ── Generate taxonomy archive pages (e.g. /tags/, /tags/<term>/) ──
+            // Runs after content so PageQuery already holds every page and tag.
+            // Content files always win: if /tags/foo/ already exists in the
+            // output tree, the generator skips it.
+            let taxonomyPages = TaxonomyGenerator.generate config outputDir layouts includes gDict
+            processed <- processed + taxonomyPages
 
             // ── Copy theme assets first, then project assets overwrite ──
             progress.Phase <- BuildPhase.Assets

@@ -220,6 +220,25 @@ public static class ConfigLoader
                 path:   themePath
             );
 
+            // ── Parse [params] table: arbitrary theme parameters ──────────
+            // Example:
+            //   [params]
+            //   subtitle = "..."
+            //   [params.colors]
+            //   accent = "#eec35e"
+            //   [[params.socials]]
+            //   label = "GitHub"; url = "..."
+            // Exposed to templates as `site.params.*` (see BuildEngine injection).
+            // Nested tables become nested dictionaries; arrays stay arrays so
+            // Nunjucks can iterate them directly.
+            var paramsDict = new Dictionary<string, object>();
+            if (model.TryGetValue("params", out var paramsObj) && paramsObj is TomlTable paramsTbl)
+            {
+                foreach (var kv in paramsTbl)
+                    paramsDict[kv.Key] = TomlToNative(kv.Value);
+            }
+            IDictionary<string, object> themeParams = paramsDict;
+
             // ── Parse include / exclude globs ─────────────────────
             // Example:
             //   include = [".domains", "tools", "library"]
@@ -301,7 +320,8 @@ public static class ConfigLoader
                 theme: themeConfig,
                 include: includeList,
                 exclude: excludeList,
-                pageDefaults: pageDefaults
+                pageDefaults: pageDefaults,
+                @params: themeParams
             );
             return _cachedConfig;
         }
@@ -310,6 +330,32 @@ public static class ConfigLoader
             LogWriter.Error("Config", $"Failed to parse '{configPath}': {ex.Message}", ex);
             _cachedConfig = SiteConfigDefaults.create();
             return _cachedConfig;
+        }
+    }
+
+    /// <summary>
+    /// Recursively convert Tomlyn container values to plain .NET types so the
+    /// <c>[params]</c> table is directly iterable in Nunjucks and F# scripts.
+    /// Mirrors <c>BuildData.tomlToNative</c> in the F# engine: TomlTable →
+    /// Dictionary, TomlArray / TomlTableArray → array; scalars pass through.
+    /// </summary>
+    private static object TomlToNative(object? v)
+    {
+        switch (v)
+        {
+            case TomlTable t:
+                var d = new Dictionary<string, object>();
+                foreach (var kv in t)
+                    d[kv.Key] = TomlToNative(kv.Value);
+                return d;
+            case TomlArray a:
+                return a.Select(TomlToNative).ToArray();
+            case TomlTableArray ta:
+                return ta.Select(TomlToNative).ToArray();
+            case null:
+                return null!;
+            default:
+                return v;
         }
     }
 

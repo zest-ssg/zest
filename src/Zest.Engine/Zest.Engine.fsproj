@@ -86,6 +86,7 @@
     <Compile Include="Build/LayoutEngine.fs" />
     <Compile Include="Build/BuildLayout.fs" />
     <Compile Include="Build/ContentPipeline.fs" />
+    <Compile Include="Build/TaxonomyGenerator.fs" />
     <Compile Include="Build/BuildEngine.fs" />
   </ItemGroup>
 

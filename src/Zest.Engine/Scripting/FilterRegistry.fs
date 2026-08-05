@@ -76,8 +76,11 @@ module FilterRegistry =
     let registerAllFilters (engine: ITemplateEngine) =
         // ── Zest extension filters (skipped in strict mode) ──
         if not !strictMode then
-            // ── pages_by_tag: filter pages by a tag ────────────
-            engine.RegisterFilter "pages_by_tag" (fun value args ->
+            // ── pages_by_tag / by_tag: filter pages by a tag ─────
+            // `by_tag` is registered as an alias so templates ported from
+            // other SSGs (e.g. Hugo's `where`-style tag filters) work without
+            // rewriting. Both names share the same filter body.
+            let pagesByTag (value: obj) (args: string list) =
                 let tag = if args.Length > 0 then args.[0] else ""
                 let pages = PageQuery.getPagesForNunjucks ()
                 pages
@@ -86,7 +89,9 @@ module FilterRegistry =
                     | true, (:? (string[]) as tags) ->
                         tags |> Array.exists (fun t -> t.Equals(tag, StringComparison.OrdinalIgnoreCase))
                     | _ -> false)
-                |> Array.map (fun d -> d :> obj) |> box)
+                |> Array.map (fun d -> d :> obj) |> box
+            engine.RegisterFilter "pages_by_tag" (fun value args -> pagesByTag value args)
+            engine.RegisterFilter "by_tag"       (fun value args -> pagesByTag value args)
 
             // ── recent: get N most recent pages ────────────────
             engine.RegisterFilter "recent" (fun value args ->

@@ -111,6 +111,12 @@ type SiteConfig = {
     /// Default frontmatter overrides applied to files matching glob patterns.
     /// Lower-index entries have higher priority (first match wins).
     PageDefaults: PageDefaults list
+    // ── Theme parameters ──
+    /// Arbitrary key/value parameters from the `[params]` table in _config.toml.
+    /// Surfaced to templates as `site.params.*` (overriding _data/params.toml).
+    /// Nested tables (e.g. `[params.colors]`) become nested dictionaries so
+    /// `site.params.colors.accent` resolves correctly after context nesting.
+    Params: IDictionary<string, obj>
 }
 with
     /// Create a copy with a different dev server port.
@@ -175,4 +181,6 @@ module SiteConfigDefaults =
           Include = []
           Exclude = []
           // Page defaults — empty by default
-          PageDefaults = [] }
+          PageDefaults = []
+          // Theme parameters — empty until _config.toml [params] is parsed.
+          Params = dict [] :> IDictionary<string, obj> }
