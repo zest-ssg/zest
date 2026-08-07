@@ -305,9 +305,12 @@ module private HbsImpl =
         Meta: Map<string, obj>
         /// Partial loader: name → source text
         LoadPartial: string -> string option
-        /// Cache of parsed partials
-        PartialCache: ConcurrentDictionary<string, HbsNode list>
     }
+
+    /// Parsed partials shared across every render of every Hbs engine instance.
+    /// Hoisted out of RenderEnv so a template that is rendered many times (e.g.
+    /// a cached layout reused across pages) parses each partial only once.
+    let private partialCache = ConcurrentDictionary<string, HbsNode list>()
 
     let private mkEnv (vars: IDictionary<string, obj>) (loadPartial: string -> string option) : RenderEnv =
         let root =
@@ -315,7 +318,7 @@ module private HbsImpl =
             | true, r -> r
             | _ -> box vars
         { Stack = [ box vars ]; Root = root; Vars = vars; Meta = Map.empty
-          LoadPartial = loadPartial; PartialCache = ConcurrentDictionary<string, HbsNode list>() }
+          LoadPartial = loadPartial }
 
     let private resolveExpr (env: RenderEnv) (expr: string) : obj =
         let e = expr.Trim()
@@ -352,11 +355,11 @@ module private HbsImpl =
             match env.LoadPartial name with
             | Some src ->
                 let ast =
-                    match env.PartialCache.TryGetValue name with
+                    match partialCache.TryGetValue name with
                     | true, a -> a
                     | _ ->
                         let a = parse src
-                        env.PartialCache.[name] <- a
+                        partialCache.[name] <- a
                         a
                 renderNodes ast env sb
             | None -> () // missing partial → render nothing
@@ -389,35 +392,24 @@ module private HbsImpl =
             | "each" ->
                 let v = resolveExpr env (args.Trim())
                 match v with
+                | :? System.Collections.IList as list ->
+                    renderEachList list body elseBody env sb
                 | :? System.Collections.IEnumerable as e when not (v :? string) && not (v :? System.Collections.IDictionary) ->
-                    let items = ResizeArray<obj>()
-                    for x in e do items.Add x
-                    if items.Count = 0 then
-                        elseBody |> Option.iter (fun eb -> renderNodes eb env sb)
-                    else
-                        for k in 0 .. items.Count - 1 do
-                            let meta = Map.ofList [ "@index", box k; "@key", box k; "@first", box (k = 0); "@last", box (k = items.Count - 1) ]
-                            let env' = { env with Stack = items.[k] :: env.Stack; Meta = meta }
-                            renderNodes body env' sb
+                    renderEachSeq e body elseBody env sb
                 | null ->
                     elseBody |> Option.iter (fun eb -> renderNodes eb env sb)
                 | _ ->
-                    // single object → treat as section with key "" (not iterable)
+                    // Non-iterable value (string/dict): Handlebars renders the
+                    // else block for `each` over a non-array.
                     elseBody |> Option.iter (fun eb -> renderNodes eb env sb)
             | _ ->
                 // generic section: array → iterate; truthy object → push context; else → elseBody
                 let v = resolveExpr env name
                 match v with
+                | :? System.Collections.IList as list ->
+                    renderEachList list body elseBody env sb
                 | :? System.Collections.IEnumerable as e when not (v :? string) && not (v :? System.Collections.IDictionary) ->
-                    let items = ResizeArray<obj>()
-                    for x in e do items.Add x
-                    if items.Count = 0 then
-                        elseBody |> Option.iter (fun eb -> renderNodes eb env sb)
-                    else
-                        for k in 0 .. items.Count - 1 do
-                            let meta = Map.ofList [ "@index", box k; "@key", box k; "@first", box (k = 0); "@last", box (k = items.Count - 1) ]
-                            let env' = { env with Stack = items.[k] :: env.Stack; Meta = meta }
-                            renderNodes body env' sb
+                    renderEachSeq e body elseBody env sb
                 | null ->
                     elseBody |> Option.iter (fun eb -> renderNodes eb env sb)
                 | _ when isTruthy v ->
@@ -425,6 +417,38 @@ module private HbsImpl =
                     renderNodes body env' sb
                 | _ ->
                     elseBody |> Option.iter (fun eb -> renderNodes eb env sb)
+
+    // ── Streaming iteration ─────────────────────────────────────────────
+    // Collections are never copied into an intermediate ResizeArray: IList
+    // (arrays, List<T>) is walked by index so @last/@key stay exact, and a
+    // plain IEnumerable is streamed once. Streaming means @last/@key are not
+    // available on pure IEnumerable — the cost of knowing them is buffering
+    // the whole sequence, which the user explicitly opted out of.
+    and renderEachList (list: System.Collections.IList) (body: HbsNode list)
+                       (elseBody: HbsNode list option) (env: RenderEnv) (sb: Text.StringBuilder) =
+        let count = list.Count
+        if count = 0 then
+            elseBody |> Option.iter (fun eb -> renderNodes eb env sb)
+        else
+            for k in 0 .. count - 1 do
+                let meta = Map.ofList [ "@index", box k; "@key", box k; "@first", box (k = 0); "@last", box (k = count - 1) ]
+                let env' = { env with Stack = list.[k] :: env.Stack; Meta = meta }
+                renderNodes body env' sb
+
+    and renderEachSeq (e: System.Collections.IEnumerable) (body: HbsNode list)
+                      (elseBody: HbsNode list option) (env: RenderEnv) (sb: Text.StringBuilder) =
+        let mutable hasAny = false
+        let mutable k = 0
+        let mutable first = true
+        for x in e do
+            hasAny <- true
+            let meta = Map.ofList [ "@index", box k; "@key", box k; "@first", box first ]
+            first <- false
+            let env' = { env with Stack = x :: env.Stack; Meta = meta }
+            renderNodes body env' sb
+            k <- k + 1
+        if not hasAny then
+            elseBody |> Option.iter (fun eb -> renderNodes eb env sb)
 
     let render (src: string) (vars: IDictionary<string, obj>) (loadPartial: string -> string option) : Result<string, TemplateError> =
         try
@@ -440,10 +464,15 @@ module private HbsImpl =
 type HbsEngine() =
 
     let fileCache = ConcurrentDictionary<string, struct(DateTime * string)>()
+    // Default loader confines every read to the working directory so a
+    // malicious {% include %} cannot traverse outside the site root.
     let mutable loadFileFn: string -> Result<string, string> = fun path ->
-        try Ok(File.ReadAllText(path))
-        with :? FileNotFoundException -> Error(sprintf "Template not found: %s" path)
-           | ex -> Error(ex.Message)
+        match TemplateUtils.resolveWithinRoot path with
+        | Ok fullPath ->
+            try Ok(File.ReadAllText(fullPath))
+            with :? FileNotFoundException -> Error(sprintf "Template not found: %s" fullPath)
+               | ex -> Error(ex.Message)
+        | Error e -> Error e
 
     let mutable partialLoader: string -> string option = fun _ -> None
 

@@ -301,6 +301,13 @@ module BuildEngine =
             let taxonomyPages = TaxonomyGenerator.generate config outputDir layouts includes gDict
             processed <- processed + taxonomyPages
 
+            // ── Generate paginated listing pages (e.g. /posts/, /posts/page/2/) ──
+            // Runs after content + taxonomy so PageQuery knows every page and the
+            // output tree is stable. Content files that declare @paginate are
+            // skipped by the pipeline, so this generator owns those URLs.
+            let paginationPages = PaginationGenerator.generate config contentDir outputDir layouts includes gDict
+            processed <- processed + paginationPages
+
             // ── Copy theme assets first, then project assets overwrite ──
             progress.Phase <- BuildPhase.Assets
             match themeDir with

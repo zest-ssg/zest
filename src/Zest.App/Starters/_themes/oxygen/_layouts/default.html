@@ -1,22 +1,2 @@
-<!DOCTYPE html>
-<html lang="{{ site.language }}">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% if page.title %}{{ page.title }} · {{ site.title }}{% else %}{{ site.title }}{% endif %}</title>
-  <meta name="description" content="{% if page.description %}{{ page.description }}{% else %}{{ site.description }}{% endif %}">
-  <meta name="theme-color" content="#3c6a5a">
-  <meta property="og:type" content="website">
-  <meta property="og:title" content="{% if page.title %}{{ page.title }}{% else %}{{ site.title }}{% endif %}">
-  <meta property="og:description" content="{% if page.description %}{{ page.description }}{% else %}{{ site.description }}{% endif %}">
-  <meta name="twitter:card" content="summary">
-  <link rel="stylesheet" href="/assets/css/main.css">
-</head>
-<body>
-  {{ include header.html }}
-  <main class="site-main" id="main">
-    {{ content | safe }}
-  </main>
-  {{ include footer.html }}
-</body>
-</html>
+{# default.html — layout for ordinary content pages (about, features, 404). #}
+{{ include page-shell.html }}

@@ -45,6 +45,7 @@
     <Compile Include="Template/NunjucksEngine.fs" />
     <Compile Include="Template/HamlConverter.fs" />
     <Compile Include="Template/PugConverter.fs" />
+    <Compile Include="Template/LiquidConverter.fs" />
     <Compile Include="Template/TemplateManager.fs" />
 
     <!-- HTML components -->
@@ -87,6 +88,7 @@
     <Compile Include="Build/BuildLayout.fs" />
     <Compile Include="Build/ContentPipeline.fs" />
     <Compile Include="Build/TaxonomyGenerator.fs" />
+    <Compile Include="Build/PaginationGenerator.fs" />
     <Compile Include="Build/BuildEngine.fs" />
   </ItemGroup>
 

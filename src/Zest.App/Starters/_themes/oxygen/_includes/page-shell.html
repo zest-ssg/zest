@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+{# page-shell.html — the full document skeleton shared by page layouts. #}
+{# Injected via `{{ include page-shell.html }}` before the Nunjucks pass, #}
+{# so head/header/footer includes and template syntax resolve normally. #}
+<html lang="{{ site.language | default('en') }}">
+<head>
+  {{ include head.html }}
+</head>
+<body>
+  <div class="layout-wrapper">
+    {{ include header.html }}
+    <main class="main">
+      {{ content | safe }}
+    </main>
+    {{ include footer.html }}
+  </div>
+  {{ pjaxScript | safe }}
+</body>
+</html>

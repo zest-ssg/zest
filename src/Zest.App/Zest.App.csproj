@@ -62,80 +62,15 @@
        embedding above). LogicalName preserves the relative path (using
        backslashes) so InitController can reconstruct file paths at runtime,
        keeping the starter self-contained after `dotnet tool install`.
+       A single glob packs every starter file, so adding theme/content files
+       needs no csproj edit; `_site` is build output and stays out.
        `Starters` holds the starter-project definitions copied out by init
        (the default blog preset); it is NOT the runtime template engine
        (which lives in Zest.Engine/Template). -->
   <ItemGroup>
     <None Remove="Starters\**\*" />
-    <!-- Root config / init -->
-    <EmbeddedResource Include="Starters\_config.toml">
-      <LogicalName>Zest.App.Starters._config.toml</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_init.zest.fsx">
-      <LogicalName>Zest.App.Starters._init.zest.fsx</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Starters\README.md">
-      <LogicalName>Zest.App.Starters.README.md</LogicalName>
-    </EmbeddedResource>
-    <!-- Site data -->
-    <EmbeddedResource Include="Starters\_data\nav.toml">
-      <LogicalName>Zest.App.Starters._data\nav.toml</LogicalName>
-    </EmbeddedResource>
-    <!-- Theme: Oxygen (self-contained under _themes/oxygen/) -->
-    <EmbeddedResource Include="Starters\_themes\oxygen\_theme.toml">
-      <LogicalName>Zest.App.Starters._themes\oxygen\_theme.toml</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_themes\oxygen\_data\nav.toml">
-      <LogicalName>Zest.App.Starters._themes\oxygen\_data\nav.toml</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_themes\oxygen\_layouts\default.html">
-      <LogicalName>Zest.App.Starters._themes\oxygen\_layouts\default.html</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_themes\oxygen\_layouts\post.html">
-      <LogicalName>Zest.App.Starters._themes\oxygen\_layouts\post.html</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_themes\oxygen\_includes\header.html">
-      <LogicalName>Zest.App.Starters._themes\oxygen\_includes\header.html</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_themes\oxygen\_includes\footer.html">
-      <LogicalName>Zest.App.Starters._themes\oxygen\_includes\footer.html</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_themes\oxygen\_locales\en.toml">
-      <LogicalName>Zest.App.Starters._themes\oxygen\_locales\en.toml</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_themes\oxygen\_locales\zh.toml">
-      <LogicalName>Zest.App.Starters._themes\oxygen\_locales\zh.toml</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Starters\_themes\oxygen\assets\css\main.zcss">
-      <LogicalName>Zest.App.Starters._themes\oxygen\assets\css\main.zcss</LogicalName>
-    </EmbeddedResource>
-    <!-- Content pages -->
-    <EmbeddedResource Include="Starters\content\index.zest.fsx">
-      <LogicalName>Zest.App.Starters.content\index.zest.fsx</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Starters\content\about.zest.fsx">
-      <LogicalName>Zest.App.Starters.content\about.zest.fsx</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Starters\content\features.zest.fsx">
-      <LogicalName>Zest.App.Starters.content\features.zest.fsx</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Starters\content\rss.zest.fsx">
-      <LogicalName>Zest.App.Starters.content\rss.zest.fsx</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Starters\content\sitemap.zest.fsx">
-      <LogicalName>Zest.App.Starters.content\sitemap.zest.fsx</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Starters\content\404.zest.fsx">
-      <LogicalName>Zest.App.Starters.content\404.zest.fsx</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Starters\content\posts\index.zest.fsx">
-      <LogicalName>Zest.App.Starters.content\posts\index.zest.fsx</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Starters\content\posts\welcome-to-zest.md">
-      <LogicalName>Zest.App.Starters.content\posts\welcome-to-zest.md</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Starters\content\posts\building-sites-with-fsharp.md">
-      <LogicalName>Zest.App.Starters.content\posts\building-sites-with-fsharp.md</LogicalName>
+    <EmbeddedResource Include="Starters\**\*" Exclude="Starters\_site\**\*">
+      <LogicalName>Zest.App.Starters.%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

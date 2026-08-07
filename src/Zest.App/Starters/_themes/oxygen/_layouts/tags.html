@@ -1,0 +1,7 @@
+{# tags.html — taxonomy terms index fragment (rendered inside base layout). #}
+<h1>{{ 'nav.tags' | t }}</h1>
+<div class="tags">
+  {% for t in tags %}
+  <a class="post-tag" href="/tags/{{ t }}/">#{{ t }}</a>
+  {% endfor %}
+</div>

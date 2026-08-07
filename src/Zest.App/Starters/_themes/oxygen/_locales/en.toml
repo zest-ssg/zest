@@ -1,7 +1,9 @@
 [nav]
 home = "Home"
 posts = "Posts"
+blog = "Blog"
 about = "About"
+tags = "Tags"
 
 [meta]
 recent_posts = "Recent posts"

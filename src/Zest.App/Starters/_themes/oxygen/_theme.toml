@@ -5,8 +5,8 @@
 # lifts, no smooth scrolling — just typography and whitespace.
 
 name = "oxygen"
-version = "2.1.0"
-description = "A quiet, editorial theme: warm paper, ink text, jade accent, serif headings, hairline rules."
+version = "2.3.0"
+description = "A quiet, minimal blog theme restyled after Eleventy Duo: paper background, ink text, one accent, uppercase navigation, roomy editorial typography. Colors and navigation are configurable via [params] in _config.toml."
 
 [theme]
 author = "Zest"

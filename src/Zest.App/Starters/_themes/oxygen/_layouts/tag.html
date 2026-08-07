@@ -1,0 +1,21 @@
+{# tag.html — listing page for a single tag term. #}
+{# Context: term (tag name), term_pages (array of page dicts), taxonomy. #}
+<h1>{{ term | capitalize }}</h1>
+
+<ul class="post-list">
+  {% for post in term_pages %}
+  <li class="post-list__item">
+    <div class="post-list__meta">
+      <time datetime="{{ post.date }}">{{ post.date | date('%B %e, %Y') }}</time>
+    </div>
+    <h3 class="post-list__title">
+      <a href="{{ post.url }}">{{ post.title }}</a>
+    </h3>
+    {% if post.description %}
+    <p class="post-list__excerpt">{{ post.description }}</p>
+    {% endif %}
+  </li>
+  {% else %}
+  <p>{{ 'meta.no_posts' | t }}</p>
+  {% endfor %}
+</ul>

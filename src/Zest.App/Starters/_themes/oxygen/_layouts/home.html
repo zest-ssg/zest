@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+{# home.html — landing layout: hero intro plus recent posts list. #}
+<html lang="{{ site.language | default('en') }}">
+<head>
+  {{ include head.html }}
+</head>
+<body>
+  <div class="layout-wrapper">
+    {{ include header.html }}
+    <main class="main">
+      <header class="hero">
+        <div class="hero-content">
+          {{ content | safe }}
+        </div>
+        {% if site.socials %}
+        <ul class="hero__social-links">
+          {% for s in site.socials %}
+          <li><a href="{{ s.url }}" rel="me">{{ s.label }}</a></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </header>
+
+      <section class="post-list__wrapper">
+        <h2 class="post-list__heading">{{ 'meta.recent_posts' | t }}</h2>
+
+        <ul class="post-list">
+          {% for post in collections.posts | take(0, 5) %}
+          <li class="post-list__item">
+            <div class="post-list__meta">
+              <time datetime="{{ post.date }}">{{ post.date | date('%B %e, %Y') }}</time>
+            </div>
+
+            <h3 class="post-list__title">
+              <a href="{{ post.url }}">{{ post.title }}</a>
+            </h3>
+
+            {% if post.tags %}
+            <div class="post-list__tags">
+              {% for tag in post.tags %}<a href="/tags/{{ tag }}/">#{{ tag }}</a>{% endfor %}
+            </div>
+            {% endif %}
+
+            <p class="post-list__excerpt">{{ post.description | default('Read the article.') }}</p>
+
+            <a class="post-list__read-more" href="{{ post.url }}">read article</a>
+          </li>
+          {% endfor %}
+        </ul>
+      </section>
+    </main>
+    {{ include footer.html }}
+  </div>
+  {{ pjaxScript | safe }}
+</body>
+</html>

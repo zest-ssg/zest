@@ -1,7 +1,9 @@
 [nav]
 home = "首页"
 posts = "文章"
+blog = "博客"
 about = "关于"
+tags = "标签"
 
 [meta]
 recent_posts = "最新文章"

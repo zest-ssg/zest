@@ -9,11 +9,13 @@
 open Zest.Dsl
 
 render [
-    divC "notfound" [
-        h1C "notfound__code" [ text "404" ]
-        pC "notfound__lead" [ text (t "notfound.message") ]
+    divC "not-found" [
+        h1 [ text "404" ]
         p [
+            text (t "notfound.message")
+            text " "
             aHref "/" (t "notfound.back_home")
+            text "."
         ]
     ]
 ]

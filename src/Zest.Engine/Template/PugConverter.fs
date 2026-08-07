@@ -27,7 +27,8 @@ open System.Text.RegularExpressions
 //
 // Optimisations vs. original:
 //   • All regexes hoisted to module-level static fields.
-//   • indentOf handles tabs and arbitrary space widths.
+//   • Strict indentation: one tab or two spaces per level; mixed or odd-width
+//     indents are reported as errors instead of being guessed.
 //   • Text content and attribute values are HTML-escaped.
 //   • Void elements emit HTML5 `>`.
 //   • `include` now emits a Nunjucks include directive.
@@ -54,19 +55,7 @@ module PugConverter =
         Regex(@"\s*(?<key>[\w-]+)=(?<value>(?:""[^""]*""|'[^']*'|[^\s)]+))", RegexOptions.Compiled)
 
     /// Count leading whitespace as an indent LEVEL.
-    let private indentLevel (line: string) =
-        let mutable i = 0
-        let mutable lvl = 0
-        while i < line.Length do
-            let c = line.[i]
-            if c = ' ' then
-                let mutable sp = 0
-                while i < line.Length && line.[i] = ' ' do sp <- sp + 1; i <- i + 1
-                lvl <- lvl + (sp + 1) / 2
-            elif c = '\t' then
-                lvl <- lvl + 1; i <- i + 1
-            else ()
-        lvl
+    let private indentLevel (line: string) = TemplateUtils.indentLevelStrict line
 
     /// Minimal Pug-to-HTML conversion.
     let convert (pug: string) : string =
@@ -75,6 +64,9 @@ module PugConverter =
         else
             let lines = pug.Replace("\r\n", "\n").Split('\n')
             let sb = StringBuilder()
+            // Document-level style check: Pug requires one indent style.
+            if TemplateUtils.mixedIndentStyles lines then
+                sb.AppendLine("<!-- Pug indent error: mixed tab and space indentation (pick one style) -->") |> ignore
             let mutable indentStack: (int * string) list = []
 
             let closeUntil (targetIndent: int) =
@@ -102,59 +94,64 @@ module PugConverter =
                     let incPath = includePat.Match(line).Groups.[1].Value.Trim().Trim('"', '\'')
                     sb.AppendLine(sprintf "{%% include \"%s\" %%}" incPath) |> ignore
                 else
-                    let indent = indentLevel line
-                    closeUntil indent
+                    match indentLevel line with
+                    | None ->
+                        // Refuse to guess a nesting level: mixed tabs/spaces or
+                        // an odd space width cannot build a sound tree.
+                        sb.AppendLine(sprintf "<!-- Pug indent error: %s -->" (TemplateUtils.htmlEncode (line.Trim()))) |> ignore
+                    | Some indent ->
+                        closeUntil indent
 
-                    let m = pugTag.Match(line)
-                    if m.Success then
-                        let tagRaw = if m.Groups.["tag"].Success then m.Groups.["tag"].Value else ""
-                        let id     = if m.Groups.["id"].Success  then m.Groups.["id"].Value  else ""
-                        let attrs  = if m.Groups.["attrs"].Success then m.Groups.["attrs"].Value else ""
-                        let rest   = if m.Groups.["rest"].Success then m.Groups.["rest"].Value.Trim() else ""
+                        let m = pugTag.Match(line)
+                        if m.Success then
+                            let tagRaw = if m.Groups.["tag"].Success then m.Groups.["tag"].Value else ""
+                            let id     = if m.Groups.["id"].Success  then m.Groups.["id"].Value  else ""
+                            let attrs  = if m.Groups.["attrs"].Success then m.Groups.["attrs"].Value else ""
+                            let rest   = if m.Groups.["rest"].Success then m.Groups.["rest"].Value.Trim() else ""
 
-                        let cls =
-                            let clsMatch = clsIdPat.Match(line.TrimStart())
-                            if clsMatch.Success && clsMatch.Groups.[1].Success then
-                                clsMatch.Groups.[1].Value.Split('.', System.StringSplitOptions.RemoveEmptyEntries)
-                                |> String.concat " "
-                            else ""
+                            let cls =
+                                let clsMatch = clsIdPat.Match(line.TrimStart())
+                                if clsMatch.Success && clsMatch.Groups.[1].Success then
+                                    clsMatch.Groups.[1].Value.Split('.', System.StringSplitOptions.RemoveEmptyEntries)
+                                    |> String.concat " "
+                                else ""
 
-                        let tag = if tagRaw = "" && (id <> "" || cls <> "") then "div"
-                                  elif tagRaw = "" then ""
-                                  else tagRaw
+                            let tag = if tagRaw = "" && (id <> "" || cls <> "") then "div"
+                                      elif tagRaw = "" then ""
+                                      else tagRaw
 
-                        if tag = "" then
-                            let text = line.Trim()
-                            if text <> "" then sb.AppendLine(TemplateUtils.htmlEncode text) |> ignore
-                        elif tag = "doctype" then
-                            sb.AppendLine("<!DOCTYPE html>") |> ignore
-                        else
-                            sb.Append('<') |> ignore
-                            sb.Append(tag) |> ignore
-                            if id <> "" then sb.Append(sprintf " id=\"%s\"" (TemplateUtils.attrEncode id)) |> ignore
-                            if cls <> "" then sb.Append(sprintf " class=\"%s\"" (TemplateUtils.attrEncode cls)) |> ignore
-                            if attrs <> "" then
-                                for am in attrRegex.Matches(attrs) do
-                                    let ak = am.Groups.["key"].Value
-                                    let av = am.Groups.["value"].Value.Trim('"', '\'')
-                                    sb.Append(sprintf " %s=\"%s\"" ak (TemplateUtils.attrEncode av)) |> ignore
-
-                            let content =
-                                if rest.StartsWith("=") then sprintf "{{ %s }}" (rest.Substring(1).Trim())
-                                else rest
-
-                            if TemplateUtils.isVoidElement tag then
-                                sb.Append('>') |> ignore; sb.AppendLine() |> ignore
-                            elif content <> "" then
-                                sb.Append('>') |> ignore
-                                sb.Append(content) |> ignore
-                                sb.Append(sprintf "</%s>" tag) |> ignore
-                                sb.AppendLine() |> ignore
+                            if tag = "" then
+                                let text = line.Trim()
+                                if text <> "" then sb.AppendLine(TemplateUtils.htmlEncode text) |> ignore
+                            elif tag = "doctype" then
+                                sb.AppendLine("<!DOCTYPE html>") |> ignore
                             else
-                                sb.AppendLine(">") |> ignore
-                                indentStack <- (indent, tag) :: indentStack
-                    else
-                        sb.AppendLine(TemplateUtils.htmlEncode (line.Trim())) |> ignore
+                                sb.Append('<') |> ignore
+                                sb.Append(tag) |> ignore
+                                if id <> "" then sb.Append(sprintf " id=\"%s\"" (TemplateUtils.attrEncode id)) |> ignore
+                                if cls <> "" then sb.Append(sprintf " class=\"%s\"" (TemplateUtils.attrEncode cls)) |> ignore
+                                if attrs <> "" then
+                                    for am in attrRegex.Matches(attrs) do
+                                        let ak = am.Groups.["key"].Value
+                                        let av = am.Groups.["value"].Value.Trim('"', '\'')
+                                        sb.Append(sprintf " %s=\"%s\"" ak (TemplateUtils.attrEncode av)) |> ignore
+
+                                let content =
+                                    if rest.StartsWith("=") then sprintf "{{ %s }}" (rest.Substring(1).Trim())
+                                    else rest
+
+                                if TemplateUtils.isVoidElement tag then
+                                    sb.Append('>') |> ignore; sb.AppendLine() |> ignore
+                                elif content <> "" then
+                                    sb.Append('>') |> ignore
+                                    sb.Append(content) |> ignore
+                                    sb.Append(sprintf "</%s>" tag) |> ignore
+                                    sb.AppendLine() |> ignore
+                                else
+                                    sb.AppendLine(">") |> ignore
+                                    indentStack <- (indent, tag) :: indentStack
+                        else
+                            sb.AppendLine(TemplateUtils.htmlEncode (line.Trim())) |> ignore
 
             while indentStack.Length > 0 do
                 let (_, closeTag) = indentStack.Head

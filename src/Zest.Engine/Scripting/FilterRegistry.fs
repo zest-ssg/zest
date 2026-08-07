@@ -274,3 +274,112 @@ module FilterRegistry =
         // Usage: {{ pjaxScript | safe }} in head or before </body>
         engine.RegisterFilter "pjaxScript" (fun _value _args ->
             box ZestPjax.script)
+
+        // ── Liquid standard filters ─────────────────────────────
+        // Registered on the Nunjucks engine so `.liquid` content converted by
+        // LiquidConverter resolves every filter it emits. Names follow Liquid
+        // semantics (e.g. `size` counts a string's chars, `capitalize` folds
+        // the tail to lowercase); where Nunjucks already has an equivalent
+        // filter the Liquid name is kept as a thin alias.
+        let toStr (v: obj) = if isNull v then "" else v.ToString()
+        let asEnum (v: obj) =
+            match v with
+            | :? System.Collections.IEnumerable as ie when not (v :? string) -> Some (ie |> Seq.cast<obj> |> Array.ofSeq)
+            | _ -> None
+        let tryNum (s: string) = match Double.TryParse s with true, n -> Some n | _ -> None
+
+        engine.RegisterFilter "downcase" (fun v _ -> box ((toStr v).ToLowerInvariant()))
+        engine.RegisterFilter "upcase"   (fun v _ -> box ((toStr v).ToUpperInvariant()))
+        engine.RegisterFilter "capitalize" (fun v _ ->
+            let s = toStr v
+            if s.Length = 0 then box s
+            else box (s.[0..0].ToUpperInvariant() + s.[1..].ToLowerInvariant()))
+        engine.RegisterFilter "size" (fun v _ ->
+            match v with
+            | :? string as s -> box s.Length
+            | :? System.Collections.ICollection as c -> box c.Count
+            | :? System.Collections.IEnumerable as ie -> box (ie |> Seq.cast<obj> |> Seq.length)
+            | _ -> box 0)
+        engine.RegisterFilter "uniq" (fun v _ ->
+            match asEnum v with
+            | Some a -> box (a |> Array.distinctBy toStr)
+            | None -> v)
+        engine.RegisterFilter "concat" (fun v args ->
+            match asEnum v, (if args.Length > 0 then asEnum args.[0] else None) with
+            | Some a, Some b -> box (Array.append a b)
+            | _ -> v)
+        engine.RegisterFilter "strip_html" (fun v _ -> box (Regex(@"<[^>]+>").Replace(toStr v, "")))
+        engine.RegisterFilter "newline_to_br" (fun v _ -> box ((toStr v).Replace("\r\n", "\n").Replace("\n", "<br />")))
+        engine.RegisterFilter "integer" (fun v _ ->
+            match Double.TryParse (toStr v) with true, n -> box (int n) | _ -> box 0)
+        engine.RegisterFilter "json" (fun v _ -> box (System.Text.Json.JsonSerializer.Serialize v))
+        engine.RegisterFilter "url_encode" (fun v _ -> box (Uri.EscapeDataString (toStr v)))
+        engine.RegisterFilter "url_decode" (fun v _ ->
+            try box (Uri.UnescapeDataString (toStr v)) with _ -> box (toStr v))
+        engine.RegisterFilter "split" (fun v args ->
+            let sep = if args.Length > 0 then args.[0] else " "
+            box ((toStr v).Split([|sep|], StringSplitOptions.None)))
+        engine.RegisterFilter "truncatewords" (fun v args ->
+            let n = if args.Length > 0 then (try int args.[0] with _ -> 15) else 15
+            let words = (toStr v).Split([|' ';'\n';'\t';'\r'|], StringSplitOptions.RemoveEmptyEntries)
+            if words.Length <= n then box (toStr v)
+            else box (String.Join(" ", words.[0..n-1]) + "…"))
+        engine.RegisterFilter "strip_newlines" (fun v _ -> box ((toStr v).Replace("\r", "").Replace("\n", "")))
+        engine.RegisterFilter "replace_first" (fun v args ->
+            if args.Length < 2 then v
+            else
+                let s = toStr v
+                let idx = s.IndexOf(args.[0], StringComparison.Ordinal)
+                box (if idx < 0 then s else s.Substring(0, idx) + args.[1] + s.Substring(idx + args.[0].Length)))
+        engine.RegisterFilter "remove" (fun v args ->
+            if args.Length < 1 then v
+            else box ((toStr v).Replace(args.[0], "")))
+        engine.RegisterFilter "remove_first" (fun v args ->
+            if args.Length < 1 then v
+            else
+                let s = toStr v
+                let idx = s.IndexOf(args.[0], StringComparison.Ordinal)
+                box (if idx < 0 then s else s.Remove(idx, args.[0].Length)))
+        engine.RegisterFilter "compact" (fun v _ ->
+            match asEnum v with
+            | Some a -> box (a |> Array.filter (fun x -> not (isNull x) && toStr x <> ""))
+            | None -> v)
+        engine.RegisterFilter "ceil" (fun v _ -> box (Math.Ceiling (match tryNum (toStr v) with Some n -> n | None -> 0.0)))
+        engine.RegisterFilter "floor" (fun v _ -> box (Math.Floor (match tryNum (toStr v) with Some n -> n | None -> 0.0)))
+        engine.RegisterFilter "at_least" (fun v args ->
+            let b = if args.Length > 0 then (match tryNum args.[0] with Some n -> n | None -> 0.0) else 0.0
+            let a = match tryNum (toStr v) with Some n -> n | None -> 0.0
+            box (Math.Max(a, b)))
+        engine.RegisterFilter "at_most" (fun v args ->
+            let b = if args.Length > 0 then (match tryNum args.[0] with Some n -> n | None -> 0.0) else 0.0
+            let a = match tryNum (toStr v) with Some n -> n | None -> 0.0
+            box (Math.Min(a, b)))
+        engine.RegisterFilter "sort_natural" (fun v _ ->
+            match asEnum v with
+            | Some a -> box (a |> Array.sortBy (fun x -> (toStr x).ToLowerInvariant()))
+            | None -> v)
+        engine.RegisterFilter "take" (fun v args ->
+            let offset = if args.Length > 0 then (try int args.[0] with _ -> 0) else 0
+            let count = if args.Length > 1 then Some (try int args.[1] with _ -> 0) else None
+            match v with
+            | :? string as s ->
+                let start = min offset s.Length
+                match count with
+                | Some c -> box (if c <= 0 then "" else s.Substring(start, min c (s.Length - start)))
+                | None -> box (s.Substring(start))
+            | _ ->
+                match asEnum v with
+                | Some a ->
+                    let start = min offset a.Length
+                    match count with
+                    | Some c when c > 0 -> box (a.[start..min (start + c - 1) (a.Length - 1)])
+                    | _ -> box (a.[start..])
+                | None -> v)
+        engine.RegisterFilter "contains" (fun v args ->
+            let needle = if args.Length > 0 then args.[0] else ""
+            match v with
+            | :? string as s -> box (s.Contains(needle, StringComparison.OrdinalIgnoreCase))
+            | _ ->
+                match asEnum v with
+                | Some a -> box (a |> Array.exists (fun x -> (toStr x).Equals(needle, StringComparison.OrdinalIgnoreCase)))
+                | None -> box false)

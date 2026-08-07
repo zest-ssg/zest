@@ -140,7 +140,6 @@ let primary    = #3b82f6
 let space1     = 0.25r
 let space4     = space1 * 4     // 1rem
 let primary-light = primary |> lighten(45%)
-// Two-letter property shorthands
 .tag
   color: $primary
   background-color: $primary-light

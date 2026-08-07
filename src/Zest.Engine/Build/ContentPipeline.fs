@@ -129,9 +129,12 @@ module ContentPipeline =
         // The fileContentCache avoids double ReadAllText in later phases.
         // Draft pages (meta.Draft = true) are collected for _drafts but excluded
         // from the main page set to prevent them from appearing in production builds.
+        // Files declaring `@paginate` are skipped here too — PaginationGenerator
+        // takes over their URL entirely, so they must not surface as pages.
         progress.Phase <- BuildPhase.Discovering
         let fileContentCache = ConcurrentDictionary<string, string>()
         let draftPages = ConcurrentBag<ContentPage>()
+        let paginateFiles = ConcurrentDictionary<string, bool>()
         let metaPages =
             // Parallel: read file + extract meta concurrently
             // Uses Partitioner for better chunk distribution than Parallel.ForEach on arrays.
@@ -143,10 +146,13 @@ module ContentPipeline =
                     let meta = ScriptEvaluator.extractMetaWithText f config text
                     f, meta
                 with _ -> f, None)
-            |> Array.choose (fun (_, metaOpt) ->
+            |> Array.choose (fun (f, metaOpt) ->
                 metaOpt |> Option.bind (fun (page: ContentPage) ->
                     if page.Draft then
                         draftPages.Add(page)
+                        None
+                    elif page.Data.ContainsKey "paginate" then
+                        paginateFiles.TryAdd(f, true) |> ignore
                         None
                     else Some page))
             |> Array.toList
@@ -154,8 +160,12 @@ module ContentPipeline =
         PageQuery.setDraftPages (draftPages |> Seq.toList)
         ScriptRunner.resetSession ()
 
-        let mdFiles  = allFiles |> Array.filter (fun f -> let e = Path.GetExtension(f).ToLowerInvariant() in e = FileExtensions.Markdown || e = FileExtensions.MarkdownLong)
-        let fsxFiles = allFiles |> Array.filter (fun f -> let e = Path.GetExtension(f).ToLowerInvariant() in e <> FileExtensions.Markdown && e <> FileExtensions.MarkdownLong)
+        // Exclude pagination templates from normal evaluation/writing — the
+        // PaginationGenerator owns their output paths.
+        let paginatedAllFiles = allFiles |> Array.filter (fun f -> not (paginateFiles.ContainsKey f))
+
+        let mdFiles  = paginatedAllFiles |> Array.filter (fun f -> let e = Path.GetExtension(f).ToLowerInvariant() in e = FileExtensions.Markdown || e = FileExtensions.MarkdownLong)
+        let fsxFiles = paginatedAllFiles |> Array.filter (fun f -> let e = Path.GetExtension(f).ToLowerInvariant() in e <> FileExtensions.Markdown && e <> FileExtensions.MarkdownLong)
 
         let evalResults = ConcurrentBag<Result<ContentPage, string>>()
 

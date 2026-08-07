@@ -141,8 +141,10 @@ module ScriptEvaluator =
             let templateText =
                 match ext.ToLowerInvariant() with
                 | FileExtensions.Liquid ->
-                    // Liquid whitespace control: {%- → {%  and -%} → %}
-                    bodyText.Replace("{%-", "{%").Replace("-%}", " %}")
+                    // Liquid → Nunjucks (assign/capture/case/unless/filter args…),
+                    // then rendered by the Nunjucks engine. `| safe` is appended
+                    // by the converter to preserve Liquid's no-autoescape output.
+                    LiquidConverter.convert bodyText
                 | FileExtensions.WebC       ->
                     // WebC SSR: strip script/webc:setup, normalize template tags
                     let step1 = Regex.Replace(bodyText, @"<script[^>]*webc:setup[^>]*>.*?</script>", "", RegexOptions.Singleline)

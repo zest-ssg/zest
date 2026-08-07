@@ -282,6 +282,16 @@ public static class ConfigLoader
             }
             var pageDefaults = Microsoft.FSharp.Collections.ListModule.OfSeq(pageDefaultsList);
 
+            // ── Parse [pagination] table: paginated listing defaults ──
+            // Example:
+            //   [pagination]
+            //   per_page = 5
+            var paginationPerPage = config.PaginationPerPage;
+            if (model.TryGetValue("pagination", out var pagObj) && pagObj is TomlTable pagTbl)
+            {
+                paginationPerPage = TomlReader.GetInt(pagTbl, "per_page", paginationPerPage);
+            }
+
             _cachedConfig = new SiteConfig(
                 title: title,
                 baseUrl: baseUrl,
@@ -320,6 +330,7 @@ public static class ConfigLoader
                 theme: themeConfig,
                 include: includeList,
                 exclude: excludeList,
+                paginationPerPage: paginationPerPage,
                 pageDefaults: pageDefaults,
                 @params: themeParams
             );

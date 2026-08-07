@@ -24,10 +24,8 @@ let postList =
 
 render [
     h1 [ text (t "nav.blog") ]
-    p [
-        mdDedent """
-            Thoughts on F#, static sites, and building fast.
-        """
-    ]
+    mdDedent """
+        Thoughts on F#, static sites, and building fast.
+    """
     postList
 ]

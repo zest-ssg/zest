@@ -1,58 +1,171 @@
 // ─────────────────────────────────────────────────────────────
-// oxygen — a calm, editorial theme for Zest.
-//
-// Warm paper background, ink text, a single jade accent, serif
-// headings, hairline rules. Deliberately quiet: no transitions,
-// no shadows, no hover lifts, no scaling, no smooth scrolling.
+// oxygen — a quiet, minimal blog theme for Zest, restyled after
+// the Eleventy Duo design: pure paper background, ink text, one
+// accent, uppercase navigation, and roomy editorial typography.
 //
 // ZCSS keeps an F# flavor: rule bodies use `[ ]` blocks and
-// variables are declared with `let`. Comma-grouped selectors are
-// expanded per rule, and nesting works with `&` or plain space.
+// variables are declared with `let`. Colors are CSS custom
+// properties with fallbacks so users can override them from
+// _config.toml [params.colors] without editing the theme.
 // ─────────────────────────────────────────────────────────────
 
-let bg          = #faf9f5
-let surface     = #ffffff
-let ink         = #26241f
-let body        = #46423b
-let muted       = #8d8678
-let line        = #e6e1d5
-let accent      = #3c6a5a
-let accent-deep = darken(#3c6a5a, 10%)
-let accent-soft = lighten(#3c6a5a, 58%)
-let code-bg     = #f3efe6
-let sel-bg      = #e2ebe5
+// `ink` mirrors CSS `--color`: the bare name `color` is a CSS keyword, so a
+// `let color = ...` binding would never be substituted by the ZCSS resolver.
+let accent      = var(--accent, #0074d9)
+let background  = var(--background, #fffffe)
+let ink         = var(--color, #292929)
+let ink-80      = var(--color-80, rgba(41, 41, 41, .8))
+let ink-30      = var(--color-30, rgba(41, 41, 41, .3))
+let ink-10      = var(--color-10, rgba(41, 41, 41, .1))
 
-let font-ui      = -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif
-let font-display = Georgia, "Noto Serif SC", "Songti SC", SimSun, serif
-let font-mono    = "SF Mono", "Cascadia Code", Consolas, "Liberation Mono", Menlo, monospace
+let text-xs  = 0.75rem
+let text-sm  = 0.875rem
+let text-base = 1rem
+let text-lg  = 1.125rem
+let text-xl  = 1.25rem
+let text-2xl = 1.5rem
+let text-3xl = 1.875rem
+let text-4xl = 2.25rem
+let text-5xl = 3rem
 
-let measure = 44r
+let font-sans = 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif
+let font-mono = 'Inconsolata', 'SF Mono', 'Cascadia Code', Consolas, monospace
 
 // ── Reset & base ─────────────────────────────────────────────
 
-* [
+html [
   box-sizing: border-box;
+  scroll-behavior: smooth;
+  height: 100%;
 ]
 
-html [
-  -webkit-text-size-adjust: 100%;
+*, *:before, *:after [
+  box-sizing: inherit;
+  border-style: solid;
+  border-width: 0;
+  border-color: currentColor;
+  margin: 0;
+  padding: 0;
 ]
 
 body [
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-  background: bg;
-  color: body;
-  font-family: font-ui;
-  font-size: 17px;
-  line-height: 1.65;
+  height: 100%;
+  background: background;
+  color: ink;
+  font-family: font-sans;
+  font-size: text-lg;
+  line-height: 1.54;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'liga', 'tnum', 'case', 'calt', 'zero', 'ss01', 'locl';
+  font-variant-ligatures: contextual;
 ]
 
 ::selection [
-  background: sel-bg;
-  color: ink;
+  background: accent;
+  color: background;
+]
+
+img [
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-top: 1rem;
+]
+
+a [
+  text-decoration: none;
+  color: inherit;
+  transition: all 200ms linear;
+]
+
+a:hover [
+  color: accent;
+]
+
+b, strong [
+  font-weight: 500;
+]
+
+ul, ol [
+  list-style-position: outside;
+  padding-left: 1.5rem;
+  margin-top: 1rem;
+]
+
+ul [
+  list-style-type: square;
+]
+
+blockquote [
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  padding-left: 1rem;
+  border-left: 3px solid accent;
+  font-style: italic;
+  color: ink-80;
+]
+
+table [
+  border-collapse: collapse;
+  caption-side: bottom;
+  overflow-x: auto;
+  min-width: 100%;
+  border: 1px solid ink-30;
+  margin-top: 1rem;
+]
+
+td, th [
+  border: 1px solid ink-30;
+  padding: 0.5rem;
+  text-align: left;
+]
+
+th [
+  font-weight: 500;
+]
+
+hr [
+  width: 100%;
+  border: none;
+  background: ink-10;
+  height: 1px;
+  margin-top: 2rem;
+]
+
+pre [
+  white-space: pre-wrap;
+  tab-size: 2;
+  font-size: 0.95rem;
+  border: 1px solid ink-10;
+  padding: 1rem;
+  margin-top: 1rem;
+  overflow: auto;
+  font-family: font-mono;
+  line-height: 1.6;
+]
+
+code, kbd [
+  color: accent;
+  font-family: font-mono;
+  background: ink-30;
+  padding: 1px 6px;
+  margin: 0 2px;
+  font-size: 0.95rem;
+]
+
+pre code [
+  background: transparent;
+  padding: 0;
+  margin: 0;
+]
+
+mark [
+  background: accent;
+  color: background;
+  padding: 1px 6px;
+  margin: 0 2px;
+  font-size: 0.95rem;
 ]
 
 :focus-visible [
@@ -60,128 +173,203 @@ body [
   outline-offset: 2px;
 ]
 
-img [
-  max-width: 100%;
-  height: auto;
+// ── Typography ───────────────────────────────────────────────
+
+h1, h2, h3, h4, h5, h6 [
+  line-height: 1.3;
+  font-weight: 400;
+  color: ink;
 ]
 
-.container [
-  width: 100%;
-  max-width: 72r;
-  margin: 0 auto;
-  padding: 0 1.25r;
+h1 [ font-size: text-4xl; ]
+h2 [ font-size: text-3xl; ]
+h3 [ font-size: text-2xl; ]
+h4 [ font-size: text-xl; ]
+h5 [ font-size: text-lg; ]
+
+* + h1, * + h2 [
+  margin-top: 5rem;
+]
+
+* + h3, * + h4, * + h5 [
+  margin-top: 3rem;
+]
+
+* + p [
+  margin-top: 2rem;
+]
+
+h2 + p, h3 + p, h4 + p [
+  margin-top: 1rem;
+]
+
+// ── Layout wrapper ───────────────────────────────────────────
+
+.layout-wrapper [
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 100vh;
+]
+
+.main [
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 48.75rem;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  padding-bottom: 4rem;
 ]
 
 // ── Header ───────────────────────────────────────────────────
 
-.site-header [
-  border-bottom: 1px solid line;
+.header [
+  width: 100%;
+  text-transform: uppercase;
+  margin-bottom: 4rem;
 ]
 
-.site-header__inner [
+.header__content [
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
-  height: 4.25r;
+  align-items: center;
+  margin: 1rem auto 0;
+  max-width: 48.75rem;
+  padding: 0 1rem 1rem;
+  border-bottom: 1px solid ink-10;
 ]
 
-.brand [
-  font-family: font-display;
-  font-size: 1.2rem;
-  font-weight: 600;
+.site-title [
+  font-size: text-xl;
+  margin: 1rem 0;
+  font-weight: 500;
+]
+
+.site-title a [
   color: ink;
-  letter-spacing: -0.01em;
   text-decoration: none;
 ]
 
-.site-nav ul [
+.site-title a:hover [
+  color: accent;
+]
+
+.nav__list [
   display: flex;
-  gap: 1.75rem;
+  flex-wrap: wrap;
   list-style: none;
+  font-size: text-base;
+  padding: 0.5rem 0;
   margin: 0;
-  padding: 0;
 ]
 
-.site-nav a [
-  font-size: 0.95rem;
-  color: muted;
+.nav__list li [
+  margin-right: 2rem;
+]
+
+.nav__list li:last-child [
+  margin-right: 0;
+]
+
+.nav__list a [
+  color: ink-80;
   text-decoration: none;
-  padding-top: 0.25rem;
-  padding-bottom: 0.25rem;
+  margin: 1rem 0;
 ]
 
-.site-nav a:hover, .site-nav a[aria-current="page"] [
+.nav__list a:hover, .nav__list a[aria-current="page"] [
   color: ink;
   text-decoration: underline;
-]
-
-// ── Sticky footer ────────────────────────────────────────────
-
-.site-main [
-  flex: 1;
 ]
 
 // ── Hero (home) ──────────────────────────────────────────────
 
 .hero [
-  padding: 5.5r 0 3.5r;
-  border-bottom: 1px solid line;
+  display: flex;
+  flex-direction: column;
+  margin-top: 3rem;
 ]
 
-.hero__title [
-  font-family: font-display;
-  font-size: 3rem;
-  font-weight: 500;
-  letter-spacing: -0.02em;
+.hero h1 [
+  font-size: text-5xl;
   line-height: 1.15;
-  color: ink;
-  margin: 0;
-  max-width: 20ch;
 ]
 
-.hero__lead [
-  margin: 1.25rem 0 0;
-  max-width: 38r;
-  font-size: 1.15rem;
-  color: muted;
+.hero p [
+  font-size: text-2xl;
+  margin-top: 1rem;
+  color: ink-80;
+  max-width: 36rem;
 ]
 
-.hero__lead strong [
-  color: ink;
-  font-weight: 600;
+.hero__social-links [
+  display: flex;
+  flex-wrap: wrap;
+  list-style-type: none;
+  margin-top: 2rem;
+  padding-left: 0;
+  text-transform: uppercase;
+  font-size: text-sm;
 ]
 
-// ── Recent posts (home) ──────────────────────────────────────
-
-.recent [
-  padding: 3.5r 0 4.5r;
+.hero__social-links > li [
+  margin-right: 2rem;
+  margin-top: 1rem;
 ]
 
-.recent h2 [
-  font-family: font-display;
-  font-size: 1.75rem;
-  font-weight: 500;
-  color: ink;
-  margin: 0 0 0.5rem;
+.hero__social-links a [
+  color: ink-80;
+  text-decoration: none;
+]
+
+.hero__social-links a:hover [
+  color: accent;
+]
+
+// ── Post list (home / tags) ─────────────────────────────────
+
+.post-list__wrapper [
+  margin-top: 6rem;
+]
+
+.post-list__heading [
+  font-size: text-3xl;
+  margin-bottom: 1rem;
 ]
 
 .post-list [
   list-style: none;
-  margin: 0;
-  padding: 0;
-  border-top: 1px solid line;
+  padding-left: 0;
+  margin-top: 0;
 ]
 
 .post-list__item [
-  padding: 1.5rem 0;
-  border-bottom: 1px solid line;
+  display: flex;
+  flex-direction: column;
+  padding-top: 3rem;
+  padding-bottom: 3rem;
+  border-top: 1px solid ink-10;
+]
+
+.post-list__item:last-child [
+  border-bottom: 1px solid ink-10;
+]
+
+.post-list__meta [
+  font-size: text-sm;
+  color: ink-80;
+]
+
+.post-list__meta > * + * [
+  margin-left: 1rem;
 ]
 
 .post-list__title [
-  font-family: font-display;
-  font-size: 1.4rem;
-  font-weight: 500;
-  margin: 0;
+  font-size: text-2xl;
+  margin-top: 0.5rem;
 ]
 
 .post-list__title a [
@@ -191,317 +379,240 @@ img [
 
 .post-list__title a:hover [
   color: accent;
+  text-decoration: underline;
 ]
 
-.post-list__meta [
-  margin: 0.35rem 0 0;
-  font-size: 0.85rem;
-  color: muted;
+.post-list__tags [
+  font-size: text-sm;
+  margin-top: 0.5rem;
+]
+
+.post-list__tags a [
+  color: ink-80;
+  text-decoration: none;
+  margin-right: 1rem;
+]
+
+.post-list__tags a:hover [
+  color: accent;
 ]
 
 .post-list__excerpt [
-  margin: 0.5rem 0 0;
-  color: body;
-  max-width: 40r;
+  margin-top: 1rem;
+  color: ink-80;
+  max-width: 40rem;
+]
+
+.post-list__read-more [
+  width: fit-content;
+  font-size: text-base;
+  text-transform: capitalize;
+  margin-top: 1rem;
+  text-decoration: underline;
+  color: ink;
+]
+
+.post-list__read-more:hover [
+  color: accent;
 ]
 
 // ── Single post ──────────────────────────────────────────────
 
 .post [
-  max-width: measure;
-  margin: 0 auto;
-  padding: 3.5r 0 4.5r;
-]
-
-.post__header [
-  border-bottom: 1px solid line;
-  padding-bottom: 1.5rem;
-  margin-bottom: 2rem;
-]
-
-.post__title [
-  font-family: font-display;
-  font-size: 2.5rem;
-  font-weight: 500;
-  letter-spacing: -0.015em;
-  line-height: 1.2;
-  color: ink;
-  margin: 0 0 1rem;
-]
-
-.post__meta [
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem 1rem;
-  align-items: center;
-  margin: 0;
-  font-size: 0.88rem;
-  color: muted;
+  flex-direction: column;
+  justify-content: center;
+  padding-top: 3rem;
+]
+
+.post > * + * [
+  margin-top: 4rem;
+]
+
+.post__header h1 [
+  line-height: 1.25;
+]
+
+.post__details [
+  opacity: 0.6;
+  font-size: 0.9rem;
+  margin-top: 1rem;
+]
+
+.post__details > * + * [
+  margin-left: 0.5rem;
+]
+
+.post__content [
+  word-wrap: break-word;
+  min-width: 0;
+]
+
+.post__aside [
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid ink-10;
 ]
 
 .post__tags [
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+  opacity: 0.8;
+  font-size: text-sm;
 ]
 
-.post__body [
-  font-family: font-display;
-  font-size: 1.06rem;
-  line-height: 1.9;
-  color: body;
+.post__tags a [
+  margin-right: 0.5rem;
+  color: ink-80;
+  text-decoration: none;
 ]
 
-.post__body h1 [
-  font-family: font-display;
-  color: ink;
-  font-weight: 600;
-  line-height: 1.3;
-  margin: 2.2em 0 0.6em;
-  font-size: 1.9rem;
-]
-
-.post__body h2 [
-  font-family: font-display;
-  color: ink;
-  font-weight: 600;
-  line-height: 1.3;
-  margin: 2.2em 0 0.6em;
-  font-size: 1.55rem;
-  padding-bottom: 0.3em;
-  border-bottom: 1px solid line;
-]
-
-.post__body h3 [
-  font-family: font-display;
-  color: ink;
-  font-weight: 600;
-  line-height: 1.3;
-  margin: 2.2em 0 0.6em;
-  font-size: 1.25rem;
-]
-
-.post__body h4 [
-  font-family: font-display;
-  color: ink;
-  font-weight: 600;
-  line-height: 1.3;
-  margin: 2.2em 0 0.6em;
-  font-size: 1.1rem;
-]
-
-.post__body p [
-  margin: 0 0 1.25em;
-]
-
-.post__body a [
+.post__tags a:hover [
   color: accent;
-  text-decoration: underline;
 ]
 
-.post__body a:hover [
-  color: accent-deep;
-]
-
-.post__body code, .post__body kbd, .post__body samp [
-  font-family: font-mono;
-  font-size: 0.88em;
-  background: code-bg;
-  padding: 0.15em 0.4em;
-  border-radius: 2px;
-]
-
-.post__body pre [
-  background: code-bg;
-  border: 1px solid line;
-  border-radius: 2px;
-  padding: 1.25rem 1.4rem;
-  overflow-x: auto;
-  font-size: 0.9rem;
-  line-height: 1.7;
-]
-
-.post__body pre code [
-  background: none;
-  padding: 0;
-  font-size: 1em;
-]
-
-.post__body blockquote [
-  margin: 1.5em 0;
-  padding: 0.25em 0 0.25em 1.25rem;
-  border-left: 3px solid accent;
-  color: muted;
-  font-style: italic;
-]
-
-.post__body table [
-  border-collapse: collapse;
-  width: 100%;
-  margin: 1.5em 0;
-  font-size: 0.95rem;
-]
-
-.post__body th [
-  border-bottom: 1px solid line;
-  border-top: 1px solid line;
-  padding: 0.55rem 0.75rem;
-  text-align: left;
-  vertical-align: top;
-  font-weight: 600;
-  color: ink;
-]
-
-.post__body td [
-  border-bottom: 1px solid line;
-  padding: 0.55rem 0.75rem;
-  text-align: left;
-  vertical-align: top;
-]
-
-.post__body hr [
-  border: 0;
-  border-top: 1px solid line;
-  margin: 2.5rem 0;
-]
-
-// ── Post navigation (prev / next) ────────────────────────────
-
-.post__nav [
+.post__pagination [
+  margin-top: 2rem;
   display: flex;
   justify-content: space-between;
-  gap: 1rem;
-  margin-top: 3rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid line;
-  font-size: 0.95rem;
+  align-items: center;
 ]
 
-.post__nav-link [
-  display: block;
-  color: muted;
+.post__pagination a [
+  display: flex;
+  align-items: center;
+  color: ink-80;
   text-decoration: none;
-  max-width: 45%;
-}
+  max-width: 48%;
+]
 
-.post__nav-link:hover [
+.post__pagination a:hover [
   color: accent;
 ]
 
-.post__nav-label [
-  display: block;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 0.25rem;
-  color: muted;
+.post__pagination span [
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
 ]
 
-.post__nav-title [
-  display: block;
-  font-family: font-display;
-  font-weight: 500;
-  color: ink;
-]
-
-.post__nav-link:hover .post__nav-title [
-  color: accent;
-]
-
-.post__nav-link--next [
+.post__pagination > *:only-child [
   margin-left: auto;
-  text-align: right;
+  margin-right: auto;
+]
+
+// ── Tags index & taxonomy ───────────────────────────────────
+
+.tags [
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+  font-size: text-sm;
+]
+
+.tags .post-tag [
+  margin-right: 1rem;
+  color: ink-80;
+  text-decoration: none;
+]
+
+.tags .post-tag:hover [
+  color: accent;
 ]
 
 // ── Footer ───────────────────────────────────────────────────
 
-.site-footer [
-  border-top: 1px solid line;
-  padding: 2.25r 0;
-  font-size: 0.9rem;
-  color: muted;
+.footer [
+  padding-left: 1rem;
+  padding-right: 1rem;
+  padding-bottom: 4rem;
+  width: 100%;
 ]
 
-.site-footer__inner [
+.footer__content [
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 48.75rem;
+  width: 100%;
+  font-size: text-base;
+  border-top: 1px solid ink-10;
 ]
 
-.site-footer__copy [
-  margin: 0;
+.footer__content > * [
+  margin-top: 2rem;
 ]
 
-.site-footer__socials [
-  display: flex;
-  gap: 1.25rem;
+.footer__links [
   list-style: none;
-  margin: 0;
-  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  margin: 2rem 0 0;
+  padding-left: 0;
+  font-size: text-sm;
 ]
 
-.site-footer__socials a [
-  color: muted;
+.footer__links li [
+  margin-right: 2rem;
+]
+
+.footer__links li:last-child [
+  margin-right: 0;
+]
+
+.footer__links a [
+  color: ink-80;
   text-decoration: none;
 ]
 
-.site-footer__socials a:hover [
+.footer__links a:hover [
   color: accent;
+]
+
+.footer__attribution [
+  font-size: text-sm;
+  color: ink-80;
 ]
 
 // ── 404 ──────────────────────────────────────────────────────
 
-.notfound [
+.not-found [
   text-align: center;
   padding: 6rem 0;
 ]
 
-.notfound__code [
-  font-family: font-display;
+.not-found h1 [
   font-size: 5rem;
-  font-weight: 500;
   color: accent;
-  margin: 0;
   letter-spacing: 0.05em;
 ]
 
-.notfound__lead [
-  color: muted;
-  font-size: 1.1rem;
-  margin: 0.75rem 0 1.5rem;
+.not-found p [
+  font-size: text-xl;
+  color: ink-80;
+  margin-top: 1rem;
 ]
 
-.notfound a [
-  color: accent;
-]
-
-// ── DSL components ───────────────────────────────────────────
+// ── DSL components (features demo) ───────────────────────────
 
 .grid [
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16r, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
   gap: 1.5rem;
+  padding-left: 0;
 ]
 
 .card [
-  background: surface;
-  border: 1px solid line;
-  border-radius: 2px;
+  background: background;
+  border: 1px solid ink-10;
   padding: 1.6rem;
 ]
 
 .card h4 [
-  font-family: font-display;
-  font-size: 1.15rem;
-  font-weight: 600;
-  color: ink;
+  font-size: text-xl;
   margin: 0 0 0.5rem;
 ]
 
-.card-body p [
-  color: muted;
+.card p [
+  color: ink-80;
   font-size: 0.95rem;
   margin: 0 0 1.1rem;
 ]
@@ -510,7 +621,6 @@ img [
   display: inline-block;
   padding: 0.5rem 1.1rem;
   border: 1px solid accent;
-  border-radius: 2px;
   color: accent;
   background: transparent;
   font-size: 0.95rem;
@@ -519,38 +629,18 @@ img [
 ]
 
 .btn:hover [
-  background: accent-soft;
-  color: accent-deep;
-  border-color: accent-deep;
-]
-
-.btn-primary [
   background: accent;
-  color: #ffffff;
-]
-
-.btn-primary:hover [
-  background: accent-deep;
-  color: #ffffff;
-]
-
-.tag-list [
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  padding: 0;
-  margin: 0;
+  color: background;
 ]
 
 .tag, .badge [
   display: inline-block;
   font-size: 0.78rem;
   padding: 0.2rem 0.65rem;
-  border: 1px solid line;
-  border-radius: 2px;
-  color: muted;
+  border: 1px solid ink-10;
+  color: ink-80;
   text-decoration: none;
+  margin-right: 0.5rem;
 ]
 
 a.tag:hover, a.badge:hover [
@@ -560,22 +650,21 @@ a.tag:hover, a.badge:hover [
 
 .breadcrumb [
   font-size: 0.9rem;
-  color: muted;
+  color: ink-80;
 ]
 
 .breadcrumb ol [
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding-left: 0;
 ]
 
 .breadcrumb li + li::before [
   content: "·";
   margin-right: 0.5rem;
-  color: line;
+  color: ink-30;
 ]
 
 .breadcrumb li.active [
@@ -589,21 +678,19 @@ a.tag:hover, a.badge:hover [
 .progress-label [
   display: block;
   font-size: 0.85rem;
-  color: muted;
+  color: ink-80;
   margin-bottom: 0.4rem;
 ]
 
 progress [
   width: 100%;
   height: 0.5rem;
-  border: 1px solid line;
-  border-radius: 2px;
-  background: surface;
+  border: 1px solid ink-10;
+  background: background;
 ]
 
 progress::-webkit-progress-bar [
-  background: surface;
-  border-radius: 2px;
+  background: background;
 ]
 
 progress::-webkit-progress-value [
@@ -616,9 +703,8 @@ progress::-moz-progress-bar [
 
 .alert [
   padding: 0.85rem 1.1rem;
-  border: 1px solid line;
+  border: 1px solid ink-10;
   border-left: 3px solid accent;
-  border-radius: 2px;
   margin: 1.25rem 0;
   font-size: 0.95rem;
 ]
@@ -628,128 +714,45 @@ progress::-moz-progress-bar [
   line-height: 1;
 ]
 
-// ── Dark mode ────────────────────────────────────────────────
-
-@media (prefers-color-scheme: dark) [
-  body [
-    background: #16150f;
-    color: #d6d2c6;
-  ]
-
-  ::selection [
-    background: #2c3a33;
-    color: #ece9e1;
-  ]
-
-  .site-header, .site-footer [
-    border-color: #2b2820;
-  ]
-
-  .brand, .hero__title, .recent h2, .post__title, .post__body h1, .post__body h2, .post__body h3, .post__body h4, .card h4 [
-    color: #ece9e1;
-  ]
-
-  .hero__lead, .post__meta, .post-list__meta, .notfound__lead, .site-footer, .site-footer__copy, .post__nav-label [
-    color: #9b968a;
-  ]
-
-  .site-nav a:hover, .site-nav a[aria-current="page"] [
-    color: #cfd8d2;
-  ]
-
-  .post-list__title a:hover [
-    color: #cfd8d2;
-  ]
-
-  .post__body a, .notfound a, .post__nav-link:hover, .site-footer__socials a:hover [
-    color: #a3c4b3;
-  ]
-
-  .card, .tag, .badge [
-    background: #1d1b14;
-    border-color: #2b2820;
-  ]
-
-  progress [
-    background: #1d1b14;
-    border-color: #2b2820;
-  ]
-
-  .post__body code, .post__body pre [
-    background: #201e17;
-    border-color: #2b2820;
-  ]
-
-  .post__body blockquote [
-    border-left-color: #5d8876;
-  ]
-
-  .post__body th [
-    color: #ece9e1;
-  ]
-
-  .post__nav-title [
-    color: #ece9e1;
-  ]
-
-  .post__nav-link:hover .post__nav-title [
-    color: #a3c4b3;
-  ]
-
-  .btn-primary [
-    background: #3c6a5a;
-    color: #ffffff;
-  ]
-]
-
 // ── Responsive ───────────────────────────────────────────────
 
 @media (max-width: 640px) [
-  .hero__title [
-    font-size: 2.25rem;
+  .hero h1 [
+    font-size: text-4xl;
   ]
 
-  .post__title [
-    font-size: 2rem;
+  .post__header h1 [
+    font-size: text-3xl;
   ]
 
-  .site-header__inner [
-    height: auto;
-    padding: 1rem 0;
+  .header__content [
     flex-direction: column;
     align-items: flex-start;
-    gap: 0.5rem;
   ]
 
-  .site-nav ul [
-    gap: 1.1rem;
+  .nav__list [
     flex-wrap: wrap;
   ]
 
-  .site-footer__inner [
+  .post__pagination [
     flex-direction: column;
     align-items: flex-start;
   ]
 
-  .post__nav [
-    flex-direction: column;
-    align-items: flex-start;
+  .post__pagination a [
+    max-width: 100%;
   ]
 
-  .post__nav-link--next [
+  .post__pagination > *:only-child [
     margin-left: 0;
-    text-align: left;
-  ]
-
-  .hero [
-    padding: 4rem 0 3rem;
+    margin-right: 0;
   ]
 ]
 
 // ── Print ────────────────────────────────────────────────────
 
 @media print [
-  .site-header, .site-footer, .post__nav [
+  .header, .footer, .post__aside, .post__pagination [
     display: none;
   ]
 
@@ -757,9 +760,5 @@ progress::-moz-progress-bar [
     background: #ffffff;
     color: #000000;
     font-size: 12pt;
-  ]
-
-  .post__body a [
-    color: #000000;
   ]
 ]

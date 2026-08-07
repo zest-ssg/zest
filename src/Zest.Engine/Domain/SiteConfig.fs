@@ -107,6 +107,10 @@ type SiteConfig = {
     /// Glob patterns for files to explicitly exclude from the content pipeline.
     /// Example: ["README.md", "LICENSE", "node_modules/*"]
     Exclude: string list
+    // ── Pagination ──
+    /// Default number of items per page for paginated listings (e.g. posts
+    /// index). A content file overrides it per page via `@paginate` frontmatter.
+    PaginationPerPage: int
     // ── Page defaults ──
     /// Default frontmatter overrides applied to files matching glob patterns.
     /// Lower-index entries have higher priority (first match wins).
@@ -180,6 +184,8 @@ module SiteConfigDefaults =
           // Include / exclude — empty by default
           Include = []
           Exclude = []
+          // Pagination — 10 items per page by default (configurable).
+          PaginationPerPage = 10
           // Page defaults — empty by default
           PageDefaults = []
           // Theme parameters — empty until _config.toml [params] is parsed.

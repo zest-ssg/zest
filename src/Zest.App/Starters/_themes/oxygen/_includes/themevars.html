@@ -1,0 +1,10 @@
+{# themevars.html — inject user-configured CSS custom properties. #}
+{# Loaded after the stylesheet so these values win the cascade. #}
+{# Colors come from _config.toml [params.colors]; defaults live in main.zcss. #}
+<style>
+:root {
+  {% if site.params.colors.accent %}--accent: {{ site.params.colors.accent }};{% endif %}
+  {% if site.params.colors.background %}--background: {{ site.params.colors.background }};{% endif %}
+  {% if site.params.colors.color %}--color: {{ site.params.colors.color }};{% endif %}
+}
+</style>

@@ -44,3 +44,12 @@ include = ["_friends.html"]
 path = "posts/*"
 [defaults.values]
 layout = "post"
+
+# ── Theme colors (oxygen) ──────────────────────────────
+# Override the oxygen palette from here instead of editing the theme.
+# Every key is optional; unset values fall back to the theme defaults.
+# Supported: accent, background, color.
+[params.colors]
+# accent = "#0074d9"
+# background = "#fffffe"
+# color = "#292929"

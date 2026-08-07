@@ -4,18 +4,22 @@
 
 open Zest.Dsl
 
-// Feature cards from site data
+// Feature cards from site data. SiteData now exposes native CLR values
+// (arrays become obj[], objects become IDictionary<string, obj>), so the
+// JsonElement API is no longer needed.
 let featureCards =
     match Context.get().SiteData.TryGetValue "features" with
-    | true, je ->
-        card_grid (je.EnumerateArray() |> Seq.toList) (fun item ->
-            let mutable v = Unchecked.defaultof<System.Text.Json.JsonElement>
-            let title = if item.TryGetProperty("title", &v) then v.GetString() else ""
-            let desc  = if item.TryGetProperty("desc", &v) then v.GetString() else ""
-            card [
-                h3 [ text title ]
-                p [ text desc ]
-            ])
+    | true, (:? (obj[]) as items) ->
+        card_grid (Array.toList items) (fun item ->
+            match item with
+            | :? (System.Collections.Generic.IDictionary<string, obj>) as d ->
+                let title = if d.ContainsKey "title" then d.["title"].ToString() else ""
+                let desc  = if d.ContainsKey "desc" then d.["desc"].ToString() else ""
+                card [
+                    h3 [ text title ]
+                    p [ text desc ]
+                ]
+            | _ -> "")
     | _ -> empty
 
 render [

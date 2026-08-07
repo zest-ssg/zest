@@ -2,6 +2,7 @@ namespace Zest.Engine.Template
 
 open System
 open System.Collections.Generic
+open System.IO
 
 // ============================================================
 // ITemplateEngine — Generic template engine abstraction
@@ -84,6 +85,58 @@ module TemplateUtils =
 
     /// Check whether a tag name is a void element.
     let isVoidElement (tag: string) = voidElements.Contains(tag.ToLowerInvariant())
+
+    /// Strict indentation level for the Pug/Haml converters: one tab or two
+    /// spaces per level. Returns None when leading whitespace mixes tabs with
+    /// spaces, or uses an odd space width — the converter refuses to guess a
+    /// nesting level in those cases and reports the line instead, because a
+    /// wrong guess silently produces broken HTML.
+    let indentLevelStrict (line: string) : int option =
+        let mutable spaces = 0
+        let mutable tabs = 0
+        let mutable i = 0
+        let n = line.Length
+        while i < n && (line.[i] = ' ' || line.[i] = '\t') do
+            if line.[i] = ' ' then spaces <- spaces + 1 else tabs <- tabs + 1
+            i <- i + 1
+        if spaces > 0 && tabs > 0 then None
+        elif spaces > 0 && spaces % 2 <> 0 then None
+        else Some (if tabs > 0 then tabs else spaces / 2)
+
+    /// Detect whether a document mixes tab and space indentation across lines.
+    /// Pug/Haml require a single indent style; mixing is reported by the
+    /// converters so the mistake surfaces instead of silently nesting wrong.
+    let mixedIndentStyles (lines: string array) : bool =
+        let mutable hasSpaces = false
+        let mutable hasTabs = false
+        for line in lines do
+            if not (String.IsNullOrWhiteSpace line) then
+                let mutable i = 0
+                let mutable sawSpace = false
+                let mutable sawTab = false
+                while i < line.Length && (line.[i] = ' ' || line.[i] = '\t') do
+                    if line.[i] = ' ' then sawSpace <- true else sawTab <- true
+                    i <- i + 1
+                hasSpaces <- hasSpaces || sawSpace
+                hasTabs <- hasTabs || sawTab
+        hasSpaces && hasTabs
+
+    /// Resolve a template-relative path against the working directory and
+    /// reject paths that escape it (path-traversal guard for {% include %},
+    /// {% extends %}, and partial loaders). A leading '/' or '\' means
+    /// "site-root-relative" in template syntax, so it resolves against the
+    /// working directory rather than the drive root.
+    let resolveWithinRoot (path: string) : Result<string, string> =
+        let cwd = Directory.GetCurrentDirectory()
+        let root = Path.GetFullPath(cwd)
+        let trimmed = path.Trim().TrimStart('/', '\\')
+        let full = Path.GetFullPath(Path.Combine(cwd, trimmed))
+        if full.Equals(root, StringComparison.OrdinalIgnoreCase)
+           || full.StartsWith(root.TrimEnd('\\', '/') + Path.DirectorySeparatorChar.ToString(),
+                              StringComparison.OrdinalIgnoreCase) then
+            Ok full
+        else
+            Error(sprintf "Template path escapes the site root: %s" path)
 
     // ── Conversion result cache ────────────────────────────────
     // Converter output is pure (source → HTML/Nunjucks). Caching by content

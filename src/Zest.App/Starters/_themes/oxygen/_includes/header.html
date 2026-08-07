@@ -1,18 +1,24 @@
-<header class="site-header">
-  <div class="container site-header__inner">
-    <a class="brand" href="/" rel="home">{{ site.title }}</a>
-    <nav class="site-nav" aria-label="Main navigation">
+{# header.html — site title and primary navigation, following the Duo look. #}
+<header class="header">
+  <div class="header__content">
+    <h1 class="site-title">
+      <a href="/" rel="home">{{ site.title }}</a>
+    </h1>
+
+    <nav class="nav" aria-label="{{ 'a11y.main_nav' | t }}">
       {% if nav %}
-      <ul>
+      <ul class="nav__list">
         {% for item in nav.items %}
-        <li><a href="{{ item.url }}" {% if item.url == page.url %}aria-current="page"{% endif %}>{{ item.label }}</a></li>
+        <li>
+          <a href="{{ item.url }}" {% if item.url == page.url %}aria-current="page"{% endif %}>{{ item.label }}</a>
+        </li>
         {% endfor %}
       </ul>
       {% else %}
-      <ul>
-        <li><a href="/" {% if page.url == "/" %}aria-current="page"{% endif %}>Home</a></li>
-        <li><a href="/posts/">Posts</a></li>
-        <li><a href="/about/">About</a></li>
+      <ul class="nav__list">
+        <li><a href="/" {% if page.url == "/" %}aria-current="page"{% endif %}>{{ 'nav.home' | t }}</a></li>
+        <li><a href="/posts/" {% if page.url == "/posts/" %}aria-current="page"{% endif %}>{{ 'nav.posts' | t }}</a></li>
+        <li><a href="/about/" {% if page.url == "/about/" %}aria-current="page"{% endif %}>{{ 'nav.about' | t }}</a></li>
       </ul>
       {% endif %}
     </nav>

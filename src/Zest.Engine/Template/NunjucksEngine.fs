@@ -363,100 +363,195 @@ module private NunjucksImpl =
         if depth <> 0 then
             raise (Exception(sprintf "Unbalanced parentheses/brackets in expression: %s" s))
 
-    let rec evalExpr (exprText: string) (ctx: IDictionary<string, obj>) : obj =
-        let text = exprText.Trim()
-        if text = "" then box "" else
-        checkBalanced text
-        evalPipe text ctx
+    // ── Expression precompilation ────────────────────────────
+    // Templates render once per page, but the same expression string inside a
+    // loop evaluates once per iteration. Re-parsing it every time (balance
+    // scan, operator scans, string splits) is the dominant CPU cost of
+    // template evaluation. Each distinct expression is therefore compiled ONCE
+    // into a small tree keyed by its exact text; every subsequent evaluation
+    // walks the tree directly, so `{{ item.price + 10 }}` inside a 1000-item
+    // loop parses once and evaluates 1000 times. The compiler mirrors the
+    // evaluator's precedence exactly: pipe → or → and → not → compare →
+    // additive → multiplicative → atom.
 
-    // Pipe `|` has the LOWEST precedence in Nunjucks/Jinja — lower than
-    // arithmetic, comparison and logic — so it is handled here, ABOVE evalOr.
-    // `a / b | round` therefore parses as `(a / b) | round`, not `a / (b|round)`.
-    // The LHS is delegated to evalOr (which descends through arithmetic etc.);
-    // each RHS segment is a filter. Filter args are split on top-level commas
-    // and evaluated via `evalExpr`, so `filter(x | subfilter(y))` resolves.
-    and evalPipe (text: string) ctx : obj =
+    type CExpr =
+        | CLit of obj
+        | CPath of string
+        | CNotE of CExpr
+        | CBin of string * CExpr * CExpr
+        | CRange of CExpr list
+        | CCall of string * CExpr list
+        | CParen of CExpr
+        | CPipeE of CExpr * (string * CExpr list) list
+
+    let private tryLiteral (s: string) =
+        let t = s.Trim()
+        if t.Length >= 2 && ((t.StartsWith("\"") && t.EndsWith("\"")) || (t.StartsWith("'") && t.EndsWith("'"))) then
+            Some(box(t.Substring(1, t.Length-2)))
+        elif t = "true" then Some(box true)
+        elif t = "false" then Some(box false)
+        elif t = "null" || t = "none" || t = "undefined" then Some null
+        else
+            match Int32.TryParse t with
+            | true, i -> Some(box i)
+            | _ -> match Double.TryParse t with | true, f -> Some(box f) | _ -> None
+
+    let rec compileExpr (exprText: string) : CExpr =
+        let t = exprText.Trim()
+        if t = "" then CLit ""
+        else compilePipe t
+
+    and compilePipe (text: string) : CExpr =
         let parts = splitTopLevelPipes text
-        if parts.Length <= 1 then evalOr text ctx else
-        let rawVal = evalOr parts.Head ctx
-        let mutable result = rawVal
-        for fp in parts.Tail do
-            if fp <> "" then
-                let ppi = fp.IndexOf('(')
-                let fname, fargsText =
-                    if ppi >= 0 then fp.[..ppi-1], fp.[ppi+1..fp.Length-2].Trim()
-                    else fp, ""
-                let fargs =
-                    if fargsText = "" then []
-                    else
-                        splitTopLevelArgs fargsText |> List.map (fun a -> evalExpr a ctx)
-                result <- applyFilter fname result fargs
-        result
+        if parts.Length <= 1 then compileOr parts.Head
+        else
+            let baseExpr = compileOr parts.Head
+            let chain =
+                parts.Tail
+                |> List.map (fun fp ->
+                    let ppi = fp.IndexOf('(')
+                    let fname, fargsText =
+                        if ppi >= 0 then fp.[..ppi-1], fp.[ppi+1..fp.Length-2].Trim()
+                        else fp, ""
+                    let fargs =
+                        if fargsText = "" then []
+                        else splitTopLevelArgs fargsText |> List.map compileExpr
+                    fname, fargs)
+            CPipeE(baseExpr, chain)
 
-    and evalOr (text: string) ctx : obj =
+    and compileOr (text: string) : CExpr =
         match findTopOp text [ "or" ] with
-        | Some(i, op) ->
-            let l = evalOr (text.[..i-1]) ctx
-            if toBool l then box true else box (toBool (evalOr (text.[i+op.Length..]) ctx))
-        | None -> evalAnd text ctx
+        | Some(i, op) -> CBin("or", compileOr (text.[..i-1]), compileOr (text.[i+op.Length..]))
+        | None -> compileAnd text
 
-    and evalAnd (text: string) ctx : obj =
+    and compileAnd (text: string) : CExpr =
         match findTopOp text [ "and" ] with
-        | Some(i, op) ->
-            let l = evalAnd (text.[..i-1]) ctx
-            if not (toBool l) then box false else box (toBool (evalAnd (text.[i+op.Length..]) ctx))
-        | None -> evalNot text ctx
+        | Some(i, op) -> CBin("and", compileAnd (text.[..i-1]), compileAnd (text.[i+op.Length..]))
+        | None -> compileNot text
 
-    and evalNot (text: string) ctx : obj =
+    and compileNot (text: string) : CExpr =
         let t = text.Trim()
-        if t.StartsWith("not ") then box (not (toBool (evalNot (t.[4..]) ctx)))
-        else evalCompare t ctx
+        if t.StartsWith("not ") then CNotE(compileNot (t.[4..]))
+        else compileCompare t
 
-    and evalCompare (text: string) ctx : obj =
+    and compileCompare (text: string) : CExpr =
         match findTopOp text [ "=="; "!="; ">="; "<="; ">"; "<"; " in " ] with
         | Some(i, op) ->
-            let lhs = text.[..i-1]
-            let rhs = text.[i+op.Length..]
-            let l = evalAdd lhs ctx
-            let r = evalAdd rhs ctx
-            match op.Trim() with
-            | "==" -> box (valuesEqual l r)
-            | "!=" -> box (not (valuesEqual l r))
-            | ">"  -> box (toNum l >  toNum r)
-            | "<"  -> box (toNum l <  toNum r)
-            | ">=" -> box (toNum l >= toNum r)
-            | "<=" -> box (toNum l <= toNum r)
-            | "in" ->
-                let found = seqOf r |> Seq.exists (fun x -> valuesEqual x l)
-                let strContains = match r with :? string as sv -> sv.Contains(toStr l) | _ -> false
-                box (found || strContains)
-            | _ -> box false
-        | None -> evalAdd text ctx
+            CBin(op.Trim(), compileAdd (text.[..i-1]), compileAdd (text.[i+op.Length..]))
+        | None -> compileAdd text
 
-    and evalAdd (text: string) ctx : obj =
+    and compileAdd (text: string) : CExpr =
         match findTopOp text [ "+"; "-" ] with
         | Some(i, op) when text.[..i-1].Trim() <> "" ->
-            let l = evalAdd (text.[..i-1]) ctx
-            let r = evalMul (text.[i+op.Length..]) ctx
-            // '+' concatenates when either side is a non-numeric string
-            if op = "+" && (match l, r with (:? string as ls), _ when Double.IsNaN(toNum ls) -> true
-                                          | _, (:? string as rs) when Double.IsNaN(toNum rs) -> true
-                                          | _ -> false)
-            then box (toStr l + toStr r)
-            else box (if op = "+" then toNum l + toNum r else toNum l - toNum r)
-        | _ -> evalMul text ctx
+            CBin(op, compileAdd (text.[..i-1]), compileMul (text.[i+op.Length..]))
+        | _ -> compileMul text
 
-    and evalMul (text: string) ctx : obj =
+    and compileMul (text: string) : CExpr =
         match findTopOp text [ "**"; "*"; "/"; "%" ] with
         | Some(i, op) when text.[..i-1].Trim() <> "" ->
-            let l = toNum (evalMul (text.[..i-1]) ctx)
-            let r = toNum (evalAtom (text.[i+op.Length..]) ctx)
-            box (match op with
-                  | "**" -> Math.Pow(l, r)
-                  | "*" -> l * r
-                  | "/" -> (if r = 0.0 then 0.0 else l / r)
-                  | _ -> (if r = 0.0 then 0.0 else l % r))
-        | _ -> evalAtom text ctx
+            CBin(op, compileMul (text.[..i-1]), compileAtom (text.[i+op.Length..]))
+        | _ -> compileAtom text
+
+    and compileAtom (text: string) : CExpr =
+        let t = text.Trim()
+        if t = "" then CLit ""
+        elif t.StartsWith("range(") && t.EndsWith(")") then
+            CRange (splitTopLevelArgs (t.[6..t.Length-2].Trim()) |> List.map compileExpr)
+        elif t.StartsWith("loop.cycle(") && t.EndsWith(")") then
+            CCall("loop.cycle", splitTopLevelArgs (t.[11..t.Length-2].Trim()) |> List.map compileExpr)
+        elif t.StartsWith("loop.changed(") && t.EndsWith(")") then
+            CCall("loop.changed", splitTopLevelArgs (t.[13..t.Length-2].Trim()) |> List.map compileExpr)
+        elif t.StartsWith("(") && t.EndsWith(")") then CParen (compileExpr (t.[1..t.Length-2]))
+        else
+            match tryLiteral t with
+            | Some v -> CLit v
+            | None -> CPath t
+
+    /// Evaluate a compiled expression tree against the render context.
+    let rec evalC (e: CExpr) (ctx: IDictionary<string, obj>) : obj =
+        match e with
+        | CLit v -> v
+        | CPath p -> resolvePath p ctx
+        | CParen inner -> evalC inner ctx
+        | CNotE inner -> box (not (toBool (evalC inner ctx)))
+        | CBin("or", l, r) ->
+            let lv = evalC l ctx
+            if toBool lv then box true else box (toBool (evalC r ctx))
+        | CBin("and", l, r) ->
+            let lv = evalC l ctx
+            if not (toBool lv) then box false else box (toBool (evalC r ctx))
+        | CBin(op, l, r) ->
+            let lv = evalC l ctx
+            let rv = evalC r ctx
+            match op with
+            | "==" -> box (valuesEqual lv rv)
+            | "!=" -> box (not (valuesEqual lv rv))
+            | ">"  -> box (toNum lv >  toNum rv)
+            | "<"  -> box (toNum lv <  toNum rv)
+            | ">=" -> box (toNum lv >= toNum rv)
+            | "<=" -> box (toNum lv <= toNum rv)
+            | "in" ->
+                let found = seqOf rv |> Seq.exists (fun x -> valuesEqual x lv)
+                let strContains = match rv with :? string as sv -> sv.Contains(toStr lv) | _ -> false
+                box (found || strContains)
+            | "+" ->
+                if (match lv, rv with
+                    | (:? string as ls), _ when Double.IsNaN(toNum ls) -> true
+                    | _, (:? string as rs) when Double.IsNaN(toNum rs) -> true
+                    | _ -> false)
+                then box (toStr lv + toStr rv)
+                else box (toNum lv + toNum rv)
+            | "-" -> box (toNum lv - toNum rv)
+            | "*" -> box (toNum lv * toNum rv)
+            | "/" -> let r = toNum rv in box (if r = 0.0 then 0.0 else toNum lv / r)
+            | "%" -> let r = toNum rv in box (if r = 0.0 then 0.0 else toNum lv % r)
+            | "**" -> box (Math.Pow(toNum lv, toNum rv))
+            | _ -> null
+        | CRange args ->
+            let toI (v: obj) = match v with :? int as i -> i | _ -> int(toNum v)
+            match args |> List.map (fun a -> evalC a ctx) with
+            | [stop] ->
+                [| for i in 0 .. toI stop - 1 -> box i |] :> obj
+            | [start; stop] ->
+                [| for i in toI start .. toI stop - 1 -> box i |] :> obj
+            | [start; stop; step] ->
+                let s = toI start
+                let e = toI stop
+                let st = toI step
+                if st = 0 then [||] :> obj
+                else
+                    [| let mutable i = s
+                       while (if st > 0 then i < e else i > e) do
+                           yield box i
+                           i <- i + st |] :> obj
+            | _ -> [||] :> obj
+        | CCall(name, args) ->
+            let vals = args |> List.map (fun a -> evalC a ctx)
+            match name with
+            | "loop.cycle" ->
+                match ctx.TryGetValue "loop" with
+                | true, (:? IDictionary<string, obj> as ld) ->
+                    let idx0 = match ld.TryGetValue "index0" with true, v -> (try int(toStr v) with _ -> 0) | _ -> 0
+                    if vals.Length > 0 then box vals.[idx0 % vals.Length] else box ""
+                | _ -> box ""
+            | "loop.changed" ->
+                match ctx.TryGetValue "loop" with
+                | true, (:? IDictionary<string, obj> as ld) ->
+                    let now = if vals.Length > 0 then vals.Head else box ""
+                    match ld.TryGetValue "__changed__" with
+                    | true, prev when valuesEqual prev now -> box false
+                    | _ ->
+                        ld.["__changed__"] <- now
+                        box true
+                | _ -> box false
+            | _ -> null
+        | CPipeE(baseExpr, chain) ->
+            let mutable result = evalC baseExpr ctx
+            for (fname, fargs) in chain do
+                let argVals = fargs |> List.map (fun a -> evalC a ctx)
+                result <- applyFilter fname result argVals
+            result
+
 
     /// Resolve a dotted/bracketed path like `a.b[0].c['x']` against the context.
     and resolvePath (pathText: string) (ctx: IDictionary<string, obj>) : obj =
@@ -496,80 +591,6 @@ module private NunjucksImpl =
                         | _ -> cur <- propGet cur seg
                     | _ -> cur <- propGet cur seg
         cur
-
-    /// Built-in `range([start], stop, [step])` generator (Nunjucks-compatible).
-    /// Returns an obj[] of integers so it is directly iterable by `for` and `seqOf`.
-    and evalRange (inner: string) (ctx: IDictionary<string, obj>) : obj =
-        let parts = splitTopLevelArgs inner |> List.map (fun a -> evalExpr a ctx)
-        let toI (v: obj) = match v with :? int as i -> i | _ -> int(toNum v)
-        let arr =
-            match parts with
-            | [stop] ->
-                [| for i in 0 .. toI stop - 1 -> box i |]
-            | [start; stop] ->
-                [| for i in toI start .. toI stop - 1 -> box i |]
-            | [start; stop; step] ->
-                let s = toI start
-                let e = toI stop
-                let st = toI step
-                if st = 0 then [||]
-                else
-                    [| let mutable i = s
-                       while (if st > 0 then i < e else i > e) do
-                           yield box i
-                           i <- i + st |]
-            | _ -> [||]
-        arr :> obj
-
-    and evalAtom (text: string) (ctx: IDictionary<string, obj>) : obj =
-        let t = text.Trim()
-        if t = "" then box "" else
-        // range([start], stop, [step]) — built-in global generator function.
-        if t.StartsWith("range(") && t.EndsWith(")") then
-            let inner = t.[6..t.Length-2].Trim()
-            evalRange inner ctx
-        // loop.cycle(...) / loop.changed(...) — function-like access on the loop object.
-        elif t.StartsWith("loop.cycle(") && t.EndsWith(")") then
-            let inner = t.[11..t.Length-2].Trim()
-            let vals = splitTopLevelArgs inner |> List.map (fun a -> evalExpr a ctx)
-            match ctx.TryGetValue "loop" with
-            | true, (:? IDictionary<string, obj> as ld) ->
-                let idx0 = match ld.TryGetValue "index0" with true, v -> (try int(toStr v) with _ -> 0) | _ -> 0
-                if vals.Length > 0 then box vals.[idx0 % vals.Length] else box ""
-            | _ -> box ""
-        elif t.StartsWith("loop.changed(") && t.EndsWith(")") then
-            let inner = t.[13..t.Length-2].Trim()
-            let valNow = evalExpr inner ctx
-            match ctx.TryGetValue "loop" with
-            | true, (:? IDictionary<string, obj> as ld) ->
-                // state lives on the (stable) loop dictionary so it persists across iterations
-                match ld.TryGetValue "__changed__" with
-                | true, prev ->
-                    if valuesEqual prev valNow then box false
-                    else ld.["__changed__"] <- valNow; box true
-                | _ -> ld.["__changed__"] <- valNow; box true
-            | _ -> box false
-        else
-        // Parenthesized sub-expression
-        if t.StartsWith("(") && t.EndsWith(")") then evalExpr (t.[1..t.Length-2]) ctx else
-        let tryLiteral (s: string) =
-            let t = s.Trim()
-            if t.Length >= 2 && ((t.StartsWith("\"") && t.EndsWith("\"")) || (t.StartsWith("'") && t.EndsWith("'"))) then
-                Some(box(t.Substring(1, t.Length-2)))
-            elif t = "true" then Some(box true)
-            elif t = "false" then Some(box false)
-            elif t = "null" || t = "none" || t = "undefined" then Some null
-            else
-                match Int32.TryParse t with
-                | true, i -> Some(box i)
-                | _ -> match Double.TryParse t with | true, f -> Some(box f) | _ -> None
-        // Pipe handling now lives in `evalPipe` (above evalOr) so that `|`
-        // has the correct lowest precedence. evalAtom resolves only literals
-        // and variable paths; parenthesised sub-expressions recurse via
-        // evalExpr → evalPipe, so inner pipes inside `(...)` still work.
-        match tryLiteral t with
-        | Some v -> v
-        | _ -> resolvePath t ctx
 
     and applyFilter (name: string) (value: obj) (args: obj list) : obj =
         let s = toStr value
@@ -874,6 +895,28 @@ module private NunjucksImpl =
             let sb = StringBuilder(s)
             sb.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;").Replace("'", "&#39;").ToString()
 
+    // ── Compiled expression cache ───────────────────────────
+    // Compiled expressions keyed by their exact text. Bounded: cleared when
+    // it grows past a few thousand entries, defensively guarding against
+    // templates that generate unbounded expression strings.
+    let private exprCache = ConcurrentDictionary<string, IDictionary<string, obj> -> obj>()
+
+    let private getCompiled (text: string) =
+        match exprCache.TryGetValue text with
+        | true, fn -> fn
+        | _ ->
+            checkBalanced text
+            let tree = compileExpr text
+            let fn = fun ctx -> evalC tree ctx
+            if exprCache.Count > 2048 then exprCache.Clear()
+            exprCache.[text] <- fn
+            fn
+
+    let evalExpr (exprText: string) (ctx: IDictionary<string, obj>) : obj =
+        let text = exprText.Trim()
+        if text = "" then box "" else
+        (getCompiled text) ctx
+
     // ── Block collector (for extends/block inheritance) ──
     /// Collect all top-level `{% block NAME %}...{% endblock %}` blocks
     /// from a token array. Returns a map from block name to its body tokens.
@@ -1087,43 +1130,83 @@ module private NunjucksImpl =
                     let loopVar, iterExpr =
                         if inIdx >= 0 then ls.[..inIdx-1].Trim(), ls.[inIdx+4..]
                         else ls, ""
-                    let iter = evalExpr iterExpr env.Variables |> seqOf |> Array.ofSeq
+                    let iter = evalExpr iterExpr env.Variables
                     let loopTokens = forLoopBody (List.toArray bodyTokens)
                     // Support "key, value" destructuring for dict/pair iteration.
                     let varNames = loopVar.Split(',') |> Array.map (fun v -> v.Trim())
-                    if iter.Length > 0 then
-                        // Reuse a single context + a single loop dictionary across all
-                        // iterations to avoid per-iteration heap allocations (perf).
-                        let loopDict = Dictionary<string, obj>()
-                        loopDict.Remove("__changed__") |> ignore   // reset loop.changed() state
+                    // Bind the iteration variable(s) into the per-iteration context.
+                    let bindItem (ctx: Dictionary<string, obj>) (item: obj) =
+                        if varNames.Length = 2 then
+                            match item with
+                            | :? IDictionary<string, obj> as kv ->
+                                ctx.[varNames.[0]] <- (match kv.TryGetValue "key" with true, k -> k | _ -> box "")
+                                ctx.[varNames.[1]] <- (match kv.TryGetValue "value" with true, v -> v | _ -> box "")
+                            | :? System.Collections.IList as pair when pair.Count >= 2 ->
+                                ctx.[varNames.[0]] <- pair.[0]
+                                ctx.[varNames.[1]] <- pair.[1]
+                            | _ -> ctx.[loopVar] <- item
+                        else
+                            ctx.[loopVar] <- item
+                    // Reuse a single context + a single loop dictionary across all
+                    // iterations to avoid per-iteration heap allocations (perf).
+                    let mkCtx () =
                         let ctx = Dictionary<string, obj>(env.Variables |> Seq.map (fun kv -> KeyValuePair(kv.Key, kv.Value)))
+                        let loopDict = Dictionary<string, obj>()
                         ctx.["loop"] <- loopDict
-                        for idxItem, item in iter |> Array.indexed do
-                            if varNames.Length = 2 then
-                                match item with
-                                | :? IDictionary<string, obj> as kv ->
-                                    ctx.[varNames.[0]] <- (match kv.TryGetValue "key" with true, k -> k | _ -> box "")
-                                    ctx.[varNames.[1]] <- (match kv.TryGetValue "value" with true, v -> v | _ -> box "")
-                                | :? System.Collections.IList as pair when pair.Count >= 2 ->
-                                    ctx.[varNames.[0]] <- pair.[0]
-                                    ctx.[varNames.[1]] <- pair.[1]
-                                | _ -> ctx.[loopVar] <- item
-                            else
-                                ctx.[loopVar] <- item
-                            let prev = if idxItem > 0 then box iter.[idxItem-1] else null
-                            let nxt = if idxItem < iter.Length - 1 then box iter.[idxItem+1] else null
-                            loopDict.["index"] <- box(idxItem+1); loopDict.["index0"] <- box idxItem
-                            loopDict.["revindex"] <- box(iter.Length-idxItem); loopDict.["revindex0"] <- box(iter.Length-idxItem-1)
-                            loopDict.["first"] <- box(idxItem=0); loopDict.["last"] <- box(idxItem=iter.Length-1)
-                            loopDict.["length"] <- box iter.Length
-                            loopDict.["depth"] <- box(env.LoopNesting + 1)
-                            loopDict.["depth0"] <- box env.LoopNesting
-                            loopDict.["previtem"] <- prev; loopDict.["nextitem"] <- nxt
-                            match renderTokens loopTokens { env with Variables = ctx :> IDictionary<string, obj>; LoopNesting = env.LoopNesting + 1 } with
+                        ctx, loopDict
+                    // Iterate without buffering the whole collection: IList is
+                    // indexed, so @last / loop.length / previtem / nextitem stay
+                    // accurate; a plain IEnumerable is streamed once (@index /
+                    // @first only) to keep lazy sequences lazy.
+                    match iter with
+                    | :? System.Collections.IList as list ->
+                        let ctx, loopDict = mkCtx ()
+                        if list.Count > 0 then
+                            for i in 0 .. list.Count - 1 do
+                                let item = list.[i]
+                                bindItem ctx item
+                                let prev = if i > 0 then box list.[i-1] else null
+                                let nxt = if i < list.Count - 1 then box list.[i+1] else null
+                                loopDict.["index"] <- box(i+1); loopDict.["index0"] <- box i
+                                loopDict.["revindex"] <- box(list.Count-i); loopDict.["revindex0"] <- box(list.Count-i-1)
+                                loopDict.["first"] <- box(i=0); loopDict.["last"] <- box(i=list.Count-1)
+                                loopDict.["length"] <- box list.Count
+                                loopDict.["depth"] <- box(env.LoopNesting + 1)
+                                loopDict.["depth0"] <- box env.LoopNesting
+                                loopDict.["previtem"] <- prev; loopDict.["nextitem"] <- nxt
+                                match renderTokens loopTokens { env with Variables = ctx :> IDictionary<string, obj>; LoopNesting = env.LoopNesting + 1 } with
+                                | Ok h -> sb.Append(h) |> ignore
+                                | Error e -> error <- Some e
+                        else
+                            // else body of for
+                            let elseBody = forElseBody (List.toArray bodyTokens)
+                            match renderTokens elseBody env with
                             | Ok h -> sb.Append(h) |> ignore
                             | Error e -> error <- Some e
-                    else
-                        // else body of for
+                    | :? System.Collections.IEnumerable as e when not (iter :? string) ->
+                        // Single-pass streaming: loop.length / revindex / previtem
+                        // / nextitem / last are unavailable for lazy data.
+                        let ctx, loopDict = mkCtx ()
+                        loopDict.["depth"] <- box(env.LoopNesting + 1)
+                        loopDict.["depth0"] <- box env.LoopNesting
+                        let mutable count = 0
+                        let mutable any = false
+                        for item in e do
+                            any <- true
+                            bindItem ctx item
+                            loopDict.["index"] <- box(count+1); loopDict.["index0"] <- box count
+                            loopDict.["first"] <- box(count=0)
+                            match renderTokens loopTokens { env with Variables = ctx :> IDictionary<string, obj>; LoopNesting = env.LoopNesting + 1 } with
+                            | Ok h -> sb.Append(h) |> ignore
+                            | Error er -> error <- Some er
+                            count <- count + 1
+                        if not any then
+                            let elseBody = forElseBody (List.toArray bodyTokens)
+                            match renderTokens elseBody env with
+                            | Ok h -> sb.Append(h) |> ignore
+                            | Error e -> error <- Some e
+                    | _ ->
+                        // Non-iterable value (null / scalar): render the else body.
                         let elseBody = forElseBody (List.toArray bodyTokens)
                         match renderTokens elseBody env with
                         | Ok h -> sb.Append(h) |> ignore
@@ -1387,9 +1470,9 @@ type NunjucksEngine() =
                     LoadTemplate = fun (path, depth) ->
                         if depth > 10 then Error("Circular include/extends detected")
                         else
-                            let fullPath = if Path.IsPathRooted(path) then path
-                                           else Path.Combine(Directory.GetCurrentDirectory(), path)
-                            loadFileFn fullPath
+                            match TemplateUtils.resolveWithinRoot path with
+                            | Ok fullPath -> loadFileFn fullPath
+                            | Error e -> Error e
                     ChildBlocks = dict [] :> IDictionary<_, _>
                     BlockStack = []
                     Depth = 0

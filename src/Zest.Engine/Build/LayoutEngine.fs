@@ -99,8 +99,11 @@ module LayoutEngine =
         d :> IDictionary<string, string>
 
     // ── Static compiled Regex ──────────────────────────────────────────
+    // Include names may contain hyphens (e.g. `page-shell.html`); without the
+    // `-` class the tag falls through to Nunjucks and is misread as an
+    // arithmetic expression (`include - page - shell`), rendering as 0.
     let private includePattern =
-        Regex(@"\{\{\s*include\s+([\w\.]+)\s*\}\}", RegexOptions.Compiled)
+        Regex(@"\{\{\s*include\s+([\w\.\-]+)\s*\}\}", RegexOptions.Compiled)
 
     let private placeholderPattern =
         Regex(@"\{\{\s*([\w\.]+)\s*\}\}", RegexOptions.Compiled)
@@ -136,7 +139,9 @@ module LayoutEngine =
             processedLayoutCache.[key] <- processed
             processed
 
-    let mutable private registeredLayoutEngines = HashSet<string>()
+    // Thread-safe registry of engines that already had filters registered —
+    // pages render in parallel, so a plain HashSet would race on first Add.
+    let private registeredLayoutEngines = ConcurrentDictionary<string, bool>()
 
     let rec internal applyLayout (name: string) (content: string) (layouts: Map<string, string * string>)
                                 (replacements: IDictionary<string, string>) (includes: IDictionary<string, string>)
@@ -192,7 +197,7 @@ module LayoutEngine =
                                     | _ -> None)
                             | _ -> ()
                         let engineKey = e.GetHashCode().ToString()
-                        if not isHbs && registeredLayoutEngines.Add(engineKey) then
+                        if not isHbs && registeredLayoutEngines.TryAdd(engineKey, true) then
                             FilterRegistry.registerAllFilters e
 
                         let pairs = ResizeArray<string * obj>()
@@ -235,7 +240,14 @@ module LayoutEngine =
                         // handing the merged text to Nunjucks so that includes
                         // work in native (Nunjucks) mode.
                         let layoutText' = applyLayoutCached path layoutText includes
-                        match e.Render layoutText' ctx with
+                        // `.liquid` layouts run through the converter to Nunjucks
+                        // syntax first (assign/unless/case/filter args), matching
+                        // how ScriptEvaluator renders `.liquid` content pages.
+                        let renderedText =
+                            if path.EndsWith(FileExtensions.Liquid, StringComparison.OrdinalIgnoreCase) then
+                                LiquidConverter.convert layoutText'
+                            else layoutText'
+                        match e.Render renderedText ctx with
                         | Ok html -> html
                         | Error err ->
                             eprintfn "[Zest] Nunjucks error in layout '%s': %O" name err
