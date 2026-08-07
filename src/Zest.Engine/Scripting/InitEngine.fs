@@ -241,11 +241,14 @@ module InitEngine =
                 File.WriteAllText(tmpFsx, preamble + "\n" + userScript + "\n__writeResult ()", Encoding.UTF8)
 
                 // Preferred path: reuse the shared FSI session.
+                // The session survives failed scripts, so stderr decides
+                // whether the init script actually succeeded.
                 let sessionResult =
                     match FsiSession.tryRunScript tmpFsx with
-                    | Some (Ok _) -> Some (splitResult (readResultFile tmpResult) false [])
-                    | Some (Error msg) ->
-                        Some { emptyResult with HasErrors = true; Errors = [sprintf "%s failed: %s" (Path.GetFileName scriptPath) msg] }
+                    | Some (_, stderr) when FsiSession.hasErrors stderr ->
+                        Some { emptyResult with HasErrors = true; Errors = [sprintf "%s failed: %s" (Path.GetFileName scriptPath) (FsiSession.formatError stderr)] }
+                    | Some _ ->
+                        Some (splitResult (readResultFile tmpResult) false [])
                     | None -> None
 
                 match sessionResult with

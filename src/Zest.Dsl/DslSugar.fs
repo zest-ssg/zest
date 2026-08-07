@@ -1,3 +1,12 @@
+// DslSugar.fs
+//
+// Convenience helpers for DSL scripts: conditionals, loops, pipelines,
+// shorthand element builders, and i18n lookups (t / t_lang). Site data values
+// reach these helpers as native CLR objects, so every value is normalised to a
+// string via siteString before use.
+//
+// Dependencies: Zest.Dsl (Context), System.Text
+
 namespace Zest.Dsl
 
 open System
@@ -236,6 +245,14 @@ module DslSugar =
 
     // ── i18n translation lookup ────────────────────────────────
 
+    /// Convert a site-data value (native CLR object) to a display string.
+    let private siteString (v: obj) : string =
+        match v with
+        | null -> ""
+        | :? string as s -> s
+        | :? bool as b -> if b then "true" else "false"
+        | _ -> v.ToString()
+
     /// Translate a key using locale data from siteData.
     /// Looks up `locale.{lang}.{key}` with fallback to any available locale.
     /// Usage: `t "nav.home"` or `t_lang "nav.home" "zh"
@@ -243,19 +260,19 @@ module DslSugar =
         let ctx = Context.get ()
         let defaultLang =
             match ctx.SiteData.TryGetValue("site.language") with
-            | true, lang -> lang.GetString()
+            | true, lang -> siteString lang
             | _ -> "en"
         // Try default language first
         let tryKey = sprintf "locale.%s.%s" defaultLang key
         match ctx.SiteData.TryGetValue(tryKey) with
-        | true, v -> v.GetString()
+        | true, v -> siteString v
         | _ ->
             // Fallback: search all locale entries for this key
             let prefix = sprintf "locale."
             ctx.SiteData
             |> Seq.tryPick (fun kv ->
                 if kv.Key.StartsWith(prefix) && kv.Key.EndsWith("." + key) then
-                    Some (kv.Value.GetString())
+                    Some (siteString kv.Value)
                 else None)
             |> Option.defaultValue key
 
@@ -264,7 +281,7 @@ module DslSugar =
         let ctx = Context.get ()
         let tryKey = sprintf "locale.%s.%s" lang key
         match ctx.SiteData.TryGetValue(tryKey) with
-        | true, v -> v.GetString()
+        | true, v -> siteString v
         | _ -> t key  // fallback to auto-detect
 
     // ── pjax script injection ──────────────────────────────────

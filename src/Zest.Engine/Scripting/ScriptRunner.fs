@@ -1,3 +1,16 @@
+// ScriptRunner.fs
+//
+// Evaluates .zest.fsx / .fsx page and layout scripts by delegating to the
+// shared FSI session (FsiSession), falling back to a one-shot `dotnet fsi
+// --exec` process only when the session is unavailable. Batch page evaluation
+// concatenates scripts with markers so one FSI run renders many pages; files
+// whose markers are missing (individual failures) are retried one-by-one
+// instead of re-evaluating the whole batch. stderr is returned alongside
+// stdout so genuine compiler/runtime errors can be distinguished from benign
+// debug output without discarding the error text.
+//
+// Dependencies: Zest.Engine, Zest.Dsl (via ScriptDiscovery), System.Text.Json
+
 namespace Zest.Engine.Scripting
 
 open System
@@ -109,54 +122,56 @@ module ScriptRunner =
     //   `dotnet fsi` cold start on every build). Falls back to a one-shot
     //   `--exec` process when the session is unavailable. Both modes emit the
     //   script's stdout identically (`--quiet` suppresses FSI's own banner and
-    //   `val it` lines, leaving only user printf output).
+    //   `val it` lines, leaving only user printf output) and return stderr
+    //   alongside so callers can classify warnings vs. real failures.
 
-    let private runFsiOnce (scriptPath: string) : Result<string, string> =
+    let private runFsiOnce (scriptPath: string) : (string * string) option =
         let psi = ProcessStartInfo("dotnet", sprintf "fsi --quiet --nologo --exec \"%s\"" scriptPath)
         configureFsiProcess psi
-        use proc = Process.Start(psi)
-        let stdoutTask = proc.StandardOutput.ReadToEndAsync()
-        let stderrTask = proc.StandardError.ReadToEndAsync()
-        if not (proc.WaitForExit(60_000)) then
-            try proc.Kill() with _ -> ()
-            Error "FSI process timed out (60s)"
-        else
-            let stdout = stdoutTask.Result
-            let stderr = stderrTask.Result
-            if !PageQuery.verboseRef && not (String.IsNullOrEmpty stderr) then
+        try
+            use proc = Process.Start(psi)
+            let stdoutTask = proc.StandardOutput.ReadToEndAsync()
+            let stderrTask = proc.StandardError.ReadToEndAsync()
+            if not (proc.WaitForExit(60_000)) then
+                try proc.Kill() with _ -> ()
+                None
+            else
+                Some (stdoutTask.Result, stderrTask.Result)
+        with _ -> None
+
+    /// True when FSI diagnostics indicate a real failure (compiler errors or
+    /// runtime exceptions) rather than benign debug output (e.g. console_log).
+    let private hasFsiErrors = FsiSession.hasErrors
+
+    /// Compact, readable error message extracted from FSI stderr.
+    let private formatFsiError = FsiSession.formatError
+
+    /// Evaluate a script, returning (stdout, stderr) from either the shared
+    /// session or the one-shot fallback. None means both paths are unavailable.
+    let private runFsiRaw (scriptPath: string) : (string * string) option =
+        match FsiSession.tryRunScript scriptPath with
+        | Some pair -> Some pair
+        | None -> runFsiOnce scriptPath
+
+    let private runFsi (scriptPath: string) : Result<string, string> =
+        match runFsiRaw scriptPath with
+        | Some (stdout, stderr) when hasFsiErrors stderr ->
+            let message = formatFsiError stderr
+            if !PageQuery.verboseRef then
+                Console.ForegroundColor <- ConsoleColor.Red
+                Console.Error.WriteLine("[FSI] Evaluation failed")
+                Console.Error.WriteLine(message)
+                Console.ResetColor()
+            Error message
+        | Some (stdout, stderr) ->
+            if !PageQuery.verboseRef && not (String.IsNullOrWhiteSpace stderr) then
                 Console.ForegroundColor <- ConsoleColor.DarkGray
-                Console.Error.WriteLine("[FSI] ---- stderr ----")
+                Console.Error.WriteLine("[FSI] ---- stderr (info) ----")
                 Console.Error.WriteLine(stderr)
                 Console.Error.WriteLine("[FSI] ---- end stderr ----")
                 Console.ResetColor()
-            if proc.ExitCode = 0 then Ok stdout
-            else
-                let errLines =
-                    stderr.Split('\n')
-                    |> Array.filter (fun l ->
-                        not (String.IsNullOrWhiteSpace l)
-                        && not (l.Contains("warning FS"))
-                        && not (l.Contains("info :")))
-                    |> Array.truncate 20
-                let formattedErrors =
-                    errLines
-                    |> Array.mapi (fun i line ->
-                        if line.Contains("error FS") || line.Contains("error:") then
-                            sprintf "  ▶ %s" (line.Trim())
-                        else
-                            sprintf "    %s" (line.Trim()))
-                    |> String.concat "\n"
-                if !PageQuery.verboseRef && errLines.Length > 0 then
-                    Console.ForegroundColor <- ConsoleColor.Red
-                    Console.Error.WriteLine(sprintf "[FSI] Evaluation failed — %d error(s)" errLines.Length)
-                    Console.Error.WriteLine(formattedErrors)
-                    Console.ResetColor()
-                Error(formattedErrors)
-
-    let private runFsi (scriptPath: string) : Result<string, string> =
-        match FsiSession.tryRunScript scriptPath with
-        | Some res -> res
-        | None -> runFsiOnce scriptPath
+            Ok stdout
+        | None -> Error "FSI session unavailable and one-shot fallback failed."
 
     // ── Context file path (per-build, shared) ─────────────────────────────
 
@@ -331,8 +346,14 @@ module ScriptRunner =
                 let tmpFsx = Path.Combine(Path.GetTempPath(), sprintf "zest-batch-%s.fsx" (Guid.NewGuid().ToString("N")))
                 try
                     File.WriteAllText(tmpFsx, sb.ToString(), Encoding.UTF8)
-                    match runFsi tmpFsx with
-                    | Ok stdout ->
+                    match runFsiRaw tmpFsx with
+                    | Some (stdout, stderr) ->
+                        if hasFsiErrors stderr && !PageQuery.verboseRef then
+                            Console.Error.WriteLine(sprintf "[FSI] Batch reported errors: %s" (formatFsiError stderr))
+                        // A compile error in any script fails the whole batch
+                        // (no markers at all); a runtime error kills only the
+                        // offending script. Salvage whatever markers appear in
+                        // stdout so the healthy scripts are not re-evaluated.
                         let results = Dictionary<string, Result<string, string>>()
                         for kv in idMap do
                             let markerId = kv.Key
@@ -341,6 +362,8 @@ module ScriptRunner =
                             let e = sprintf "___ZEST_BATCH_END_%d___" markerId
                             let sIdx = stdout.IndexOf(s, StringComparison.Ordinal)
                             let eIdx = stdout.IndexOf(e, StringComparison.Ordinal)
+                            // Files without both markers are left out of the
+                            // dictionary so they fall through to the retry loop.
                             if sIdx >= 0 && eIdx > sIdx then
                                 let content = stdout.Substring(sIdx + s.Length, eIdx - (sIdx + s.Length))
                                 let trimmed = content.Trim()
@@ -348,19 +371,24 @@ module ScriptRunner =
                                     results.[filePath] <- Ok trimmed
                                 else
                                     results.[filePath] <- Ok content
-                            else
-                                results.[filePath] <- Error (sprintf "Script output not found in batch stdout (id: %d)" markerId)
 
                         for filePath, scriptText in scripts do
                             match results.TryGetValue(filePath) with
                             | true, Ok html when cacheEnabled ->
                                 let hash = computeHash scriptText
                                 scriptCache.[hash] <- { Hash = hash; Result = Ok html; Timestamp = DateTime.Now }
-                            | _ -> ()
+                            | true, _ ->
+                                // Already has a result (Ok without caching).
+                                ()
+                            | false, _ ->
+                                // Marker missing — the script failed inside the batch.
+                                // Re-evaluate only this file, not the whole batch.
+                                results.[filePath] <- evaluatePageScript scriptText
                         results |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
-                    | Error msg ->
+                    | None ->
+                        // Session unavailable entirely — one-shot fallback per file.
                         if !PageQuery.verboseRef then
-                            Console.Error.WriteLine(sprintf "[FSI] Batch failed: %s" msg)
+                            Console.Error.WriteLine("[FSI] Session unavailable; evaluating scripts individually")
                         scripts |> List.map (fun (id, scriptText) ->
                             id, evaluatePageScript scriptText) |> Map.ofList
                 finally

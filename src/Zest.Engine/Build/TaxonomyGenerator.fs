@@ -5,8 +5,9 @@
 // per tag. Runs after the content pipeline so PageQuery already knows every
 // page and tag.
 //
-// Content files always win: if /tags/foo/ already exists in the output tree
-// (e.g. produced by a content file), the generator skips it.
+// Content files always win: if /tags/foo/ is produced by a content file, the
+// generator skips it. Every other archive page is rewritten on each build so
+// template or config changes never leave a stale page behind.
 //
 // Dependencies: Zest.Engine.Domain, Zest.Engine.Scripting, Zest.Engine.Template, Zest.Engine.Html
 
@@ -27,7 +28,7 @@ module TaxonomyGenerator =
     /// Built-in fallback for a single term listing, used when the theme does
     /// not ship `_layouts/<singular>.njk`. Keeps the generator useful standalone.
     let private defaultTermTemplate = """
-<div class="posts posts-index">
+<div class="posts tag-posts">
   <h2>{{ term }}</h2>
   {% for p in term_pages %}
   <article class="post">
@@ -136,6 +137,14 @@ module TaxonomyGenerator =
             // A single failing term must not abort the whole build.
             eprintfn "[Zest] Taxonomy page '%s' failed: %s" page.Url ex.Message
 
+    /// True when a real content page already owns this output path or URL.
+    /// Checking the in-memory page list (not the file system) is what lets
+    /// generated archive pages be rewritten on every build while still letting
+    /// hand-authored content files claim the same URL.
+    let private urlOccupiedByPage (outRel: string) (url: string) : bool =
+        PageQuery.getPages()
+        |> List.exists (fun p -> p.OutputPath = outRel || p.Url = url)
+
     /// Generate a listing page for one taxonomy term.
     let private generateTerm (tax: TaxonomyConfig) (term: string)
                              (config: SiteConfig) (outputDir: string)
@@ -144,7 +153,7 @@ module TaxonomyGenerator =
                              (globalData: IDictionary<string, obj>) : unit =
         let url = sprintf "/%s/%s/" tax.Plural term
         let outRel = Path.Combine(tax.Plural, term, "index.html").Replace('\\', '/')
-        if File.Exists(Path.Combine(outputDir, outRel)) then
+        if urlOccupiedByPage outRel url then
             // Content file already produced this URL — keep it.
             ()
         else
@@ -184,7 +193,8 @@ module TaxonomyGenerator =
                               (includes: IDictionary<string, string>)
                               (globalData: IDictionary<string, obj>) : unit =
         let outRel = Path.Combine(tax.Plural, "index.html").Replace('\\', '/')
-        if File.Exists(Path.Combine(outputDir, outRel)) then ()
+        let url = sprintf "/%s/" tax.Plural
+        if urlOccupiedByPage outRel url then ()
         else
             let taxDict = dict [
                 "name", box tax.Name
