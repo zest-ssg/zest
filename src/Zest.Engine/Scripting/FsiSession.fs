@@ -158,6 +158,14 @@ module FsiSession =
                             let mutable line = null
                             if stdoutLines.TryDequeue (&line) then
                                 if not (isNull line) && line.Contains marker then
+                                    // A script may end without a trailing newline
+                                    // (e.g. `printf`-based render), so the marker
+                                    // lands on the same line as the final output.
+                                    // Append everything before the marker so that
+                                    // line is not silently dropped.
+                                    let markerIdx = line.IndexOf marker
+                                    if markerIdx > 0 then
+                                        sbOut.AppendLine (line.Substring(0, markerIdx)) |> ignore
                                     // Error diagnostics can trail the completion
                                     // marker; wait for stderr to go quiet before
                                     // capturing so the error is not lost.

@@ -15,19 +15,44 @@ reference template for how a Zest site is organised.
 │   ├── _layouts/         # default.html, post.html (Nunjucks + HTML)
 │   ├── _includes/        # header.html, footer.html
 │   ├── _locales/         # en.toml, zh.toml (i18n strings)
-│   └── assets/css/       # main.zcss → compiled to /assets/css/main.css
+│   └── assets/css/       # tokens/base/components/pages/responsive .zcss
 ├── content/              # pages
 │   ├── index.zest.fsx    # home page (F# DSL)
 │   ├── about.zest.fsx    # static page
 │   ├── features.zest.fsx # component showcase
 │   ├── 404.zest.fsx      # custom 404 page
-│   ├── rss.zest.fsx      # RSS feed (raw XML)
-│   ├── sitemap.zest.fsx  # sitemap (raw XML)
+│   ├── rss.zest.fsx      # RSS feed (DslXml)
+│   ├── atom.zest.fsx     # Atom feed (DslXml)
+│   ├── sitemap.zest.fsx  # sitemap (DslXml)
+│   ├── tags.zest.fsx     # tag cloud index (claims /tags/)
+│   ├── archives.zest.fsx # yearly archive of all posts
+│   ├── search.zest.fsx   # client-side full-text search
 │   └── posts/
-│       ├── index.zest.fsx            # post listing
-│       └── *.md                      # blog posts (Markdown)
+│       ├── index.njk     # post listing (engine pagination)
+│       └── *.md          # blog posts (Markdown)
 └── _site/               # build output (generated)
 ```
+
+## Blog features
+
+- **Pagination** — `content/posts/index.njk` opts in with the
+  `<!-- @paginate posts, 5 -->` comment. The engine splits the post
+  collection into `/posts/`, `/posts/page/2/`, … windows of
+  `[pagination].per_page` (default 10, set to 5 here). The template reads
+  the current window through `pagination.items`, `pagination.currentPage`,
+  `pagination.totalPages` and the `prevUrl` / `nextUrl` links.
+- **Tags** — the `TaxonomyGenerator` auto-creates `/tags/<term>/` listing
+  pages for every tag used by a post. The `tags.zest.fsx` content file
+  claims the `/tags/` index URL (content files win over generated pages)
+  and renders a weighted tag cloud via `DslCollections.tag_cloud`.
+- **Archives** — `archives.zest.fsx` groups all posts by year with plain
+  F# (`Array.groupBy`) and renders them as a browsable timeline.
+- **Search** — `search.zest.fsx` bakes the post index into the page as JSON
+  (`jsonBlock`) and filters it in the browser with vanilla JS; no server
+  and no external dependency.
+- **Feeds** — `rss.zest.fsx`, `atom.zest.fsx` and `sitemap.zest.fsx` reuse
+  `Zest.Dsl.DslXml` (named records `FeedItem` / `SitemapItem`), which keeps
+  them working across the FSI script assembly boundary.
 
 ## How the pieces fit
 

@@ -5,8 +5,8 @@
 # lifts, no smooth scrolling — just typography and whitespace.
 
 name = "oxygen"
-version = "2.3.0"
-description = "A quiet, minimal blog theme restyled after Eleventy Duo: paper background, ink text, one accent, uppercase navigation, roomy editorial typography. Colors and navigation are configurable via [params] in _config.toml."
+version = "2.4.0"
+description = "A quiet, minimal blog theme restyled after Eleventy Duo: paper background, ink text, one accent, uppercase navigation, roomy editorial typography. Colors and navigation are configurable via [params] in _config.toml. Ships pagination, tag clouds, archives, static search, and RSS/Atom feeds."
 
 [theme]
 author = "Zest"

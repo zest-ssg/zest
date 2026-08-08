@@ -1,0 +1,30 @@
+// tokens.zcss
+//
+// Shared design tokens for the oxygen theme. Every other stylesheet imports
+// this file with `@use` so colors, the type scale, and font stacks stay in
+// one place. ZCSS inlines these values at compile time; runtime overrides
+// come from _config.toml [params.colors] via themevars.html.
+//
+// Dependencies: none
+
+// `ink` mirrors CSS `--color`: the bare name `color` is a CSS keyword, so a
+// `let color = ...` binding would never be substituted by the ZCSS resolver.
+let accent      = var(--accent, #0074d9)
+let background  = var(--background, #fffffe)
+let ink         = var(--color, #292929)
+let ink-80      = var(--color-80, rgba(41, 41, 41, .8))
+let ink-30      = var(--color-30, rgba(41, 41, 41, .3))
+let ink-10      = var(--color-10, rgba(41, 41, 41, .1))
+
+let text-xs  = 0.75rem
+let text-sm  = 0.875rem
+let text-base = 1rem
+let text-lg  = 1.125rem
+let text-xl  = 1.25rem
+let text-2xl = 1.5rem
+let text-3xl = 1.875rem
+let text-4xl = 2.25rem
+let text-5xl = 3rem
+
+let font-sans = 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif
+let font-mono = 'Inconsolata', 'SF Mono', 'Cascadia Code', Consolas, monospace

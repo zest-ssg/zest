@@ -9,6 +9,23 @@ open System.Text
 
 module DslXml =
 
+    /// A single feed entry (RSS/Atom). Named record — unlike anonymous
+    /// records, named types unify across assembly boundaries, so FSI page
+    /// scripts can construct these and call rss_xml / atom_xml directly.
+    type FeedItem = {
+        url: string
+        title: string
+        date: string
+        description: string
+    }
+
+    /// A single sitemap URL entry.
+    type SitemapItem = {
+        url: string
+        date: string
+        priority: float
+    }
+
     /// XML-encode a string for safe insertion into XML content.
     let private xe (s: string) =
         if String.IsNullOrEmpty s then ""
@@ -19,9 +36,12 @@ module DslXml =
              .Replace("\"", "&quot;")
              .Replace("'", "&apos;")
 
+    /// Render a date as RFC 822 (RSS pubDate) using the invariant culture.
+    let private rfc822 (d: DateTime) =
+        d.ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'", Globalization.CultureInfo.InvariantCulture)
+
     /// Generate an RSS 2.0 feed XML string from a list of pages.
-    /// Each page is an anonymous record with: url, title, date, description, tags.
-    let rss_xml (siteTitle: string) (siteUrl: string) (siteDescription: string) (pages: {| url: string; title: string; date: string; description: string |}[]) =
+    let rss_xml (siteTitle: string) (siteUrl: string) (siteDescription: string) (pages: FeedItem[]) =
         // Normalize once so joining with absolute paths cannot produce "//".
         let siteUrl = siteUrl.TrimEnd('/')
         let sb = StringBuilder()
@@ -33,12 +53,12 @@ module DslXml =
         sb.AppendFormat("    <description>{0}</description>\n", xe siteDescription) |> ignore
         sb.AppendFormat("    <atom:link href=\"{0}/rss.xml\" rel=\"self\" type=\"application/rss+xml\" />\n", xe siteUrl) |> ignore
         sb.AppendLine("    <language>en</language>") |> ignore
-        sb.AppendFormat("    <lastBuildDate>{0}</lastBuildDate>\n", DateTime.UtcNow.ToString("ddd, dd MMM yyyy HH:mm:ss GMT")) |> ignore
+        sb.AppendFormat("    <lastBuildDate>{0}</lastBuildDate>\n", rfc822 DateTime.UtcNow) |> ignore
         for page in pages do
             let pubDate =
                 match DateTime.TryParse(page.date) with
-                | true, d -> d.ToString("ddd, dd MMM yyyy HH:mm:ss GMT")
-                | _ -> DateTime.UtcNow.ToString("ddd, dd MMM yyyy HH:mm:ss GMT")
+                | true, d -> rfc822 d
+                | _ -> rfc822 DateTime.UtcNow
             let fullUrl =
                 if page.url.StartsWith("/") then siteUrl.TrimEnd('/') + page.url
                 else page.url
@@ -55,7 +75,7 @@ module DslXml =
         sb.ToString()
 
     /// Generate an Atom 1.0 feed XML string.
-    let atom_xml (siteTitle: string) (siteUrl: string) (siteDescription: string) (authorName: string) (pages: {| url: string; title: string; date: string; description: string |}[]) =
+    let atom_xml (siteTitle: string) (siteUrl: string) (siteDescription: string) (authorName: string) (pages: FeedItem[]) =
         // Normalize once so joining with absolute paths cannot produce "//".
         let siteUrl = siteUrl.TrimEnd('/')
         let sb = StringBuilder()
@@ -89,7 +109,7 @@ module DslXml =
         sb.ToString()
 
     /// Generate a Sitemap XML string.
-    let sitemap_xml (baseUrl: string) (pages: {| url: string; date: string; priority: float |}[]) =
+    let sitemap_xml (baseUrl: string) (pages: SitemapItem[]) =
         // Normalize once so joining with absolute paths cannot produce "//".
         let baseUrl = baseUrl.TrimEnd('/')
         let sb = StringBuilder()

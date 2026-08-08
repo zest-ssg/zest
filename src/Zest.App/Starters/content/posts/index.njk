@@ -1,0 +1,61 @@
+<!-- @paginate posts, 5 -->
+<!-- @layout default -->
+<!-- @title Blog -->
+<!-- @description All posts on the Zest Blog, newest first. -->
+{# index.njk — posts listing page, powered by the engine's PaginationGenerator. #}
+{# The `@paginate posts, 5` directive hands this URL (and /posts/page/N/) to   #}
+{# the generator; templates read the current window via `pagination`.          #}
+<header class="post-list__header">
+  <h1>{{ 'nav.blog' | t }}</h1>
+  <p class="post-list__count">{{ pagination.totalItems }} {{ 'meta.posts_label' | t }}</p>
+</header>
+
+{% if pagination.totalItems > 0 %}
+<ul class="post-list">
+  {% for post in pagination.items %}
+  <li class="post-list__item">
+    <div class="post-list__meta">
+      <time datetime="{{ post.date }}">{{ post.date | date('%B %e, %Y') }}</time>
+      {% if post.tags %}
+      <span class="post-list__tags">
+        {% for tag in post.tags %}<a href="/tags/{{ tag }}/">#{{ tag }}</a>{% endfor %}
+      </span>
+      {% endif %}
+    </div>
+    <h2 class="post-list__title">
+      <a href="{{ post.url }}">{{ post.title }}</a>
+    </h2>
+    {% if post.description %}
+    <p class="post-list__excerpt">{{ post.description }}</p>
+    {% endif %}
+    <a class="post-list__read-more" href="{{ post.url }}">{{ 'meta.read_more' | t }} →</a>
+  </li>
+  {% endfor %}
+</ul>
+
+{% if pagination.totalPages > 1 %}
+<nav class="post-list__pagination" aria-label="{{ 'pagination.label' | t }}">
+  {% if pagination.prevUrl %}
+  <a class="page-link page-link--prev" href="{{ pagination.prevUrl }}" rel="prev">← {{ 'pagination.newer' | t }}</a>
+  {% endif %}
+  <ul class="page-numbers">
+    {% for i in range(1, pagination.totalPages + 1) %}
+    <li>
+      {% if i == pagination.currentPage %}
+      <span class="page-number page-number--current" aria-current="page">{{ i }}</span>
+      {% elif i == 1 %}
+      <a class="page-number" href="/posts/">{{ i }}</a>
+      {% else %}
+      <a class="page-number" href="/posts/page/{{ i }}/">{{ i }}</a>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% if pagination.nextUrl %}
+  <a class="page-link page-link--next" href="{{ pagination.nextUrl }}" rel="next">{{ 'pagination.older' | t }} →</a>
+  {% endif %}
+</nav>
+{% endif %}
+{% else %}
+<p>{{ 'meta.no_posts' | t }}</p>
+{% endif %}

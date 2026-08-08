@@ -2,7 +2,7 @@
 title = "Building Sites with F#"
 layout = "post"
 description = "How the .zest.fsx page model works, with a small example."
-date = 2026-07-10
+date = 2026-08-06
 tags = ["fsharp", "tutorial"]
 +++
 
@@ -40,5 +40,5 @@ $primary: #4f46e5;
 }
 ```
 
-On build, `main.zcss` is compiled to `main.css` and linked
-automatically by the layout.
+On build, every `.zcss` file is compiled to a matching `.css` file and
+linked automatically by the layout.

@@ -45,7 +45,14 @@ path = "posts/*"
 [defaults.values]
 layout = "post"
 
-# ── Theme colors (oxygen) ──────────────────────────────
+# ── Pagination ────────────────────────────────────────────────
+# Default items per page for `@paginate` listing pages (see
+# content/posts/index.njk). A content file overrides this per page
+# with `<!-- @paginate posts, N -->`.
+[pagination]
+per_page = 5
+
+# ── Theme colors (oxygen) ──────────────────────────────────────
 # Override the oxygen palette from here instead of editing the theme.
 # Every key is optional; unset values fall back to the theme defaults.
 # Supported: accent, background, color.

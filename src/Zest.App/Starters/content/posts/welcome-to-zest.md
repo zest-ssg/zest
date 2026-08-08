@@ -2,7 +2,7 @@
 title = "Welcome to Zest"
 layout = "post"
 description = "A short introduction to the Zest static site generator."
-date = 2026-01-18
+date = 2026-08-02
 tags = ["fsharp", "ssg"]
 +++
 

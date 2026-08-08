@@ -4,11 +4,34 @@ posts = "Posts"
 blog = "Blog"
 about = "About"
 tags = "Tags"
+archives = "Archives"
+search = "Search"
 
 [meta]
 recent_posts = "Recent posts"
 no_posts = "No posts yet."
 min_read = "min read"
+posts_label = "posts"
+read_more = "read article"
+
+[pagination]
+label = "Pagination"
+page = "Page"
+of = "of"
+newer = "Newer"
+older = "Older"
+
+[archives]
+lead = "Every post, grouped by year."
+
+[tags]
+terms = "tags"
+
+[search]
+lead = "Type to search across every post — the index is embedded in this page, so it works with no server."
+placeholder = "Search posts…"
+empty = "No posts matched your search."
+no_query = "Start typing to search."
 
 [notfound]
 message = "The page you were looking for could not be found."

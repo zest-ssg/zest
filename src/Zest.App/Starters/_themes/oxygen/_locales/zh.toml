@@ -4,11 +4,34 @@ posts = "文章"
 blog = "博客"
 about = "关于"
 tags = "标签"
+archives = "归档"
+search = "搜索"
 
 [meta]
 recent_posts = "最新文章"
 no_posts = "还没有文章。"
 min_read = "分钟阅读"
+posts_label = "篇文章"
+read_more = "阅读全文"
+
+[pagination]
+label = "分页"
+page = "第"
+of = "页，共"
+newer = "较新"
+older = "较旧"
+
+[archives]
+lead = "按年份归档全部文章。"
+
+[tags]
+terms = "个标签"
+
+[search]
+lead = "输入关键词即可搜索全部文章——索引已内嵌本页，无需服务器。"
+placeholder = "搜索文章…"
+empty = "没有匹配的文章。"
+no_query = "输入关键词开始搜索。"
 
 [notfound]
 message = "你访问的页面不存在。"

@@ -12,11 +12,26 @@ url = "/posts/"
 weight = 2
 
 [[items]]
+label = "Tags"
+url = "/tags/"
+weight = 3
+
+[[items]]
+label = "Archives"
+url = "/archives/"
+weight = 4
+
+[[items]]
+label = "Search"
+url = "/search/"
+weight = 5
+
+[[items]]
 label = "Features"
 url = "/features/"
-weight = 3
+weight = 6
 
 [[items]]
 label = "About"
 url = "/about/"
-weight = 4
+weight = 7

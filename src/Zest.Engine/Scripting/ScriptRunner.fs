@@ -344,9 +344,17 @@ module ScriptRunner =
                     let markerId = idx
                     idMap.[markerId] <- filePath
                     idx <- idx + 1
-                    Printf.bprintf sb "\nprintfn \"___ZEST_BATCH_START_%d___\"\n" markerId
-                    Printf.bprintf sb "%s\n" stripped
-                    Printf.bprintf sb "printfn \"___ZEST_BATCH_END_%d___\"\n" markerId
+                    // Each script becomes its own module so identical top-level
+                    // binding names across pages (e.g. `let cloud = ...`) do not
+                    // collide with FS0037 and abort the whole batch.
+                    let indented =
+                        stripped.Split('\n')
+                        |> Array.map (fun l -> if String.IsNullOrWhiteSpace l then "" else "    " + l)
+                        |> String.concat "\n"
+                    Printf.bprintf sb "\nmodule BatchScript_%d =\n" markerId
+                    Printf.bprintf sb "    printfn \"___ZEST_BATCH_START_%d___\"\n" markerId
+                    Printf.bprintf sb "%s\n" indented
+                    Printf.bprintf sb "    printfn \"___ZEST_BATCH_END_%d___\"\n" markerId
 
                 let tmpFsx = Path.Combine(Path.GetTempPath(), sprintf "zest-batch-%s.fsx" (Guid.NewGuid().ToString("N")))
                 try

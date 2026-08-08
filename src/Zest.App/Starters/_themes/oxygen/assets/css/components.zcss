@@ -1,0 +1,405 @@
+// components.zcss
+//
+// Reusable content blocks: the home hero, post listings, single-post layout,
+// taxonomy tag chips, the 404 page, and the DSL component demo styles
+// (cards, buttons, breadcrumbs, progress bars, alerts).
+//
+// Dependencies: tokens.zcss
+
+@use "tokens.zcss";
+
+// ── Hero (home) ──────────────────────────────────────────────
+
+.hero [
+  display: flex;
+  flex-direction: column;
+  margin-top: 3rem;
+]
+
+.hero h1 [
+  font-size: text-5xl;
+  line-height: 1.15;
+]
+
+.hero p [
+  font-size: text-2xl;
+  margin-top: 1rem;
+  color: ink-80;
+  max-width: 36rem;
+]
+
+.hero__social-links [
+  display: flex;
+  flex-wrap: wrap;
+  list-style-type: none;
+  margin-top: 2rem;
+  padding-left: 0;
+  text-transform: uppercase;
+  font-size: text-sm;
+]
+
+.hero__social-links > li [
+  margin-right: 2rem;
+  margin-top: 1rem;
+]
+
+.hero__social-links a [
+  color: ink-80;
+  text-decoration: none;
+]
+
+.hero__social-links a:hover [
+  color: accent;
+]
+
+// ── Post list (home / tags) ─────────────────────────────────
+
+.post-list__wrapper [
+  margin-top: 6rem;
+]
+
+.post-list__heading [
+  font-size: text-3xl;
+  margin-bottom: 1rem;
+]
+
+.post-list [
+  list-style: none;
+  padding-left: 0;
+  margin-top: 0;
+]
+
+.post-list__item [
+  display: flex;
+  flex-direction: column;
+  padding-top: 3rem;
+  padding-bottom: 3rem;
+  border-top: 1px solid ink-10;
+]
+
+.post-list__item:last-child [
+  border-bottom: 1px solid ink-10;
+]
+
+.post-list__meta [
+  font-size: text-sm;
+  color: ink-80;
+]
+
+.post-list__meta > * + * [
+  margin-left: 1rem;
+]
+
+.post-list__title [
+  font-size: text-2xl;
+  margin-top: 0.5rem;
+]
+
+.post-list__title a [
+  color: ink;
+  text-decoration: none;
+]
+
+.post-list__title a:hover [
+  color: accent;
+  text-decoration: underline;
+]
+
+.post-list__tags [
+  font-size: text-sm;
+  margin-top: 0.5rem;
+]
+
+.post-list__tags a [
+  color: ink-80;
+  text-decoration: none;
+  margin-right: 1rem;
+]
+
+.post-list__tags a:hover [
+  color: accent;
+]
+
+// Inline tag chips inside the meta row (posts index & search results),
+// where spacing comes from `.post-list__meta > * + *` instead of margins.
+.post-list__meta .post-list__tags [
+  display: inline;
+  margin-top: 0;
+]
+
+.post-list__excerpt [
+  margin-top: 1rem;
+  color: ink-80;
+  max-width: 40rem;
+]
+
+.post-list__read-more [
+  width: fit-content;
+  font-size: text-base;
+  text-transform: capitalize;
+  margin-top: 1rem;
+  text-decoration: underline;
+  color: ink;
+]
+
+.post-list__read-more:hover [
+  color: accent;
+]
+
+// ── Post list header ────────────────────────────────────────
+
+.post-list__header [
+  margin-top: 3rem;
+]
+
+.post-list__header h1 [
+  font-size: text-4xl;
+]
+
+.post-list__count [
+  font-size: text-sm;
+  color: ink-80;
+  margin-top: 0.5rem;
+]
+
+// ── Single post ──────────────────────────────────────────────
+
+.post [
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-top: 3rem;
+]
+
+.post > * + * [
+  margin-top: 4rem;
+]
+
+.post__header h1 [
+  line-height: 1.25;
+]
+
+.post__details [
+  opacity: 0.6;
+  font-size: 0.9rem;
+  margin-top: 1rem;
+]
+
+.post__details > * + * [
+  margin-left: 0.5rem;
+]
+
+.post__content [
+  word-wrap: break-word;
+  min-width: 0;
+]
+
+.post__aside [
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid ink-10;
+]
+
+.post__tags [
+  opacity: 0.8;
+  font-size: text-sm;
+]
+
+.post__tags a [
+  margin-right: 0.5rem;
+  color: ink-80;
+  text-decoration: none;
+]
+
+.post__tags a:hover [
+  color: accent;
+]
+
+.post__pagination [
+  margin-top: 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+]
+
+.post__pagination a [
+  display: flex;
+  align-items: center;
+  color: ink-80;
+  text-decoration: none;
+  max-width: 48%;
+]
+
+.post__pagination a:hover [
+  color: accent;
+]
+
+.post__pagination span [
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+]
+
+.post__pagination > *:only-child [
+  margin-left: auto;
+  margin-right: auto;
+]
+
+// ── Tags index & taxonomy ───────────────────────────────────
+
+.tags [
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+  font-size: text-sm;
+]
+
+.tags .post-tag [
+  margin-right: 1rem;
+  color: ink-80;
+  text-decoration: none;
+]
+
+.tags .post-tag:hover [
+  color: accent;
+]
+
+// ── 404 ──────────────────────────────────────────────────────
+
+.not-found [
+  text-align: center;
+  padding: 6rem 0;
+]
+
+.not-found h1 [
+  font-size: 5rem;
+  color: accent;
+  letter-spacing: 0.05em;
+]
+
+.not-found p [
+  font-size: text-xl;
+  color: ink-80;
+  margin-top: 1rem;
+]
+
+// ── DSL components (features demo) ───────────────────────────
+
+.grid [
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1.5rem;
+  padding-left: 0;
+]
+
+.card [
+  background: background;
+  border: 1px solid ink-10;
+  padding: 1.6rem;
+]
+
+.card h4 [
+  font-size: text-xl;
+  margin: 0 0 0.5rem;
+]
+
+.card p [
+  color: ink-80;
+  font-size: 0.95rem;
+  margin: 0 0 1.1rem;
+]
+
+.btn [
+  display: inline-block;
+  padding: 0.5rem 1.1rem;
+  border: 1px solid accent;
+  color: accent;
+  background: transparent;
+  font-size: 0.95rem;
+  text-decoration: none;
+  cursor: pointer;
+]
+
+.btn:hover [
+  background: accent;
+  color: background;
+]
+
+.tag, .badge [
+  display: inline-block;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid ink-10;
+  color: ink-80;
+  text-decoration: none;
+  margin-right: 0.5rem;
+]
+
+a.tag:hover, a.badge:hover [
+  color: accent;
+  border-color: accent;
+]
+
+.breadcrumb [
+  font-size: 0.9rem;
+  color: ink-80;
+]
+
+.breadcrumb ol [
+  display: flex;
+  flex-wrap: wrap;
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+]
+
+.breadcrumb li + li::before [
+  content: "·";
+  margin-right: 0.5rem;
+  color: ink-30;
+]
+
+.breadcrumb li.active [
+  color: ink;
+]
+
+.progress-wrapper [
+  margin: 1rem 0;
+]
+
+.progress-label [
+  display: block;
+  font-size: 0.85rem;
+  color: ink-80;
+  margin-bottom: 0.4rem;
+]
+
+progress [
+  width: 100%;
+  height: 0.5rem;
+  border: 1px solid ink-10;
+  background: background;
+]
+
+progress::-webkit-progress-bar [
+  background: background;
+]
+
+progress::-webkit-progress-value [
+  background: accent;
+]
+
+progress::-moz-progress-bar [
+  background: accent;
+]
+
+.alert [
+  padding: 0.85rem 1.1rem;
+  border: 1px solid ink-10;
+  border-left: 3px solid accent;
+  margin: 1.25rem 0;
+  font-size: 0.95rem;
+]
+
+.icon [
+  font-size: 1.15em;
+  line-height: 1;
+]

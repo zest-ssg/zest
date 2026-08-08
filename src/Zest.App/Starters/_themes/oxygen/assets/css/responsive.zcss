@@ -1,0 +1,73 @@
+// responsive.zcss
+//
+// Narrow-viewport adjustments and the print stylesheet. Loaded last so its
+// media-query rules win the cascade over the base/component/page styles.
+//
+// Dependencies: tokens.zcss
+
+@use "tokens.zcss";
+
+// ── Responsive ───────────────────────────────────────────────
+
+@media (max-width: 640px) [
+  .hero h1 [
+    font-size: text-4xl;
+  ]
+
+  .post__header h1 [
+    font-size: text-3xl;
+  ]
+
+  .header__content [
+    flex-direction: column;
+    align-items: flex-start;
+  ]
+
+  .nav__list [
+    flex-wrap: wrap;
+  ]
+
+  .post__pagination [
+    flex-direction: column;
+    align-items: flex-start;
+  ]
+
+  .post__pagination a [
+    max-width: 100%;
+  ]
+
+  .post__pagination > *:only-child [
+    margin-left: 0;
+    margin-right: 0;
+  ]
+
+  // On phones the three-column grid would squeeze the page numbers;
+  // stack prev/next above the centered numbers instead.
+  .post-list__pagination [
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 0.75rem;
+  ]
+
+  .page-link--prev, .page-link--next, .page-numbers [
+    grid-column: auto;
+  ]
+
+  .page-link--prev, .page-link--next [
+    justify-self: center;
+  ]
+]
+
+// ── Print ────────────────────────────────────────────────────
+
+@media print [
+  .header, .footer, .post__aside, .post__pagination [
+    display: none;
+  ]
+
+  body [
+    background: #ffffff;
+    color: #000000;
+    font-size: 12pt;
+  ]
+]

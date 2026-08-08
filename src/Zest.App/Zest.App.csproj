@@ -59,19 +59,60 @@
   </ItemGroup>
 
   <!-- Bundled `zest init` default starter site (mirrors the zest.toml
-       embedding above). LogicalName preserves the relative path (using
-       backslashes) so InitController can reconstruct file paths at runtime,
-       keeping the starter self-contained after `dotnet tool install`.
-       A single glob packs every starter file, so adding theme/content files
-       needs no csproj edit; `_site` is build output and stays out.
-       `Starters` holds the starter-project definitions copied out by init
-       (the default blog preset); it is NOT the runtime template engine
+       embedding above). Every file is listed explicitly so the shipped
+       manifest is self-documenting; LogicalName preserves the relative
+       path (using backslashes) so InitController can reconstruct file
+       paths at runtime. `_site` is build output and stays out. `Starters`
+       holds the starter-project definitions copied out by init (the
+       default blog preset); it is NOT the runtime template engine
        (which lives in Zest.Engine/Template). -->
   <ItemGroup>
     <None Remove="Starters\**\*" />
-    <EmbeddedResource Include="Starters\**\*" Exclude="Starters\_site\**\*">
-      <LogicalName>Zest.App.Starters.%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
-    </EmbeddedResource>
+    <EmbeddedResource Include="Starters\_config.toml" LogicalName="Zest.App.Starters._config.toml" />
+    <EmbeddedResource Include="Starters\_init.zest.fsx" LogicalName="Zest.App.Starters._init.zest.fsx" />
+    <EmbeddedResource Include="Starters\README.md" LogicalName="Zest.App.Starters.README.md" />
+    <EmbeddedResource Include="Starters\content\404.zest.fsx" LogicalName="Zest.App.Starters.content\404.zest.fsx" />
+    <EmbeddedResource Include="Starters\content\about.zest.fsx" LogicalName="Zest.App.Starters.content\about.zest.fsx" />
+    <EmbeddedResource Include="Starters\content\archives.zest.fsx" LogicalName="Zest.App.Starters.content\archives.zest.fsx" />
+    <EmbeddedResource Include="Starters\content\atom.zest.fsx" LogicalName="Zest.App.Starters.content\atom.zest.fsx" />
+    <EmbeddedResource Include="Starters\content\features.zest.fsx" LogicalName="Zest.App.Starters.content\features.zest.fsx" />
+    <EmbeddedResource Include="Starters\content\index.zest.fsx" LogicalName="Zest.App.Starters.content\index.zest.fsx" />
+    <EmbeddedResource Include="Starters\content\rss.zest.fsx" LogicalName="Zest.App.Starters.content\rss.zest.fsx" />
+    <EmbeddedResource Include="Starters\content\search.zest.fsx" LogicalName="Zest.App.Starters.content\search.zest.fsx" />
+    <EmbeddedResource Include="Starters\content\sitemap.zest.fsx" LogicalName="Zest.App.Starters.content\sitemap.zest.fsx" />
+    <EmbeddedResource Include="Starters\content\tags.zest.fsx" LogicalName="Zest.App.Starters.content\tags.zest.fsx" />
+    <EmbeddedResource Include="Starters\content\posts\a-performance-checklist.md" LogicalName="Zest.App.Starters.content\posts\a-performance-checklist.md" />
+    <EmbeddedResource Include="Starters\content\posts\beyond-the-blog.md" LogicalName="Zest.App.Starters.content\posts\beyond-the-blog.md" />
+    <EmbeddedResource Include="Starters\content\posts\building-sites-with-fsharp.md" LogicalName="Zest.App.Starters.content\posts\building-sites-with-fsharp.md" />
+    <EmbeddedResource Include="Starters\content\posts\deploying-to-static-hosting.md" LogicalName="Zest.App.Starters.content\posts\deploying-to-static-hosting.md" />
+    <EmbeddedResource Include="Starters\content\posts\index.njk" LogicalName="Zest.App.Starters.content\posts\index.njk" />
+    <EmbeddedResource Include="Starters\content\posts\sites-that-speak-many-languages.md" LogicalName="Zest.App.Starters.content\posts\sites-that-speak-many-languages.md" />
+    <EmbeddedResource Include="Starters\content\posts\styling-with-zcss.md" LogicalName="Zest.App.Starters.content\posts\styling-with-zcss.md" />
+    <EmbeddedResource Include="Starters\content\posts\welcome-to-zest.md" LogicalName="Zest.App.Starters.content\posts\welcome-to-zest.md" />
+    <EmbeddedResource Include="Starters\content\posts\writing-with-markdown.md" LogicalName="Zest.App.Starters.content\posts\writing-with-markdown.md" />
+    <EmbeddedResource Include="Starters\_data\nav.toml" LogicalName="Zest.App.Starters._data\nav.toml" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_theme.toml" LogicalName="Zest.App.Starters._themes\oxygen\_theme.toml" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_data\nav.toml" LogicalName="Zest.App.Starters._themes\oxygen\_data\nav.toml" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_includes\footer.html" LogicalName="Zest.App.Starters._themes\oxygen\_includes\footer.html" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_includes\head.html" LogicalName="Zest.App.Starters._themes\oxygen\_includes\head.html" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_includes\header.html" LogicalName="Zest.App.Starters._themes\oxygen\_includes\header.html" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_includes\page-shell.html" LogicalName="Zest.App.Starters._themes\oxygen\_includes\page-shell.html" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_includes\themevars.html" LogicalName="Zest.App.Starters._themes\oxygen\_includes\themevars.html" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_layouts\base.html" LogicalName="Zest.App.Starters._themes\oxygen\_layouts\base.html" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_layouts\default.html" LogicalName="Zest.App.Starters._themes\oxygen\_layouts\default.html" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_layouts\home.html" LogicalName="Zest.App.Starters._themes\oxygen\_layouts\home.html" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_layouts\post.html" LogicalName="Zest.App.Starters._themes\oxygen\_layouts\post.html" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_layouts\tag.html" LogicalName="Zest.App.Starters._themes\oxygen\_layouts\tag.html" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_layouts\tags.html" LogicalName="Zest.App.Starters._themes\oxygen\_layouts\tags.html" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_layouts\terms.html" LogicalName="Zest.App.Starters._themes\oxygen\_layouts\terms.html" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_locales\en.toml" LogicalName="Zest.App.Starters._themes\oxygen\_locales\en.toml" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_locales\zh.toml" LogicalName="Zest.App.Starters._themes\oxygen\_locales\zh.toml" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\assets\css\base.zcss" LogicalName="Zest.App.Starters._themes\oxygen\assets\css\base.zcss" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\assets\css\components.zcss" LogicalName="Zest.App.Starters._themes\oxygen\assets\css\components.zcss" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\assets\css\main.zcss" LogicalName="Zest.App.Starters._themes\oxygen\assets\css\main.zcss" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\assets\css\pages.zcss" LogicalName="Zest.App.Starters._themes\oxygen\assets\css\pages.zcss" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\assets\css\responsive.zcss" LogicalName="Zest.App.Starters._themes\oxygen\assets\css\responsive.zcss" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\assets\css\tokens.zcss" LogicalName="Zest.App.Starters._themes\oxygen\assets\css\tokens.zcss" />
   </ItemGroup>
 
   <!-- Package icon + README at the nupkg root (NuGet metadata convention). -->

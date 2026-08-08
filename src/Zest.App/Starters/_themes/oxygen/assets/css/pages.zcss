@@ -1,0 +1,215 @@
+// pages.zcss
+//
+// Listing-page extras: pagination controls, the tag cloud, yearly archives,
+// client-side search, and the intro paragraphs (leads) that top those pages.
+//
+// Dependencies: tokens.zcss
+
+@use "tokens.zcss";
+
+// ── Pagination (listing pages) ──────────────────────────────
+
+// A three-column grid (1fr auto 1fr) pins the page numbers to the center
+// column even when the prev/next links are absent — unlike space-between,
+// which lets the numbers drift toward whichever link is missing.
+.post-list__pagination [
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid ink-10;
+]
+
+.page-link--prev [
+  grid-column: 1;
+  justify-self: start;
+  color: ink-80;
+  font-size: text-sm;
+  text-decoration: none;
+]
+
+.page-link--next [
+  grid-column: 3;
+  justify-self: end;
+  color: ink-80;
+  font-size: text-sm;
+  text-decoration: none;
+]
+
+.page-link--prev:hover, .page-link--next:hover [
+  color: accent;
+]
+
+.page-numbers [
+  grid-column: 2;
+  justify-self: center;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+  gap: 0.5rem;
+]
+
+.page-number [
+  display: inline-block;
+  min-width: 2.25rem;
+  padding: 0.35rem 0.6rem;
+  text-align: center;
+  border: 1px solid ink-10;
+  color: ink-80;
+  font-size: text-sm;
+  text-decoration: none;
+]
+
+a.page-number:hover [
+  color: accent;
+  border-color: accent;
+]
+
+.page-number--current [
+  background: accent;
+  border-color: accent;
+  color: background;
+]
+
+// ── Tag cloud (tags index) ───────────────────────────────────
+
+.tag-cloud [
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-top: 2.5rem;
+  max-width: 40rem;
+]
+
+.tag-cloud__tag [
+  display: inline-flex;
+  align-items: baseline;
+  color: ink-80;
+  font-size: text-sm;
+  text-decoration: none;
+  border: 1px solid ink-10;
+  padding: 0.2rem 0.8rem;
+  border-radius: 2rem;
+]
+
+.tag-cloud__tag:hover [
+  color: accent;
+  border-color: accent;
+]
+
+// Weight classes scale the pill size so frequent tags stand out.
+.tag-cloud__tag--xl [ font-size: text-xl; padding: 0.35rem 1rem; ]
+.tag-cloud__tag--lg [ font-size: text-lg;  padding: 0.3rem 0.9rem; ]
+.tag-cloud__tag--md [ font-size: text-base; ]
+.tag-cloud__tag--sm [ font-size: text-sm; ]
+
+.tag-cloud__count [
+  margin-left: 0.25rem;
+  opacity: 0.6;
+]
+
+// ── Archives (yearly index) ──────────────────────────────────
+
+.archives [
+  margin-top: 2.5rem;
+  max-width: 40rem;
+]
+
+.archives__year [
+  margin-top: 2.5rem;
+]
+
+.archives__year-title [
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: text-2xl;
+]
+
+.archives__count [
+  font-size: text-sm;
+  color: ink-80;
+  opacity: 0.7;
+]
+
+.archives__list [
+  list-style: none;
+  margin-top: 1rem;
+  padding-left: 0;
+  border-top: 1px solid ink-10;
+]
+
+.archives__item [
+  display: flex;
+  align-items: baseline;
+  gap: 1.5rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid ink-10;
+]
+
+.archives__item a [
+  color: ink;
+  text-decoration: none;
+]
+
+.archives__item a:hover [
+  color: accent;
+  text-decoration: underline;
+]
+
+.archives__date [
+  flex-shrink: 0;
+  min-width: 7rem;
+  font-size: text-sm;
+  color: ink-80;
+]
+
+// ── Search (client-side index) ───────────────────────────────
+
+.search [
+  margin-top: 2rem;
+  max-width: 40rem;
+]
+
+.search__input [
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font-family: font-sans;
+  font-size: text-lg;
+  color: ink;
+  background: background;
+  border: 1px solid ink-30;
+  border-radius: 0.25rem;
+]
+
+.search__input:focus [
+  outline: none;
+  border-color: accent;
+  box-shadow: 0 0 0 3px ink-10;
+]
+
+.search__results [
+  margin-top: 2.5rem;
+]
+
+.search__hint [
+  color: ink-80;
+]
+
+.search__empty [
+  color: ink-80;
+]
+
+// ── Page leads (tags / archives / search intros) ─────────────
+
+.tags__lead, .archives__lead, .search__lead [
+  margin-top: 1rem;
+  color: ink-80;
+  max-width: 40rem;
+]

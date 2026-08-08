@@ -1,12 +1,10 @@
-// @permalink /rss.xml
+// @permalink /atom.xml
 // @layout none
-// @title RSS Feed
+// @title Atom Feed
 //
-// Generates the site's RSS 2.0 feed via DslXml.rss_xml. Named records
-// (DslXml.FeedItem) unify across the FSI ↔ Zest.Dsl assembly boundary, so
-// page fields map cleanly into the feed builder. Rendered with no layout
-// (`@layout none`) and a custom permalink so the output is raw XML at
-// /rss.xml, which the <link rel="alternate"> tags in the layouts point to.
+// Generates the site's Atom 1.0 feed via DslXml.atom_xml. Rendered with no
+// layout (`@layout none`) and a custom permalink so the output is raw XML at
+// /atom.xml.
 
 open System
 open Zest.Dsl
@@ -18,6 +16,7 @@ let opt k = if data.ContainsKey(k) then data.[k].ToString() else ""
 let siteUrl   = (let u = opt "site.base_url" in if u <> "" then u else "https://example.com").TrimEnd('/')
 let siteTitle = if opt "site.title" <> "" then opt "site.title" else "Zest Site"
 let siteDesc  = opt "site.description"
+let author    = opt "site.author"
 
 let posts =
     site_pages ()
@@ -26,4 +25,4 @@ let posts =
     |> Array.map (fun p ->
         { url = p.url; title = p.title; date = p.date; description = p.description } : DslXml.FeedItem)
 
-printfn "%s" (DslXml.rss_xml siteTitle siteUrl siteDesc posts)
+printfn "%s" (DslXml.atom_xml siteTitle siteUrl siteDesc author posts)
