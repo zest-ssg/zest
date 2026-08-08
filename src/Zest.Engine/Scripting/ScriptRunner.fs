@@ -216,15 +216,14 @@ module ScriptRunner =
     // ── F# layout evaluation ───────────────────────────────────────────────
     //   A `.zest.fsx`/`.fsx` layout is evaluated by FSI (just like a page
     //   script). The page `content`, `page` metadata, and `site` config are
-    //   injected as top-level F# bindings via a generated `#load` data file so
+    //   injected as top-level F# bindings prepended to the same temp script so
     //   the layout can compose the final document with the DSL builders and
     //   `printf`/`render` the result to stdout (which becomes the rendered HTML).
 
-    let private buildLayoutPreamble (ctxFile: string) (dataFile: string) =
+    let private buildLayoutPreamble (ctxFile: string) =
         let dllPath = ScriptDiscovery.getIsolatedDslDll ()
         let sb = Text.StringBuilder(1024)
         sb.AppendLine("#r @\"" + dllPath + "\"") |> ignore
-        sb.AppendLine("#load @\"" + dataFile + "\"") |> ignore
         sb.AppendLine("open System") |> ignore
         sb.AppendLine("open System.Text.RegularExpressions") |> ignore
         sb.AppendLine("open System.Collections.Generic") |> ignore
@@ -269,6 +268,11 @@ module ScriptRunner =
                 if page.Tags.IsEmpty then "([||] : string array)"
                 else sprintf "[|%s|]" tagsArr
 
+            // The injected bindings must live in the SAME script as the layout:
+            // F# 10 keeps bare top-level `let`s of a `#load`'d .fsx invisible to
+            // the loading script (FS0039), while in one compilation unit they are
+            // in scope for everything below. A side file also risked confusing
+            // FSI about which assembly owns `content`/`page`/`site`.
             let dataContent =
                 sprintf "let content = \"%s\"\n" (esc content)
                 + sprintf "let page = {| title = \"%s\"; url = \"%s\"; date = \"%s\"; slug = \"%s\"; description = \"%s\"; author = \"%s\"; category = \"%s\"; tags = %s |}\n"
@@ -276,16 +280,13 @@ module ScriptRunner =
                 + sprintf "let site = {| title = \"%s\"; description = \"%s\"; author = \"%s\"; language = \"%s\"; social_github = \"%s\"; social_twitter = \"%s\" |}\n"
                     (esc config.Title) (esc config.Description) (esc config.Author) (esc config.Language) (esc github) (esc twitter)
 
-            let dataFile = Path.Combine(Path.GetTempPath(), sprintf "zest-layout-ctx-%s.fsx" (Guid.NewGuid().ToString("N")))
-            File.WriteAllText(dataFile, dataContent, Encoding.UTF8)
-            let preamble = buildLayoutPreamble ctxFilePath dataFile
+            let preamble = buildLayoutPreamble ctxFilePath
             let tmpFsx = Path.Combine(Path.GetTempPath(), sprintf "zest-layout-%s.fsx" (Guid.NewGuid().ToString("N")))
             try
-                File.WriteAllText(tmpFsx, preamble + "\n" + scriptText, Encoding.UTF8)
+                File.WriteAllText(tmpFsx, preamble + "\n" + dataContent + "\n" + scriptText, Encoding.UTF8)
                 runFsi tmpFsx
             finally
-                if File.Exists tmpFsx  then File.Delete tmpFsx
-                if File.Exists dataFile then File.Delete dataFile
+                if File.Exists tmpFsx then File.Delete tmpFsx
         with ex ->
             Error(sprintf "Layout evaluation threw: %s" ex.Message)
 
