@@ -262,10 +262,17 @@ module ScriptRunner =
                 |> Seq.map (fun t -> "\"" + esc t + "\"")
                 |> String.concat "; "
 
+            // An empty array literal `[||]` would infer a generic type and trip
+            // FS0030 (value restriction) the moment the layout script is read,
+            // so empty tag sets are annotated explicitly.
+            let tagsExpr =
+                if page.Tags.IsEmpty then "([||] : string array)"
+                else sprintf "[|%s|]" tagsArr
+
             let dataContent =
                 sprintf "let content = \"%s\"\n" (esc content)
-                + sprintf "let page = {| title = \"%s\"; url = \"%s\"; date = \"%s\"; slug = \"%s\"; description = \"%s\"; author = \"%s\"; category = \"%s\"; tags = [|%s|] |}\n"
-                    (esc page.Title) (esc page.Url) (esc date) (esc page.Slug) (esc desc) (esc (dataStr "author")) (esc (dataStr "category")) tagsArr
+                + sprintf "let page = {| title = \"%s\"; url = \"%s\"; date = \"%s\"; slug = \"%s\"; description = \"%s\"; author = \"%s\"; category = \"%s\"; tags = %s |}\n"
+                    (esc page.Title) (esc page.Url) (esc date) (esc page.Slug) (esc desc) (esc (dataStr "author")) (esc (dataStr "category")) tagsExpr
                 + sprintf "let site = {| title = \"%s\"; description = \"%s\"; author = \"%s\"; language = \"%s\"; social_github = \"%s\"; social_twitter = \"%s\" |}\n"
                     (esc config.Title) (esc config.Description) (esc config.Author) (esc config.Language) (esc github) (esc twitter)
 
