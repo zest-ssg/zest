@@ -6,10 +6,10 @@ open Tomlyn
 open Tomlyn.Model
 
 // ============================================================
-// DslUtilities — Control flow, string interp, collections, math
+// DslHelpers — Control flow, string interp, collections, math
 // ============================================================
 
-module DslUtilities =
+module DslHelpers =
     open Dsl
 
     // ── Control flow helpers ─────────────────────────────────────

@@ -20,13 +20,13 @@
     <Compile Include="Zcss/BuiltinFunctions.fs" />
     <Compile Include="Zcss/ColorPipeline.fs" />
     <Compile Include="Zcss/MathEvaluator.fs" />
-    <Compile Include="Zcss/ParserCore.fs" />
+    <Compile Include="Zcss/CoreParser.fs" />
     <Compile Include="Zcss/ZcssEvaluator.fs" />
-    <Compile Include="Zcss/ParserBrace.fs" />
-    <Compile Include="Zcss/ParserIndent.fs" />
+    <Compile Include="Zcss/BraceParser.fs" />
+    <Compile Include="Zcss/IndentParser.fs" />
     <Compile Include="Zcss/ZcssParser.fs" />
     <Compile Include="Zcss/BuiltinStyles.fs" />
-    <Compile Include="Zcss/ZcssUtilities.fs" />
+    <Compile Include="Zcss/ZcssHelpers.fs" />
     <Compile Include="Zcss/ZcssModules.fs" />
     <Compile Include="Zcss/ZcssCompiler.fs" />
     <Compile Include="Zcss/ZcssProcessor.fs" />

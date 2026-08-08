@@ -13,8 +13,8 @@ open System.IO
 // as the single source of truth for built-in + user-file imports,
 // used by ZcssProcessor.
 //
-// Dependencies: BuiltinStyles (module text), ParserCore (var
-// extraction), Utilities (built-in resolution).
+// Dependencies: BuiltinStyles (module text), CoreParser (var
+// extraction), ZcssHelpers (built-in resolution).
 // ============================================================
 
 module Modules =
@@ -27,7 +27,7 @@ module Modules =
     /// Built-in modules (zest:utilities, etc.) are resolved first;
     /// otherwise the path is treated as a relative file path.
     let getModuleSource (baseDir: string option) (path: string) : string option =
-        match Utilities.resolveUse path with
+        match ZcssHelpers.resolveUse path with
         | Some _ as result -> result
         | None ->
             match baseDir with
@@ -45,9 +45,9 @@ module Modules =
     /// Returns a dictionary of variable name (without `$`) → value.
     let extractVars (source: string) : IDictionary<string, string> =
         let d = Dictionary<string, string>()
-        let cleaned = ParserCore.stripComments source
+        let cleaned = CoreParser.stripComments source
         let lines = cleaned.Split('\n') |> Array.map (fun l -> l.TrimEnd('\r'))
-        for kv in ParserCore.extractVars lines do
+        for kv in CoreParser.extractVars lines do
             d.[kv.Key] <- kv.Value
         d :> IDictionary<string, string>
 

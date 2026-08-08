@@ -9,7 +9,7 @@ open System.Text.RegularExpressions
 // ZCSS Parser Core — Shared types, patterns, and helpers
 // ============================================================
 
-module ParserCore =
+module CoreParser =
 
     type ParseMode =
         | BraceMode

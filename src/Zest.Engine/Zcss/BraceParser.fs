@@ -8,9 +8,9 @@ open System.Text.RegularExpressions
 // ZCSS Parser — Brace-mode (CSS/SCSS style)
 // ============================================================
 
-module ParserBrace =
+module BraceParser =
 
-    open ParserCore
+    open CoreParser
 
     let rec parseBraceBlock (startIdx: int) (lines: string array) (vars: IDictionary<string, string>) : ZcssNode list * int =
         let nodes = ResizeArray<ZcssNode>()

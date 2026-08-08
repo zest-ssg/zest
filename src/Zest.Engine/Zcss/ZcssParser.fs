@@ -9,7 +9,7 @@ open System.Text.RegularExpressions
 
 module Parser =
 
-    open ParserCore
+    open CoreParser
 
     let parse (source: string) : ZcssNode list =
         clearErrors()
@@ -21,16 +21,16 @@ module Parser =
             let mode = detectMode lines
             match mode with
             | BraceMode ->
-                let result, _ = ParserBrace.parseBraceBlock 0 lines vars
+                let result, _ = BraceParser.parseBraceBlock 0 lines vars
                 result
             | IndentMode ->
-                let result, _ = ParserIndent.parseIndentBlock 0 lines 0 vars
+                let result, _ = IndentParser.parseIndentBlock 0 lines 0 vars
                 result
             | BracketMode ->
                 // F#-style bracket syntax: `[ ... ]` blocks (F# list literals).
                 // Convert block brackets to `{}` then reuse the brace parser.
-                let converted = ParserCore.toBraceLines lines
-                let result, _ = ParserBrace.parseBraceBlock 0 converted vars
+                let converted = CoreParser.toBraceLines lines
+                let result, _ = BraceParser.parseBraceBlock 0 converted vars
                 result
 
-    let getErrors () = ParserCore.getErrors()
+    let getErrors () = CoreParser.getErrors()

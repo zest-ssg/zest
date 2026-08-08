@@ -11,11 +11,11 @@ open System.Text
 // Used by the `zest migrate` / `zest convert-config` CLI commands
 // and available to FSI scripts.
 //
-// Dependencies: DslUtilities (parseYaml/parseToml), Tomlyn.
+// Dependencies: DslHelpers (parseYaml/parseToml), Tomlyn.
 // ============================================================
 
 module DslMigration =
-    open DslUtilities
+    open DslHelpers
 
     /// Split a dotted key ("author.name") into table path + leaf key.
     let private splitKey (key: string) =

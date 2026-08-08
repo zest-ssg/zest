@@ -182,7 +182,7 @@ module Evaluator =
 
     /// Resolve F#-style inline let expression: let x = value in expr
     and private resolveLetIn (v: string) (vars: IDictionary<string, string>) : string =
-        let m = ParserCore.letInPattern.Match(v)
+        let m = CoreParser.letInPattern.Match(v)
         if not m.Success then v
         else
             let varName = m.Groups.[1].Value
@@ -197,7 +197,7 @@ module Evaluator =
         let resolved = resolveDollarRefs cond vars |> fun x -> resolveBareVars x vars
         let t = resolved.Trim().Trim('"', '\'')
         // Try comparison operators first
-        let cm = ParserCore.compOpPattern.Match(t)
+        let cm = CoreParser.compOpPattern.Match(t)
         if cm.Success then
             let left  = cm.Groups.[1].Value.Trim().Trim('"', '\'')
             let op    = cm.Groups.[2].Value
@@ -220,13 +220,13 @@ module Evaluator =
                 | "!=" | "<>" -> left <> right
                 | _    -> false
         else
-            let nm = ParserCore.notOpPattern.Match(t)
+            let nm = CoreParser.notOpPattern.Match(t)
             if nm.Success then
                 not (evalBool (nm.Groups.[2].Value) vars)
             else
-                let lm = ParserCore.logicOpPattern.Match(t)
+                let lm = CoreParser.logicOpPattern.Match(t)
                 if lm.Success then
-                    let parts = ParserCore.logicOpPattern.Split(t) |> Array.toList
+                    let parts = CoreParser.logicOpPattern.Split(t) |> Array.toList
                     let mutable result = evalBool (parts.[0].Trim()) vars
                     let mutable i = 1
                     while i < parts.Length - 1 do
@@ -243,7 +243,7 @@ module Evaluator =
 
     /// Resolve F#-style inline if expression: if cond then true_val else false_val
     and private resolveIfExpr (v: string) (vars: IDictionary<string, string>) : string =
-        let m = ParserCore.ifExprPattern.Match(v)
+        let m = CoreParser.ifExprPattern.Match(v)
         if not m.Success then v
         else
             let cond     = m.Groups.[1].Value.Trim()

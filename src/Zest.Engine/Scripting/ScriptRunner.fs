@@ -96,7 +96,7 @@ module ScriptRunner =
         sb.AppendLine("open Zest.Dsl.DslComponents") |> ignore
         sb.AppendLine("open Zest.Dsl.DslSugar") |> ignore
         sb.AppendLine("open Zest.Dsl.DslCollections") |> ignore
-        sb.AppendLine("open Zest.Dsl.DslUtilities") |> ignore
+        sb.AppendLine("open Zest.Dsl.DslHelpers") |> ignore
         sb.AppendLine("open Zest.Dsl.DslSeo") |> ignore
         sb.AppendLine("open Zest.Dsl.DslXml") |> ignore
         sb.AppendLine("""let console_log (message: string) = eprintfn "[DEBUG] %s" message""") |> ignore
@@ -231,7 +231,7 @@ module ScriptRunner =
         sb.AppendLine("open Zest.Dsl.DslComponents") |> ignore
         sb.AppendLine("open Zest.Dsl.DslSugar") |> ignore
         sb.AppendLine("open Zest.Dsl.DslCollections") |> ignore
-        sb.AppendLine("open Zest.Dsl.DslUtilities") |> ignore
+        sb.AppendLine("open Zest.Dsl.DslHelpers") |> ignore
         sb.AppendLine("open Zest.Dsl.DslSeo") |> ignore
         sb.AppendLine("open Zest.Dsl.DslXml") |> ignore
         sb.AppendLine("""let console_log (message: string) = eprintfn "[DEBUG] %s" message""") |> ignore

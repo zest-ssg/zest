@@ -8,7 +8,7 @@ open System.Text
 // ZCSS Utilities — Built-in utility classes and functions
 // ============================================================
 
-module Utilities =
+module ZcssHelpers =
 
     /// Process @use directives — resolve built-in modules.
     /// Composition utilities are bundled into `zest:utilities` so the

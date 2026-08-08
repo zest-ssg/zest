@@ -69,30 +69,30 @@ module Processor =
             let allNodes = ResizeArray<ZcssNode>()
             let allVars = new Dictionary<string, string>()
             for content in importedContents do
-                let cleaned = ParserCore.stripComments content
+                let cleaned = CoreParser.stripComments content
                 let lines = cleaned.Split('\n') |> Array.map (fun l -> l.TrimEnd('\r'))
-                let vars = ParserCore.extractVars lines
+                let vars = CoreParser.extractVars lines
                 for kv in vars do allVars.[kv.Key] <- kv.Value
-                let importMode = ParserCore.detectMode lines
+                let importMode = CoreParser.detectMode lines
                 let nodes =
                     match importMode with
-                    | ParserCore.BraceMode ->
-                        let result, _ = ParserBrace.parseBraceBlock 0 lines vars
+                    | CoreParser.BraceMode ->
+                        let result, _ = BraceParser.parseBraceBlock 0 lines vars
                         result
-                    | ParserCore.IndentMode ->
-                        let result, _ = ParserIndent.parseIndentBlock 0 lines 0 vars
+                    | CoreParser.IndentMode ->
+                        let result, _ = IndentParser.parseIndentBlock 0 lines 0 vars
                         result
-                    | ParserCore.BracketMode ->
-                        let result, _ = ParserBrace.parseBraceBlock 0 (ParserCore.toBraceLines lines) vars
+                    | CoreParser.BracketMode ->
+                        let result, _ = BraceParser.parseBraceBlock 0 (CoreParser.toBraceLines lines) vars
                         result
                 allNodes.AddRange(nodes)
             Seq.toList allNodes, (allVars :> IDictionary<string, string>)
 
         // Step 3: Parse user content (sans @use lines) with mode-detected parser
-        let cleanedUser = ParserCore.stripComments userSource
+        let cleanedUser = CoreParser.stripComments userSource
         let userLines = cleanedUser.Split('\n') |> Array.map (fun l -> l.TrimEnd('\r'))
-        let mode = ParserCore.detectMode userLines
-        let userVars = ParserCore.extractVars userLines
+        let mode = CoreParser.detectMode userLines
+        let userVars = CoreParser.extractVars userLines
 
         // Merge imported vars + namespaced vars + user vars (user vars take
         // precedence for !default). Namespaced vars register `alias.name`
@@ -145,14 +145,14 @@ module Processor =
 
         let userNodes =
             match mode with
-            | ParserCore.BraceMode ->
-                let result, _ = ParserBrace.parseBraceBlock 0 userLines mergedVars
+            | CoreParser.BraceMode ->
+                let result, _ = BraceParser.parseBraceBlock 0 userLines mergedVars
                 result
-            | ParserCore.IndentMode ->
-                let result, _ = ParserIndent.parseIndentBlock 0 userLines 0 mergedVars
+            | CoreParser.IndentMode ->
+                let result, _ = IndentParser.parseIndentBlock 0 userLines 0 mergedVars
                 result
-            | ParserCore.BracketMode ->
-                let result, _ = ParserBrace.parseBraceBlock 0 (ParserCore.toBraceLines userLines) mergedVars
+            | CoreParser.BracketMode ->
+                let result, _ = BraceParser.parseBraceBlock 0 (CoreParser.toBraceLines userLines) mergedVars
                 result
 
         // Step 4: Merge ASTs — imports first, then user (so user overrides imports)

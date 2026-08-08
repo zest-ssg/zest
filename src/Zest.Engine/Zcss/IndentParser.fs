@@ -8,9 +8,9 @@ open System.Text.RegularExpressions
 // ZCSS Parser — Indentation-mode (Python-style)
 // ============================================================
 
-module ParserIndent =
+module IndentParser =
 
-    open ParserCore
+    open CoreParser
 
     let rec parseIndentBlock (startIdx: int) (lines: string array) (baseIndent: int) (vars: IDictionary<string, string>) : ZcssNode list * int =
         let nodes = ResizeArray<ZcssNode>()
@@ -248,7 +248,7 @@ module ParserIndent =
                         if hasBrace then
                             // Brace-syntax body (e.g. @keyframes, @media with braces)
                             // Use brace-mode parsing for the body
-                            ParserBrace.parseBraceBlock i lines vars
+                            BraceParser.parseBraceBlock i lines vars
                         elif childIndent > baseIndent then
                             parseIndentBlock i lines childIndent vars
                         else ([], i)
