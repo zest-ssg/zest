@@ -53,16 +53,24 @@ module DslSugar =
     let unless_true (cond: bool) (content: string) =
         if cond then "" else content
 
+    /// Alias for unless_true — return content only if condition is false.
+    let when_false (cond: bool) (content: string) = unless_true cond content
+
     /// Switch on a string value, return the matching case.
+    /// Case-insensitive comparison for convenience.
     let switch_value (value: string) (cases: (string * string) list) (defaultCase: string) =
         cases
-        |> List.tryFind (fun (v, _) -> v = value)
+        |> List.tryFind (fun (v, _) -> v.Equals(value, StringComparison.OrdinalIgnoreCase))
         |> Option.map snd
         |> Option.defaultValue defaultCase
 
     /// Match on boolean conditions, return first match.
     let match_cond (cases: (bool * string) list) (fallback: string) =
         cases |> List.tryFind fst |> Option.map snd |> Option.defaultValue fallback
+
+    /// Conditional rendering with else clause — if cond then trueContent else falseContent.
+    let if_else (cond: bool) (trueContent: string) (falseContent: string) =
+        if cond then trueContent else falseContent
 
     // ── Simplified loops and iterators ───────────────────────────
 
@@ -196,6 +204,32 @@ module DslSugar =
 
     /// Join items with a custom separator (alias for `joinWith`).
     let join_with (sep: string) (items: string list) = String.concat sep items
+
+    // ── Collection helpers ──────────────────────────────────────
+
+    /// Filter items that are not null or empty strings.
+    let filter_not_empty (items: string list) =
+        items |> List.filter (fun s -> not (String.IsNullOrEmpty s))
+
+    /// Take first N items from a list.
+    let take_first (count: int) (items: 'a list) =
+        items |> List.truncate count
+
+    /// Skip first N items from a list.
+    let skip_first (count: int) (items: 'a list) =
+        items.[max 0 (min count items.Length) ..]
+
+    /// Split a list into chunks of the specified size.
+    /// Last chunk may be smaller if the list length is not evenly divisible by chunk size.
+    let chunk (chunkSize: int) (items: 'a list) : 'a list list =
+        if chunkSize <= 0 || List.isEmpty items then [items]
+        else
+            let rec loop remaining acc =
+                if List.isEmpty remaining then List.rev acc
+                else
+                    let currentChunk = List.take chunkSize remaining
+                    loop (List.skip chunkSize remaining) (currentChunk :: acc)
+            loop items []
 
     /// Intersperse a separator BETWEEN items (not trailing).
     /// `intersperse ", " ["a";"b";"c"]` → `"a, b, c"`.

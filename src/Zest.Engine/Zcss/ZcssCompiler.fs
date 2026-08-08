@@ -3,8 +3,10 @@ namespace Zest.Engine.Zcss
 open System
 open System.Collections.Concurrent
 open System.Collections.Generic
+open System.Security.Cryptography
 open System.Text
 open System.Text.RegularExpressions
+open System.Threading
 
 // ============================================================
 // ZCSS Compiler — CSS generation with minification & auto-prefix
@@ -14,7 +16,11 @@ module Compiler =
 
     // ── Auto-vendor-prefix map ──────────────────────────────
 
+    /// Auto-prefixer for CSS vendor-specific properties.
+    /// Adds necessary -webkit-, -moz-, -ms- prefixes to CSS properties
+    /// based on browser compatibility requirements.
     module AutoPrefixer =
+        /// Map of CSS properties to their required vendor prefixes.
         let private prefixMap =
             dict [
                 "appearance",         [|"-webkit-"; "-moz-"|]
@@ -50,6 +56,9 @@ module Compiler =
                 "text-spacing",       [|"-ms-"|]
             ]
 
+        /// Generates vendor-prefixed property declarations for a given CSS property.
+        /// Returns a list of (property, value) tuples including the original property
+        /// and all necessary prefixed versions.
         let prefix (prop: string) (value: string) : (string * string) list =
             match prefixMap.TryGetValue prop with
             | true, prefixes when prefixes.Length > 0 ->
@@ -60,16 +69,26 @@ module Compiler =
     // ── CSS minifier ────────────────────────────────────────
 
     module Minifier =
+        // Module-level compiled patterns: static Regex.Replace(string, string)
+        // overloads recompile the pattern on every call, which dominates
+        // minification time on large stylesheets.
+        let private whitespaceRe   = Regex(@"\s+", RegexOptions.Compiled)
+        let private punctuationRe  = Regex(@"\s*([{}:;,])\s*", RegexOptions.Compiled)
+        let private trailingSemiRe = Regex(@";}", RegexOptions.Compiled)
+
+        // Curried helper sidesteps the overloaded-member ambiguity of
+        // Regex.Replace when used in a pipeline.
+        let private replaceAll (pattern: Regex) (replacement: string) (input: string) =
+            pattern.Replace(input, replacement)
+
         let minify (css: string) : string =
-            css
-            // Remove comments
-            |> fun s -> Regex.Replace(s, @"/\*.*?\*/", "", RegexOptions.Singleline)
+            replaceAll CoreParser.blockCommentRe "" css
             // Collapse whitespace
-            |> fun s -> Regex.Replace(s, @"\s+", " ")
+            |> replaceAll whitespaceRe " "
             // Remove spaces around braces, colons, semicolons
-            |> fun s -> Regex.Replace(s, @"\s*([{}:;,])\s*", "$1")
+            |> replaceAll punctuationRe "$1"
             // Remove trailing semicolons before }
-            |> fun s -> Regex.Replace(s, @";}", "}")
+            |> replaceAll trailingSemiRe "}"
             |> fun s -> s.Trim()
 
     // ── Main compiler ────────────────────────────────────────
@@ -216,7 +235,107 @@ module Compiler =
     let private evalCondition (cond: string) (vars: IDictionary<string, string>) : bool =
         Evaluator.evalBool cond vars
 
-    let compile (nodes: ZcssNode list) (vars: IDictionary<string, string>) : string =
+    // ── Dual-layer compilation cache ────────────────────────
+    // Compilation is a pure function of (AST structure, variable values), so
+    // the output can be cached. The composite key is built from TWO layers:
+    //   1. an AST structural hash (excludes source positions, which are
+    //      metadata and vary between parses),
+    //   2. a SHA-256 hash of the variable dictionary content.
+    // Either layer changing — a different AST, or the same AST compiled with
+    // different variables — produces a different key, so the cache is
+    // invalidated automatically without explicit bookkeeping. A size cap keeps
+    // memory bounded for long-lived dev servers.
+    module CompileCache =
+
+        /// Snapshot of cache counters and derived hit rate.
+        type CacheStats = {
+            /// Number of compile calls satisfied from the cache.
+            Hits: int64
+            /// Number of compile calls that had to recompile.
+            Misses: int64
+            /// Current number of cached entries.
+            Entries: int
+            /// Whether the cache is enabled (disabled for single-shot tools).
+            Enabled: bool
+        } with
+            /// Hit rate in [0, 1]; 0 when no compiles have been recorded.
+            member this.HitRate =
+                let total = this.Hits + this.Misses
+                if total = 0L then 0.0 else float this.Hits / float total
+
+        // Pairs the key with the source AST list so a (statistically
+        // impossible) hash collision is detected by structural equality and
+        // treated as a miss rather than returning a wrong stylesheet.
+        let private cacheStore = ConcurrentDictionary<string, ZcssNode list * string>()
+        let private hits = ref 0L
+        let private misses = ref 0L
+        let private cacheEnabled = ref true
+        let private MAX_ENTRIES = 2048
+
+        /// Canonical hash of a variable dictionary. Insertion order is stable
+        /// for dictionaries built by the pipeline, so no sorting is needed.
+        let private varsKey (vars: IDictionary<string, string>) : string =
+            let sb = StringBuilder()
+            for kv in vars do
+                sb.Append(kv.Key) |> ignore
+                sb.Append('\x1f') |> ignore
+                sb.Append(kv.Value) |> ignore
+                sb.Append('\x1e') |> ignore
+            use sha = SHA256.Create()
+            let bytes = Encoding.UTF8.GetBytes(sb.ToString())
+            Convert.ToHexString(sha.ComputeHash(bytes))
+
+        /// Structural hash of the AST, ignoring source positions. F#'s generic
+        /// hash is deterministic for equal structures within a process.
+        let private astKey (nodes: ZcssNode list) : string =
+            let h = hash nodes
+            sprintf "%x|%d" (uint32 (h &&& 0x7FFFFFFF)) (List.length nodes)
+
+        let private cacheKey (nodes: ZcssNode list) (vars: IDictionary<string, string>) =
+            astKey nodes + "\x00" + varsKey vars
+
+        /// Look up compiled CSS for (nodes, vars). Returns None on a miss or
+        /// when the stored nodes no longer match (hash collision guard).
+        let tryGet (nodes: ZcssNode list) (vars: IDictionary<string, string>) : string option =
+            if not !cacheEnabled then None
+            else
+                match cacheStore.TryGetValue(cacheKey nodes vars) with
+                | true, (cachedNodes, css) ->
+                    if cachedNodes = nodes then
+                        Interlocked.Increment(hits) |> ignore
+                        Some css
+                    else
+                        Interlocked.Increment(misses) |> ignore
+                        None
+                | _ ->
+                    Interlocked.Increment(misses) |> ignore
+                    None
+
+        /// Store compiled CSS for (nodes, vars), evicting the whole cache when
+        /// the size cap is reached.
+        let storeResult (nodes: ZcssNode list) (vars: IDictionary<string, string>) (css: string) =
+            if !cacheEnabled && not (String.IsNullOrEmpty css) then
+                if cacheStore.Count >= MAX_ENTRIES then cacheStore.Clear()
+                cacheStore.[cacheKey nodes vars] <- (nodes, css)
+
+        /// Current cache statistics.
+        let getStats () : CacheStats =
+            { Hits = !hits; Misses = !misses; Entries = cacheStore.Count; Enabled = !cacheEnabled }
+
+        /// Zero the hit/miss counters (does not clear entries).
+        let resetStats () =
+            hits := 0L
+            misses := 0L
+
+        /// Empty the cache store.
+        let clearCache () = cacheStore.Clear()
+
+        /// Enable or disable caching (useful for single-shot tools where a
+        /// warm cache is impossible and the key hashing is pure overhead).
+        let setEnabled (flag: bool) = cacheEnabled := flag
+
+    /// Uncached implementation of `compile` — see `compile` for the cache-aware entry point.
+    let private compileCore (nodes: ZcssNode list) (vars: IDictionary<string, string>) : string =
         let sb = StringBuilder()
         let minify = ref false
 
@@ -462,3 +581,18 @@ module Compiler =
         emitNodes nodes ""
         let result = sb.ToString().Trim()
         if !minify then Minifier.minify result else result
+
+    /// Compiles a list of ZCSS AST nodes into CSS output string.
+    /// Handles mixin expansion, variable resolution, control flow directives,
+    /// responsive breakpoints, and applies vendor prefixes as needed.
+    /// Supports minification via @option minify: true directive.
+    /// Uses the dual-layer compilation cache (AST structure × variable hash)
+    /// to avoid re-compiling identical inputs; either dimension changing
+    /// produces a new key and invalidates the previous entry naturally.
+    let compile (nodes: ZcssNode list) (vars: IDictionary<string, string>) : string =
+        match CompileCache.tryGet nodes vars with
+        | Some cached -> cached
+        | None ->
+            let result = compileCore nodes vars
+            CompileCache.storeResult nodes vars result
+            result

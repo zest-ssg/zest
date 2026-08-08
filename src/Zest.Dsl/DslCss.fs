@@ -428,7 +428,7 @@ module DslCss =
     let contain              v = { Property = "contain";         Value = v }
     let contain_intrinsic_size v = { Property = "contain-intrinsic-size"; Value = v }
     let content_visibility   v = { Property = "content-visibility"; Value = v }
-
+    
     // Custom property / variable
     let var_ name value = { Property = sprintf "--%s" name; Value = value }
 
@@ -573,6 +573,24 @@ module DslCss =
 
         /// Create a raw selector from a string.
         let raw_sel (selector: string) = Sel(selector)
+        
+        // ── Responsive breakpoint selectors ────────────────────────
+        
+        /// Tailwind-style responsive breakpoints.
+        let sm  = Sel("(min-width: 640px)")
+        let md  = Sel("(min-width: 768px)")
+        let lg  = Sel("(min-width: 1024px)")
+        let xl  = Sel("(min-width: 1280px)")
+        let xxl = Sel("(min-width: 1536px)")
+        
+        // ── State selectors ─────────────────────────────────────
+        
+        /// Focus-visible state selector.
+        let focus_visible = Sel(":focus-visible")
+        /// Focus-within state selector.
+        let focus_within = Sel(":focus-within")
+        /// Hover state for touch devices.
+        let hover_hover = Sel(":hover:hover")
 
     // ── At-Rule Functions ───────────────────────────────────
 

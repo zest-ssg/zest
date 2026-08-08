@@ -230,3 +230,24 @@ module DslCollections =
 
     /// Look up all pages in a named collection (first URL segment).
     let get_collection (name: string) = pages_by_collection name
+
+    // ── Enhanced collection APIs ────────────────────────────────
+
+    /// Get pages by multiple tags (AND logic - must have ALL tags).
+    let pages_by_all_tags (tags: string list) =
+        (get ()).Pages
+        |> Array.filter (fun r ->
+            tags |> List.forall (fun tag ->
+                r.tags |> Array.exists (fun t -> t.Equals(tag, StringComparison.OrdinalIgnoreCase))))
+
+    /// Get pages by multiple tags (OR logic - must have ANY tag).
+    let pages_by_any_tag (tags: string list) =
+        (get ()).Pages
+        |> Array.filter (fun r ->
+            r.tags |> Array.exists (fun t ->
+                tags |> List.exists (fun tag -> t.Equals(tag, StringComparison.OrdinalIgnoreCase))))
+
+    /// Get pages published in a specific year.
+    let pages_by_year (year: string) =
+        (get ()).Pages
+        |> Array.filter (fun r -> r.date.StartsWith(year))

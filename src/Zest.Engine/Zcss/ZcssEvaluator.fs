@@ -12,6 +12,7 @@ module Evaluator =
 
     // ── Value unit shorthands ───────────────────────────────
 
+    /// Handles unit shorthand expansion (e.g., 2r → 2rem, 5p → 5%).
     module ValueShorthand =
         let private unitPattern = Regex(@"^(-?[\d.]+)(r|p|v|vh|vw|em|s|ms)$", RegexOptions.Compiled)
         let private unitMap = dict [ "r","rem"; "p","%"; "v","vh"; "s","s"; "ms","ms" ]

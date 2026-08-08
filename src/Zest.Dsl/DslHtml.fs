@@ -6,22 +6,34 @@ open System
 module Dsl =
     open Context
 
+    /// HTML-encodes a string to safely insert into HTML content.
+    /// Escapes &, <, >, and " characters to their entity equivalents.
     let htmlEncode (s: string) =
         s.Replace("&", "&amp;")
          .Replace("<", "&lt;")
          .Replace(">", "&gt;")
          .Replace("\"", "&quot;")
 
+    /// Converts a string to HTML-safe text content (escaped).
     let text s = htmlEncode s
+    
+    /// Returns raw string content without HTML encoding.
     let raw  s = s
+    
+    /// Empty string constant for convenient use in DSL builders.
     let empty = ""
 
+    /// Creates an HTML attribute string with the given key and value.
+    /// The value is automatically HTML-encoded for safety.
     let attr k v = sprintf "%s=\"%s\"" k (htmlEncode v)
 
+    /// Creates an HTML element with the specified tag, attributes, and children.
+    /// Attributes are concatenated with spaces, children are concatenated without separators.
     let elem tag (attrs: string list) (children: string list) =
         let a = if attrs.IsEmpty then "" else " " + String.concat " " attrs
         sprintf "<%s%s>%s</%s>" tag a (String.concat "" children) tag
 
+    /// Creates a self-closing HTML element (void element) with the specified tag and attributes.
     let voidElem tag (attrs: string list) =
         let a = if attrs.IsEmpty then "" else " " + String.concat " " attrs
         sprintf "<%s%s />" tag a

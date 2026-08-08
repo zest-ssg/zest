@@ -1,11 +1,13 @@
 namespace Zest.Engine.Zcss
 
 open System
+open System.Collections.Concurrent
 open System.Collections.Generic
 open System.IO
 open System.Text
 open System.Text.RegularExpressions
-open Zest.Engine
+open System.Threading
+open System.Threading.Tasks
 
 // ============================================================
 // ZCSS — Public API
@@ -24,7 +26,12 @@ module Processor =
     // source avoids re-parsing/re-compiling unchanged files during dev-server
     // rebuilds triggered by non-ZCSS changes. The cache is keyed on the
     // (baseDir, source) hash.
-    let private resultCache = System.Collections.Concurrent.ConcurrentDictionary<int64, string>()
+    let private resultCache = ConcurrentDictionary<int64, string>()
+
+    // ── File-level cache with modification time tracking ────────
+    // Delegates to ZcssCache (mtime + SHA-256 content hash). The hybrid
+    // strategy skips file reads entirely when the mtime is unchanged, and
+    // still catches files that were touched but whose content did not change.
 
     /// Stable 64-bit hash of a string (FNV-1a variant). Good enough for a
     /// process-local cache; not cryptographic.
@@ -167,12 +174,35 @@ module Processor =
 
         css
 
+    /// Resolve user-file @use imports (built-ins excluded) to absolute paths
+    /// with their current mtime. Built-in modules are static and form no file
+    /// dependency; only real files can invalidate a dependent.
+    let private resolveUserDeps (baseDir: string option) (source: string) : (string * int64) list =
+        usePat.Matches(source)
+        |> Seq.choose (fun m ->
+            let path = m.Groups.[1].Value
+            if ZcssHelpers.resolveUse path |> Option.isSome then None
+            else
+                match baseDir with
+                | Some dir ->
+                    let fullPath = Path.GetFullPath(Path.Combine(dir, path))
+                    if File.Exists fullPath then Some(fullPath, File.GetLastWriteTimeUtc(fullPath).Ticks)
+                    else None
+                | None -> None)
+        |> Seq.toList
+
     /// Process ZCSS source text with a known base directory (cached + guarded).
     /// Results are cached by a content hash so unchanged files are not
     /// re-parsed on dev-server rebuilds; malformed input yields an error
-    /// comment instead of crashing the build.
+    /// comment instead of crashing the build. The cache key includes the
+    /// @use module fingerprint (paths + mtimes) so a changed import
+    /// invalidates the result even when the dependent source text is identical.
     let processTextWithBase (baseDir: string option) (source: string) : string =
-        let key = hashSource ((defaultArg baseDir "") + "\x00" + source)
+        let moduleFingerprint =
+            resolveUserDeps baseDir source
+            |> List.map (fun (p, m) -> p + ":" + string m)
+            |> String.concat ","
+        let key = hashSource ((defaultArg baseDir "") + "\x00" + moduleFingerprint + "\x00" + source)
         match resultCache.TryGetValue(key) with
         | true, cached -> cached
         | _ ->
@@ -191,9 +221,36 @@ module Processor =
         processTextWithBase None source
 
     /// Process a ZCSS file → CSS string
+    /// Uses file-level caching with modification time tracking to avoid
+    /// re-processing unchanged files. This significantly improves build performance
+    /// during development when only a subset of files change. A file whose
+    /// @use imports changed is recompiled even when its own mtime is unchanged.
     let processFile (filePath: string) : string =
         let baseDir = Some (Path.GetDirectoryName(Path.GetFullPath(filePath)))
-        File.ReadAllText(filePath) |> processTextWithBase baseDir
+        let fileLastWrite = File.GetLastWriteTimeUtc(filePath).Ticks
+
+        // Fast path: mtime unchanged AND no @use dependency changed → skip
+        // file read and hashing entirely.
+        match ZcssCache.tryGet filePath fileLastWrite "" with
+        | Some cached when not (ZcssCache.dependenciesChanged filePath) -> cached
+        | _ ->
+            let source = File.ReadAllText(filePath)
+            let contentHash = ZcssCache.hashContent source
+            // Slow path: mtime changed. If the content hash matches the cached
+            // one (file touched, not edited), reuse the compiled output.
+            match ZcssCache.tryGet filePath fileLastWrite contentHash with
+            | Some cached when not (ZcssCache.dependenciesChanged filePath) -> cached
+            | _ ->
+                let result = processTextWithBase baseDir source
+                let deps = resolveUserDeps baseDir source
+                ZcssCache.set filePath fileLastWrite contentHash result deps
+                result
+
+    /// Explicitly clear all in-memory ZCSS caches (result-level and file-level).
+    /// On-disk cache files are preserved unless `ZcssCache.clearDiskCache` is used.
+    let clearCaches () =
+        resultCache.Clear()
+        ZcssCache.clearCache ()
 
     /// Process a ZCSS file → write CSS to destination
     let processFileTo (src: string) (dst: string) : string =
@@ -206,6 +263,10 @@ module Processor =
 module BundleService =
 
     /// Process all .zcss files in assetsDir → outputDir/assets/
+    /// Uses parallel processing for improved performance on multi-core systems.
+    /// Loads the file-level cache from disk before processing and persists it
+    /// afterwards, so unchanged files are never re-read or recompiled across
+    /// application restarts. Only recompiles changed files.
     let processZcssFiles (assetsDir: string) (outputDir: string) : int =
         if not (Directory.Exists assetsDir) then 0
         else
@@ -213,15 +274,26 @@ module BundleService =
             if files.Length = 0 then 0
             else
                 let outAssets = Path.Combine(outputDir, "assets")
+                let cacheFile = Path.Combine(outAssets, ".zcss-cache.log")
                 Directory.CreateDirectory(outAssets) |> ignore
+                // Warm the in-memory file cache from the previous run so
+                // untouched sources skip the read + compile entirely.
+                ZcssCache.load cacheFile
                 let mutable count = 0
-                for f in files do
+                
+                // Process files in parallel for better performance
+                // Use Parallel.ForEach with custom partitioning for better load balancing
+                Parallel.ForEach(files, fun f ->
                     try
                         let rel = Path.GetRelativePath(assetsDir, f)
-                        let cssRel = Path.ChangeExtension(rel, FileExtensions.Css)
+                        let cssRel = Path.ChangeExtension(rel, Zest.Engine.FileExtensions.Css)
                         let target = Path.Combine(outAssets, cssRel)
                         Processor.processFileTo f target |> ignore
-                        count <- count + 1
+                        Interlocked.Increment(&count) |> ignore
                     with ex ->
                         eprintfn "[ZCSS ERROR] '%s': %s" f ex.Message
+                ) |> ignore
+
+                // Persist the file cache so the next process start is warm.
+                ZcssCache.save cacheFile
                 count

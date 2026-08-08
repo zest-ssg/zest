@@ -17,6 +17,7 @@
 
     <!-- ZCSS pipeline -->
     <Compile Include="Zcss/ZcssAst.fs" />
+    <Compile Include="Zcss/ZcssCache.fs" />
     <Compile Include="Zcss/BuiltinFunctions.fs" />
     <Compile Include="Zcss/ColorPipeline.fs" />
     <Compile Include="Zcss/MathEvaluator.fs" />

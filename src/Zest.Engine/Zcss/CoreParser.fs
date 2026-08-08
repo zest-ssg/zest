@@ -3,6 +3,8 @@ namespace Zest.Engine.Zcss
 open System
 open System.Collections.Concurrent
 open System.Collections.Generic
+open System.Runtime.CompilerServices
+open System.Text
 open System.Text.RegularExpressions
 
 // ============================================================
@@ -37,12 +39,26 @@ module CoreParser =
     let getErrors() = Seq.toList errors
     let clearErrors() = errors <- ConcurrentBag<ZcssError>()
 
+    // ── Regex patterns ──────────────────────────────────────
+    // All patterns live at module level with RegexOptions.Compiled: constructing
+    // a Regex allocates internal parser state and emits IL, so per-call creation
+    // is a hot-path cost when processing hundreds of declarations per file.
+
+    // Single-line // comment, excluding URL schemes like http://
+    let singleCommentRe = Regex(@"(?<!:)//[^\n]*", RegexOptions.Compiled ||| RegexOptions.Multiline)
+    // Block /* */ comment — shared with the minifier so the pattern exists once.
+    let blockCommentRe  = Regex(@"/\*.*?\*/", RegexOptions.Compiled ||| RegexOptions.Singleline)
+    // Function-call shape used by pipe resolution: fn(args)
+    let pipeCallRe      = Regex(@"^(\w+)\((.*)\)$", RegexOptions.Compiled)
+    // Bracket block opener: `[ ` at line start or after whitespace.
+    let blockBracketRe  = Regex(@"(\s)\[(\s|$)|^\[(\s|$)", RegexOptions.Compiled)
+    let bracketOpenRe   = Regex(@"(\s)\[|^\[", RegexOptions.Compiled)
+    let bracketCloseRe  = Regex(@"(\s)\]|^\]", RegexOptions.Compiled)
+
     let stripComments (text: string) =
         // Remove // comments but preserve them in URLs (http://)
-        let s = Regex.Replace(text, @"(?<!:)//[^\n]*", "", RegexOptions.Multiline)
-        Regex.Replace(s, @"/\*.*?\*/", "", RegexOptions.Singleline)
-
-    // ── Regex patterns ──────────────────────────────────────
+        let s = singleCommentRe.Replace(text, "")
+        blockCommentRe.Replace(s, "")
 
     let varPattern    = Regex(@"^\s*\$([\w-]+)\s*:\s*(.+?)(\s+!default)?\s*;?\s*$", RegexOptions.Compiled)
     // F#-style: let name = value  or  let name: type = value
@@ -132,7 +148,7 @@ module CoreParser =
                 for i in 1..parts.Length-1 do
                     let next = parts.[i]
                     // Check if next part is a function call: fn(args)
-                    let fnMatch = Regex.Match(next, @"^(\w+)\((.*)\)$")
+                    let fnMatch = pipeCallRe.Match(next)
                     if fnMatch.Success then
                         let fnName = fnMatch.Groups.[1].Value
                         let fnArgs = fnMatch.Groups.[2].Value
@@ -146,10 +162,50 @@ module CoreParser =
                         acc <- next + " " + acc
                 acc
 
-    /// Resolve variable references in a value string.
-    /// Supports both $name (SCSS-style) and bare name (F#-style) references.
-    /// For bare names, only resolves if the name is a known variable AND is not
-    /// a CSS keyword/property name (to avoid corrupting CSS values).
+    // ── Regex result cache ──────────────────────────────────
+    // Variable resolution is a pure function of (value, vars content), and in
+    // the ZCSS pipeline a vars dictionary is built once and never mutated
+    // afterwards. A per-instance fingerprint (ConditionalWeakTable so the
+    // dictionary stays GC-able) turns every cached lookup into an O(1) hit
+    // while still invalidating correctly when a *different* dictionary with
+    // different content is used.
+    let private dictFingerprints = ConditionalWeakTable<IDictionary<string, string>, string>()
+    let private resolutionCache = ConcurrentDictionary<string, string>()
+    let private CACHE_MAX_ENTRIES = 4096
+
+    let private fingerprintOf (d: IDictionary<string, string>) : string =
+        match dictFingerprints.TryGetValue(d) with
+        | true, fp -> fp
+        | _ ->
+            let sb = StringBuilder()
+            for kv in d do
+                sb.Append(kv.Key) |> ignore
+                sb.Append('\x1f') |> ignore
+                sb.Append(kv.Value) |> ignore
+                sb.Append('\x1e') |> ignore
+            let fp = sb.ToString()
+            dictFingerprints.Add(d, fp)
+            fp
+
+    /// Shortcut: only values containing a `$` reference can change under
+    /// dollarRefRe resolution, so untouched values bypass the cache entirely.
+    let private tryCachedDollar (value: string) (vars: IDictionary<string, string>) =
+        if String.IsNullOrEmpty value || value.Length > 256 then None
+        else
+            let key = fingerprintOf vars + "\x00" + value
+            match resolutionCache.TryGetValue(key) with
+            | true, r -> Some r
+            | _ -> None
+
+    let private storeDollar (value: string) (vars: IDictionary<string, string>) (result: string) =
+        if not (String.IsNullOrEmpty value) && value.Length <= 256 then
+            let key = fingerprintOf vars + "\x00" + value
+            // Blunt size cap: when the cache grows past the bound, drop it all.
+            // Keeps memory bounded for long-lived dev servers without needing
+            // per-entry eviction bookkeeping.
+            if resolutionCache.Count >= CACHE_MAX_ENTRIES then resolutionCache.Clear()
+            resolutionCache.[key] <- result
+
     let resolveVarRefs (rawVal: string) (d: IDictionary<string, string>) : string =
         // First resolve $name references (SCSS-style) — always safe
         let v1 = dollarRefRe.Replace(rawVal, fun mm ->
@@ -192,8 +248,16 @@ module CoreParser =
         d
 
     let resolveVars (value: string) (vars: IDictionary<string, string>) =
-        dollarRefRe.Replace(value, fun m ->
-            match vars.TryGetValue(m.Groups.[1].Value) with true, v -> v | _ -> m.Value)
+        // Bypass the cache entirely when no reference can be present.
+        if not (value.Contains('$')) then value
+        else
+            match tryCachedDollar value vars with
+            | Some resolved -> resolved
+            | None ->
+                let result = dollarRefRe.Replace(value, fun m ->
+                    match vars.TryGetValue(m.Groups.[1].Value) with true, v -> v | _ -> m.Value)
+                storeDollar value vars result
+                result
 
     /// Parse a declaration line. Supports both `prop: value` and `prop = value` (F#/C# style).
     let parseDecl (line: string) (lineNum: int) (vars: IDictionary<string, string>) : Declaration option =
@@ -261,7 +325,7 @@ module CoreParser =
             // by whitespace or end-of-line — this avoids mistaking attribute
             // selectors like `a[href]` for block delimiters.
             let hasBlockBrackets =
-                lines |> Array.exists (fun l -> Regex.IsMatch(l, @"(\s)\[(\s|$)|^\[(\s|$)"))
+                lines |> Array.exists (fun l -> blockBracketRe.IsMatch l)
             if hasBlockBrackets then BracketMode else IndentMode
 
     /// Convert F#-style `[]` block delimiters to `{}` so the brace parser can
@@ -271,8 +335,8 @@ module CoreParser =
     let toBraceLines (lines: string array) : string array =
         lines
         |> Array.map (fun l ->
-            Regex.Replace(l, @"(\s)\[|^\[", "{")
-            |> fun s -> Regex.Replace(s, @"(\s)\]|^\]", "}"))
+            bracketOpenRe.Replace(l, "{")
+            |> fun s -> bracketCloseRe.Replace(s, "}"))
 
     let getIndent (line: string) : int =
         let mutable n = 0
