@@ -2,21 +2,38 @@
   <PropertyGroup>
     <OutputType>Library</OutputType>
   </PropertyGroup>
+  <!-- F# compiles top-down: a file may only reference symbols declared in
+       earlier files, so the list below is ordered by dependency. -->
   <ItemGroup>
+    <!-- Core context (no project dependencies) -->
     <Compile Include="ZestContext.fs" />
+
+    <!-- HTML DSL + component builders (depend on Context) -->
     <Compile Include="DslHtml.fs" />
     <Compile Include="DslComponents.fs" />
+
+    <!-- Standalone utility helpers -->
     <Compile Include="StringProcessor.fs" />
     <Compile Include="DateFormatter.fs" />
     <Compile Include="SequenceProcessor.fs" />
+
+    <!-- Sugar + compound builders (depend on Dsl, Context, helpers) -->
     <Compile Include="DslSugar.fs" />
     <Compile Include="ContentBuilder.fs" />
+
+    <!-- CSS DSL; validator/scoper feed DslStyle (depend on Dsl) -->
     <Compile Include="DslCss.fs" />
     <Compile Include="StyleValidator.fs" />
     <Compile Include="StyleScoper.fs" />
     <Compile Include="DslStyle.fs" />
+
+    <!-- Content safety guard -->
     <Compile Include="ContentGuard.fs" />
+
+    <!-- Collection/page-query APIs (depend on Context) -->
     <Compile Include="DslCollections.fs" />
+
+    <!-- Higher-level DSLs (DslMigration opens DslHelpers) -->
     <Compile Include="DslHelpers.fs" />
     <Compile Include="DslSeo.fs" />
     <Compile Include="DslXml.fs" />

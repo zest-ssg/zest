@@ -18,9 +18,21 @@ public class BuildService
     /// Execute the full build pipeline. Starts the animated indicator
     /// before the build. The summary is printed when PrintResult is called
     /// (which stops the animator and displays the final line).
+    /// When forceRefresh is true, all incremental caches (in-memory + on-disk)
+    /// and template caches are cleared first so every page regenerates — this
+    /// is how dev/preview servers guarantee a fresh start.
     /// </summary>
-    public BuildResult Execute(SiteConfig config)
+    public BuildResult Execute(SiteConfig config, bool forceRefresh = false)
     {
+        if (forceRefresh)
+        {
+            var outDir = Path.GetFullPath(Path.Combine(
+                Directory.GetCurrentDirectory(), config.OutputDir.TrimStart('.', '\\', '/')));
+            BuildCache.clearDiskCache(outDir);
+            try { Zest.Engine.Template.TemplateManager.clearCaches(); }
+            catch { /* non-fatal */ }
+        }
+
         // Start the animated build indicator. It polls BuildProgress
         // (set by BuildEngine.execute) every 80ms for live counts.
         BuildAnimator.Start();

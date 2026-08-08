@@ -197,15 +197,28 @@ module private HbsImpl =
             | _ -> NInverted(name, args, body), afterBody
         | TElse | TElseIf _ | TBlockClose _ -> NText "", rest
 
+    // ── Parsed AST cache ───────────────────────────────────────────────
+    // A layout rendered once per page (or shared across pages) should parse
+    // once per distinct source. Keyed by content hash via TemplateUtils.
+    let private astCache = ConcurrentDictionary<int64, HbsNode list>()
+
     let parse (src: string) : HbsNode list =
-        let tokens = tokenize src
-        let rec go acc rest =
-            match rest with
-            | [] -> List.rev acc
-            | token :: tail ->
-                match parseNode token tail with
-                | node, rest' -> go (node :: acc) rest'
-        go [] tokens
+        if isNull src then []
+        else
+            let key = TemplateUtils.hashSource src
+            match astCache.TryGetValue key with
+            | true, a -> a
+            | _ ->
+                let tokens = tokenize src
+                let rec go acc rest =
+                    match rest with
+                    | [] -> List.rev acc
+                    | token :: tail ->
+                        match parseNode token tail with
+                        | node, rest' -> go (node :: acc) rest'
+                let ast = go [] tokens
+                astCache.[key] <- ast
+                ast
 
     // ── Runtime ────────────────────────────────────────────────────────
     let private isFalsey (v: obj) =
@@ -312,6 +325,11 @@ module private HbsImpl =
     /// a cached layout reused across pages) parses each partial only once.
     let private partialCache = ConcurrentDictionary<string, HbsNode list>()
 
+    /// Clear cached ASTs and parsed partials (called on engine cache clear).
+    let clearCaches () =
+        astCache.Clear()
+        partialCache.Clear()
+
     let private mkEnv (vars: IDictionary<string, obj>) (loadPartial: string -> string option) : RenderEnv =
         let root =
             match vars.TryGetValue "@root" with
@@ -351,7 +369,7 @@ module private HbsImpl =
                 if triple then sb.Append(s) |> ignore
                 else sb.Append(htmlEncode s) |> ignore
         | NPartial(name, args) ->
-            let _ = args
+            let pos, named = parseArgs args
             match env.LoadPartial name with
             | Some src ->
                 let ast =
@@ -361,7 +379,25 @@ module private HbsImpl =
                         let a = parse src
                         partialCache.[name] <- a
                         a
-                renderNodes ast env sb
+                // Handlebars partial arguments: a positional value becomes the
+                // partial's context; named args are merged into a new layer.
+                let env' =
+                    if pos.IsEmpty && named.IsEmpty then env
+                    elif named.IsEmpty then
+                        let v = resolveExpr env pos.Head
+                        if isNull v then env else { env with Stack = v :: env.Stack }
+                    else
+                        let merged = Dictionary<string, obj>()
+                        match env.Stack with
+                        | cur :: _ ->
+                            match cur with
+                            | :? IDictionary<string, obj> as d ->
+                                for kv in d do merged.[kv.Key] <- kv.Value
+                            | _ -> ()
+                        | _ -> ()
+                        for k, v in named do merged.[k] <- v
+                        { env with Stack = (box merged) :: env.Stack }
+                renderNodes ast env' sb
             | None -> () // missing partial → render nothing
         | NInverted(name, args, body) ->
             let v = resolveExpr env name
@@ -394,21 +430,29 @@ module private HbsImpl =
                 match v with
                 | :? System.Collections.IList as list ->
                     renderEachList list body elseBody env sb
-                | :? System.Collections.IEnumerable as e when not (v :? string) && not (v :? System.Collections.IDictionary) ->
+                | :? IDictionary<string, obj> as d ->
+                    renderEachDict d body elseBody env sb
+                | :? System.Collections.IDictionary as d ->
+                    renderEachDictObj d body elseBody env sb
+                | :? System.Collections.IEnumerable as e when not (v :? string) ->
                     renderEachSeq e body elseBody env sb
                 | null ->
                     elseBody |> Option.iter (fun eb -> renderNodes eb env sb)
                 | _ ->
-                    // Non-iterable value (string/dict): Handlebars renders the
+                    // Non-iterable value (string/scalar): Handlebars renders the
                     // else block for `each` over a non-array.
                     elseBody |> Option.iter (fun eb -> renderNodes eb env sb)
             | _ ->
-                // generic section: array → iterate; truthy object → push context; else → elseBody
+                // generic section: array/dict → iterate; truthy object → push context; else → elseBody
                 let v = resolveExpr env name
                 match v with
                 | :? System.Collections.IList as list ->
                     renderEachList list body elseBody env sb
-                | :? System.Collections.IEnumerable as e when not (v :? string) && not (v :? System.Collections.IDictionary) ->
+                | :? IDictionary<string, obj> as d ->
+                    renderEachDict d body elseBody env sb
+                | :? System.Collections.IDictionary as d ->
+                    renderEachDictObj d body elseBody env sb
+                | :? System.Collections.IEnumerable as e when not (v :? string) ->
                     renderEachSeq e body elseBody env sb
                 | null ->
                     elseBody |> Option.iter (fun eb -> renderNodes eb env sb)
@@ -449,6 +493,30 @@ module private HbsImpl =
             k <- k + 1
         if not hasAny then
             elseBody |> Option.iter (fun eb -> renderNodes eb env sb)
+
+    and renderEachDict (d: IDictionary<string, obj>) (body: HbsNode list)
+                       (elseBody: HbsNode list option) (env: RenderEnv) (sb: Text.StringBuilder) =
+        let pairs = d |> Seq.toArray
+        if pairs.Length = 0 then
+            elseBody |> Option.iter (fun eb -> renderNodes eb env sb)
+        else
+            for k in 0 .. pairs.Length - 1 do
+                let kv = pairs.[k]
+                let meta = Map.ofList [ "@index", box k; "@key", box kv.Key; "@first", box (k = 0); "@last", box (k = pairs.Length - 1) ]
+                let env' = { env with Stack = kv.Value :: env.Stack; Meta = meta }
+                renderNodes body env' sb
+
+    and renderEachDictObj (d: System.Collections.IDictionary) (body: HbsNode list)
+                          (elseBody: HbsNode list option) (env: RenderEnv) (sb: Text.StringBuilder) =
+        let keys = d.Keys |> Seq.cast<obj> |> Seq.toArray
+        if keys.Length = 0 then
+            elseBody |> Option.iter (fun eb -> renderNodes eb env sb)
+        else
+            for k in 0 .. keys.Length - 1 do
+                let key = keys.[k]
+                let meta = Map.ofList [ "@index", box k; "@key", key; "@first", box (k = 0); "@last", box (k = keys.Length - 1) ]
+                let env' = { env with Stack = d.[key] :: env.Stack; Meta = meta }
+                renderNodes body env' sb
 
     let render (src: string) (vars: IDictionary<string, obj>) (loadPartial: string -> string option) : Result<string, TemplateError> =
         try
@@ -502,4 +570,6 @@ type HbsEngine() =
 
         member _.RegisterTag(_handler: TagHandler) = ()
 
-        member _.ClearCache() = fileCache.Clear()
+        member _.ClearCache() =
+            fileCache.Clear()
+            HbsImpl.clearCaches()

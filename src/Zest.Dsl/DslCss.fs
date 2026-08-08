@@ -666,3 +666,48 @@ module DslCss =
     ///   cssImportMedia "url('/css/print.css')" "print"
     let cssImportMedia (url: string) (mediaQuery: string) : string =
         sprintf "@import %s %s;" url mediaQuery
+
+    // ── Phase 5: responsive & environment-aware styles ─────────────
+
+    /// Print-only styles wrapped in `@media print`.
+    ///
+    ///   print_styles [ cls "no-print" [ display "none" ] ]
+    let print_styles (rules: CssRule list) : string =
+        media "print" rules
+
+    /// Dark colour-scheme styles wrapped in
+    /// `@media (prefers-color-scheme: dark)`.
+    let dark_mode_styles (rules: CssRule list) : string =
+        media "(prefers-color-scheme: dark)" rules
+
+    /// Accessibility styles for users who request reduced motion, wrapped in
+    /// `@media (prefers-reduced-motion: reduce)`.
+    ///
+    ///   prefers_reduced_motion [ cls "anim" [ animation "none" ] ]
+    let prefers_reduced_motion (rules: CssRule list) : string =
+        media "(prefers-reduced-motion: reduce)" rules
+
+    /// Element-based media queries via `@container`. `query` may include a
+    /// container name, e.g. "card (min-width: 400px)".
+    ///
+    ///   container_queries "(min-width: 400px)" [ cls "item" [ width "100%" ] ]
+    let container_queries (query: string) (rules: CssRule list) : string =
+        let sb = StringBuilder()
+        sb.AppendLine(sprintf "@container %s {" query) |> ignore
+        for rule in rules do
+            if not (List.isEmpty rule.Declarations) then
+                sb.AppendLine(sprintf "  %s {" rule.Selector) |> ignore
+                for decl in rule.Declarations do
+                    sb.AppendLine(sprintf "    %s: %s;" decl.Property decl.Value) |> ignore
+                sb.AppendLine("  }") |> ignore
+        sb.AppendLine("}") |> ignore
+        sb.ToString().TrimEnd()
+
+    /// Declare the supported colour schemes on `:root` via the standard
+    /// `color-scheme` property, so native form controls and scrollbars follow
+    /// the OS preference. `scheme` is one of "light", "dark", or "light dark".
+    ///
+    ///   color_scheme_styles "light dark"   →  :root { color-scheme: light dark; }
+    let color_scheme_styles (scheme: string) : string =
+        if String.IsNullOrWhiteSpace scheme then ""
+        else ":root { color-scheme: " + scheme.Trim() + "; }"

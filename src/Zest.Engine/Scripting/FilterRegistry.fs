@@ -189,18 +189,21 @@ module FilterRegistry =
 
         // ── t: i18n translation key lookup ─────────────────────
         // Usage: {{ 'nav.home' | t }} or {{ 'nav.home' | t('zh') }}
+        // Extra args supply {name} interpolation: {{ 'hi' | t('zh', 'name=World') }}
         engine.RegisterFilter "t" (fun value args ->
             let key = if isNull value then "" else value.ToString()
             let lang = if args.Length > 0 then args.[0] else !defaultLangRef
             let locales = !localeRef
             if locales.Count = 0 then key
             else
-                match locales.TryGetValue lang with
-                | true, dict ->
-                    match dict.TryGetValue key with
-                    | true, v -> v
-                    | _ -> key
-                | _ -> key)
+                // args[1..] are key=value pairs bound to {name} placeholders.
+                let interp = Dictionary<string, string>()
+                for arg in args.[1..] do
+                    let s = arg |> string
+                    let eq = s.IndexOf('=')
+                    if eq > 0 then interp.[s.[..eq-1].Trim()] <- s.[eq+1..].Trim()
+                Zest.Engine.I18n.LocaleLoader.translateWithArgs
+                    locales !defaultLangRef key (Some lang) interp)
 
         // ── prevPost: get previous (older) page from a collection ─
         // Usage: {{ collection.posts | prevPost(page.url) }}

@@ -65,12 +65,18 @@ type ZestContext(ctxFile: string) =
                 e.GetProperty("tags").EnumerateArray()
                 |> Seq.map (fun t -> t.GetString())
                 |> Seq.toArray
+            let tryStr (name: string) =
+                match e.TryGetProperty(name) with
+                | true, p when p.ValueKind = JsonValueKind.String -> p.GetString()
+                | _ -> ""
             {| url=e.GetProperty("url").GetString()
                title=e.GetProperty("title").GetString()
                date=e.GetProperty("date").GetString()
                slug=e.GetProperty("slug").GetString()
                description=e.GetProperty("description").GetString()
-               tags=tags |})
+               tags=tags
+               author=tryStr "author"
+               category=tryStr "category" |})
         |> Seq.toArray
 
     member _.Includes =

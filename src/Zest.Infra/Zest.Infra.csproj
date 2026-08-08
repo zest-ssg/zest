@@ -4,6 +4,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <!-- C# compiles without ordering constraints; sources under Configuration/
+       and Services/ are picked up by the SDK default glob, so no explicit
+       <Compile> list is required. -->
   <ItemGroup>
     <ProjectReference Include="..\Zest.Engine\Zest.Engine.fsproj" />
   </ItemGroup>

@@ -51,8 +51,9 @@ public class DevServer : HttpServer
         _outputDir = GetOutputDir();
         StartFileWatcher();
 
-        // Initial build — runs after banner is displayed (see HttpServer.Start).
-        var result = _buildService.Execute(_config);
+        // Initial build — force a full refresh so a freshly started server
+        // never serves pages skipped by the incremental cache from a prior run.
+        var result = _buildService.Execute(_config, forceRefresh: true);
         BuildService.PrintResult(result, _config);
 
         // WebSocket server for live reload

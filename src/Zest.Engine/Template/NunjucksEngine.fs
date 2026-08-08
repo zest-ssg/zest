@@ -435,10 +435,17 @@ module private NunjucksImpl =
         else compileCompare t
 
     and compileCompare (text: string) : CExpr =
-        match findTopOp text [ "=="; "!="; ">="; "<="; ">"; "<"; " in " ] with
-        | Some(i, op) ->
-            CBin(op.Trim(), compileAdd (text.[..i-1]), compileAdd (text.[i+op.Length..]))
-        | None -> compileAdd text
+        let t = text.Trim()
+        // `is` / `is not` tests (x is defined, x is not empty). The test name is
+        // kept as a literal string so evaluation can dispatch on it.
+        match findTopOp t [ " is not "; " is " ] with
+        | Some(i, op) when t.[..i-1].Trim() <> "" && t.[i+op.Length..].Trim() <> "" ->
+            CBin("is", compileAdd (t.[..i-1]), CLit(box (t.[i+op.Length..].Trim())))
+        | _ ->
+            match findTopOp t [ "=="; "!="; ">="; "<="; ">"; "<"; " not in "; " in " ] with
+            | Some(i, op) ->
+                CBin(op.Trim(), compileAdd (t.[..i-1]), compileAdd (t.[i+op.Length..]))
+            | None -> compileAdd t
 
     and compileAdd (text: string) : CExpr =
         match findTopOp text [ "+"; "-" ] with
@@ -494,6 +501,11 @@ module private NunjucksImpl =
                 let found = seqOf rv |> Seq.exists (fun x -> valuesEqual x lv)
                 let strContains = match rv with :? string as sv -> sv.Contains(toStr lv) | _ -> false
                 box (found || strContains)
+            | "not in" ->
+                let found = seqOf rv |> Seq.exists (fun x -> valuesEqual x lv)
+                let strContains = match rv with :? string as sv -> sv.Contains(toStr lv) | _ -> false
+                box (not (found || strContains))
+            | "is" -> box (applyIsTest (toStr rv) lv)
             | "+" ->
                 if (match lv, rv with
                     | (:? string as ls), _ when Double.IsNaN(toNum ls) -> true
@@ -692,11 +704,14 @@ module private NunjucksImpl =
             match value with
             | :? System.Collections.IEnumerable as ie ->
                 let attr = if args.Length > 0 then toStr args.[0] else ""
-                if attr = "" then ie |> Seq.cast<obj> |> Seq.map toStr |> Seq.sort |> Array.ofSeq :> obj
-                else
-                    ie |> Seq.cast<obj>
-                    |> Seq.sortBy (fun x -> toStr(propGet x attr))
-                    |> Array.ofSeq :> obj
+                let rev = args.Length > 1 && toBool args.[1]
+                let sorted =
+                    if attr = "" then
+                        ie |> Seq.cast<obj> |> Seq.sortBy (fun x -> toStr x)
+                    else
+                        ie |> Seq.cast<obj> |> Seq.sortBy (fun x -> toStr(propGet x attr))
+                let arr = sorted |> Array.ofSeq
+                if rev then Array.rev arr :> obj else arr :> obj
             | _ -> value
         | "slice" ->
             let start = if args.Length > 0 then (try int(toStr args.[0]) with _ -> 0) else 0
@@ -726,36 +741,40 @@ module private NunjucksImpl =
                 |> Seq.map (fun (k, g) -> dict ["key", box k; "items", box(g |> Array.ofSeq)] :> obj)
                 |> Array.ofSeq :> obj
             | _ -> value
-        | "selectattr" ->
+        | "selectattr" | "rejectattr" ->
             let attr = if args.Length > 0 then toStr args.[0] else ""
             let test = if args.Length > 1 then toStr args.[1] else "truthy"
+            let testArg = if args.Length > 2 then args.[2] else null
+            let reject = name = "rejectattr"
+            let knownTests = set ["truthy"; "falsy"; "defined"; "undefined"; "number"; "string";
+                                  "iterable"; "empty"; "odd"; "even"; "equalto"; "eq";
+                                  "not_equalto"; "ne"; "contains"]
+            let passes (v: obj) =
+                if knownTests.Contains(test.ToLowerInvariant()) then applyValueTest test v testArg
+                else toStr v = test
             match value with
             | :? System.Collections.IEnumerable as ie ->
                 ie |> Seq.cast<obj>
-                |> Seq.filter (fun x ->
-                    let v = propGet x attr
-                    match test with
-                    | "truthy" | "True" -> toBool v
-                    | "falsy" | "False" -> not (toBool v)
-                    | "defined" -> v <> null
-                    | "undefined" -> isNull v
-                    | _ -> toStr v = test)
+                |> Seq.filter (fun x -> let r = passes (propGet x attr) in if reject then not r else r)
                 |> Array.ofSeq :> obj
             | _ -> value
-        | "rejectattr" ->
-            let attr = if args.Length > 0 then toStr args.[0] else ""
-            let test = if args.Length > 1 then toStr args.[1] else "truthy"
+        | "select" | "reject" ->
+            let test = if args.Length > 0 then toStr args.[0] else "truthy"
+            let testArg = if args.Length > 1 then args.[1] else null
+            let reject = name = "reject"
+            match value with
+            | :? System.Collections.IEnumerable as ie ->
+                ie |> Seq.cast<obj>
+                |> Seq.filter (fun x -> let r = applyValueTest test x testArg in if reject then not r else r)
+                |> Array.ofSeq :> obj
+            | _ -> value
+        | "compact" ->
             match value with
             | :? System.Collections.IEnumerable as ie ->
                 ie |> Seq.cast<obj>
                 |> Seq.filter (fun x ->
-                    let v = propGet x attr
-                    match test with
-                    | "truthy" | "True" -> not (toBool v)
-                    | "falsy" | "False" -> toBool v
-                    | "defined" -> isNull v
-                    | "undefined" -> v <> null
-                    | _ -> toStr v <> test)
+                    not (isNull x)
+                    && not (match x with :? string as s -> s = "" | _ -> false))
                 |> Array.ofSeq :> obj
             | _ -> value
         | "items" ->
@@ -888,6 +907,54 @@ module private NunjucksImpl =
                 fn value strArgs
             | _ -> value
 
+    /// Apply a Jinja-style `is` test name to a value (x is defined, x is empty).
+    and applyIsTest (test: string) (v: obj) : bool =
+        match test.Trim().ToLowerInvariant() with
+        | "defined" -> v <> null
+        | "undefined" | "none" | "null" -> isNull v
+        | "truthy" -> toBool v
+        | "falsy" -> not (toBool v)
+        | "number" -> match v with :? int | :? int64 | :? double | :? single -> true | _ -> false
+        | "string" -> v :? string
+        | "iterable" -> match v with :? System.Collections.IEnumerable when not (v :? string) -> true | _ -> false
+        | "empty" ->
+            match v with
+            | null -> true
+            | :? string as s -> s = ""
+            | :? System.Collections.ICollection as c -> c.Count = 0
+            | :? System.Collections.IEnumerable as e ->
+                let en = e.GetEnumerator()
+                try not (en.MoveNext())
+                finally match box en with :? IDisposable as d -> d.Dispose() | _ -> ()
+            | _ -> false
+        | "odd" -> match v with :? int as i -> i % 2 <> 0 | _ -> false
+        | "even" -> match v with :? int as i -> i % 2 = 0 | _ -> false
+        | _ -> false
+
+    /// Apply a value test for `select` / `reject` / `selectattr` filters.
+    /// Supported tests: truthy, falsy, defined, undefined, number, string,
+    /// iterable, empty, equalto/eq, not_equalto/ne, contains, odd, even.
+    and applyValueTest (test: string) (v: obj) (arg: obj) : bool =
+        match test.Trim().ToLowerInvariant() with
+        | "truthy" -> toBool v
+        | "falsy" -> not (toBool v)
+        | "defined" -> v <> null
+        | "undefined" -> isNull v
+        | "number" -> match v with :? int | :? int64 | :? double | :? single -> true | _ -> false
+        | "string" -> v :? string
+        | "iterable" -> match v with :? System.Collections.IEnumerable when not (v :? string) -> true | _ -> false
+        | "empty" -> applyIsTest "empty" v
+        | "odd" -> applyIsTest "odd" v
+        | "even" -> applyIsTest "even" v
+        | "equalto" | "eq" -> valuesEqual v arg
+        | "not_equalto" | "ne" -> not (valuesEqual v arg)
+        | "contains" ->
+            match v with
+            | :? string as s -> s.Contains(toStr arg)
+            | :? System.Collections.IEnumerable as e -> seqOf e |> Seq.exists (fun x -> valuesEqual x arg)
+            | _ -> false
+        | _ -> toStr v = toStr arg
+
     /// HTML-encode a string for safe output.
     and HtmlEncode (s: string) =
         if String.IsNullOrEmpty s then s
@@ -983,7 +1050,7 @@ module private NunjucksImpl =
         List.rev result
 
     // ── Block tags that require a closing end-tag ──────────
-    let blockTags = set ["if"; "for"; "block"; "macro"; "filter"; "call"]
+    let blockTags = set ["if"; "for"; "block"; "macro"; "filter"; "call"; "with"]
 
     // ── RenderEnv ──────────────────────────────────────────
     type RenderEnv = {
@@ -998,6 +1065,7 @@ module private NunjucksImpl =
         CallerBody: Token list option                  // captured {% call %} body (for caller())
         LoopNesting: int                               // current for-loop nesting depth
         LastLine: int ref                              // most recently processed source line (for errors)
+        ControlFlow: string ref                        // "" | "break" | "continue" (consumed by the nearest for loop)
     }
 
     // ── Main renderer ──────────────────────────────────────
@@ -1161,23 +1229,28 @@ module private NunjucksImpl =
                     match iter with
                     | :? System.Collections.IList as list ->
                         let ctx, loopDict = mkCtx ()
-                        if list.Count > 0 then
-                            for i in 0 .. list.Count - 1 do
-                                let item = list.[i]
-                                bindItem ctx item
-                                let prev = if i > 0 then box list.[i-1] else null
-                                let nxt = if i < list.Count - 1 then box list.[i+1] else null
-                                loopDict.["index"] <- box(i+1); loopDict.["index0"] <- box i
-                                loopDict.["revindex"] <- box(list.Count-i); loopDict.["revindex0"] <- box(list.Count-i-1)
-                                loopDict.["first"] <- box(i=0); loopDict.["last"] <- box(i=list.Count-1)
-                                loopDict.["length"] <- box list.Count
-                                loopDict.["depth"] <- box(env.LoopNesting + 1)
-                                loopDict.["depth0"] <- box env.LoopNesting
-                                loopDict.["previtem"] <- prev; loopDict.["nextitem"] <- nxt
-                                match renderTokens loopTokens { env with Variables = ctx :> IDictionary<string, obj>; LoopNesting = env.LoopNesting + 1 } with
-                                | Ok h -> sb.Append(h) |> ignore
-                                | Error e -> error <- Some e
-                        else
+                        let mutable i = 0
+                        let mutable stop = false
+                        while i < list.Count && not stop && error.IsNone do
+                            let item = list.[i]
+                            bindItem ctx item
+                            let prev = if i > 0 then box list.[i-1] else null
+                            let nxt = if i < list.Count - 1 then box list.[i+1] else null
+                            loopDict.["index"] <- box(i+1); loopDict.["index0"] <- box i
+                            loopDict.["revindex"] <- box(list.Count-i); loopDict.["revindex0"] <- box(list.Count-i-1)
+                            loopDict.["first"] <- box(i=0); loopDict.["last"] <- box(i=list.Count-1)
+                            loopDict.["length"] <- box list.Count
+                            loopDict.["depth"] <- box(env.LoopNesting + 1)
+                            loopDict.["depth0"] <- box env.LoopNesting
+                            loopDict.["previtem"] <- prev; loopDict.["nextitem"] <- nxt
+                            match renderTokens loopTokens { env with Variables = ctx :> IDictionary<string, obj>; LoopNesting = env.LoopNesting + 1 } with
+                            | Ok h -> sb.Append(h) |> ignore
+                            | Error e -> error <- Some e
+                            // break / continue are consumed by the nearest enclosing for.
+                            if env.ControlFlow.Value = "break" then env.ControlFlow.Value <- ""; stop <- true
+                            elif env.ControlFlow.Value = "continue" then env.ControlFlow.Value <- ""
+                            i <- i + 1
+                        if not stop && list.Count = 0 then
                             // else body of for
                             let elseBody = forElseBody (List.toArray bodyTokens)
                             match renderTokens elseBody env with
@@ -1191,16 +1264,24 @@ module private NunjucksImpl =
                         loopDict.["depth0"] <- box env.LoopNesting
                         let mutable count = 0
                         let mutable any = false
-                        for item in e do
-                            any <- true
-                            bindItem ctx item
-                            loopDict.["index"] <- box(count+1); loopDict.["index0"] <- box count
-                            loopDict.["first"] <- box(count=0)
-                            match renderTokens loopTokens { env with Variables = ctx :> IDictionary<string, obj>; LoopNesting = env.LoopNesting + 1 } with
-                            | Ok h -> sb.Append(h) |> ignore
-                            | Error er -> error <- Some er
-                            count <- count + 1
-                        if not any then
+                        let mutable stop = false
+                        let en = e.GetEnumerator()
+                        try
+                            while en.MoveNext() && not stop && error.IsNone do
+                                let item = en.Current
+                                any <- true
+                                bindItem ctx item
+                                loopDict.["index"] <- box(count+1); loopDict.["index0"] <- box count
+                                loopDict.["first"] <- box(count=0)
+                                match renderTokens loopTokens { env with Variables = ctx :> IDictionary<string, obj>; LoopNesting = env.LoopNesting + 1 } with
+                                | Ok h -> sb.Append(h) |> ignore
+                                | Error er -> error <- Some er
+                                if env.ControlFlow.Value = "break" then env.ControlFlow.Value <- ""; stop <- true
+                                elif env.ControlFlow.Value = "continue" then env.ControlFlow.Value <- ""
+                                count <- count + 1
+                        finally
+                            match box en with :? System.IDisposable as d -> d.Dispose() | _ -> ()
+                        if not stop && not any then
                             let elseBody = forElseBody (List.toArray bodyTokens)
                             match renderTokens elseBody env with
                             | Ok h -> sb.Append(h) |> ignore
@@ -1378,7 +1459,24 @@ module private NunjucksImpl =
                     | Some h -> sb.Append(toStr (applyFilter fname (box h) [])) |> ignore
                     | None -> ()
 
-                | "now" | "endblock" | "endfor" | "endif" | "endmacro" | "endcall" | "endraw" | "endfilter" ->
+                | "break" -> env.ControlFlow.Value <- "break"
+                | "continue" -> env.ControlFlow.Value <- "continue"
+
+                | "with" ->
+                    // {% with a = 1, b = 2 %}body{% endwith %} — variables are
+                    // scoped to the block; {% set %} inside does not leak out.
+                    let wText = args |> String.concat " "
+                    let newCtx = Dictionary<string, obj>(env.Variables |> Seq.map (fun kv -> KeyValuePair(kv.Key, kv.Value)))
+                    for pair in wText.Split(',') do
+                        let pair = pair.Trim()
+                        let eq = pair.IndexOf("=")
+                        if eq > 0 then
+                            newCtx.[pair.[..eq-1].Trim()] <- evalExpr pair.[eq+1..] env.Variables
+                    match renderTokens bodyTokens { env with Variables = newCtx :> IDictionary<string, obj> } with
+                    | Ok h -> sb.Append(h) |> ignore
+                    | Error e -> error <- Some e
+
+                | "now" | "endblock" | "endfor" | "endif" | "endmacro" | "endcall" | "endraw" | "endfilter" | "endwith" ->
                     ()  // closing tags are handled by findMatchingEnd
 
                 | _ -> ()  // unknown tag — silently ignore (Nunjucks behavior)
@@ -1482,6 +1580,7 @@ type NunjucksEngine() =
                     CallerBody = None
                     LoopNesting = 0
                     LastLine = lastLine
+                    ControlFlow = ref ""
                 }
                 match NunjucksImpl.renderTokens tokens env with
                 | Ok s -> Ok s

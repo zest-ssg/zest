@@ -11,6 +11,19 @@ module DslCollections =
     open Dsl
     open Context
 
+    /// Structural type of a page exposed to DSL scripts. Matches the record
+    /// produced by ZestContext.Pages (including front-matter `author` and
+    /// `category`, which default to "" when absent).
+    type PageInfo =
+        {| url: string
+           title: string
+           date: string
+           slug: string
+           description: string
+           tags: string[]
+           author: string
+           category: string |}
+
     /// All pages across the site.
     let site_pages () = (get ()).Pages
 
@@ -95,7 +108,7 @@ module DslCollections =
         | _ -> ordered
 
     /// Filter pages by a predicate function.
-    let filter_pages_by (pred: {| url: string; title: string; date: string; slug: string; description: string; tags: string[] |} -> bool) =
+    let filter_pages_by (pred: PageInfo -> bool) =
         (get ()).Pages |> Array.filter pred
 
     /// Group pages by year (from date field).
@@ -211,15 +224,18 @@ module DslCollections =
                   |> List.map (fun (k, ps) -> k, ps |> List.map box)
 
     /// Filter items by a property value: `where(items, "tags", "tutorial")`.
-    /// Supports the page anonymous record's fields.
+    /// Supports the page anonymous record's fields (url, title, date, slug,
+    /// description, author, category).
     let where (prop: string) (value: string) (items: _ array) =
-        let getProp (r: {| url: string; title: string; date: string; slug: string; description: string; tags: string[] |}) =
+        let getProp (r: PageInfo) =
             match prop.ToLowerInvariant() with
             | "url" -> r.url
             | "title" -> r.title
             | "date" -> r.date
             | "slug" -> r.slug
             | "description" -> r.description
+            | "author" -> r.author
+            | "category" -> r.category
             | _ -> ""
         items |> Array.filter (fun r -> getProp r = value)
 
@@ -251,3 +267,97 @@ module DslCollections =
     let pages_by_year (year: string) =
         (get ()).Pages
         |> Array.filter (fun r -> r.date.StartsWith(year))
+
+    // ── Phase 5: author / category / result shaping ───────────────
+
+    /// Pages written by a specific author (case-insensitive, from the
+    /// `author` front-matter field; pages without the field match "").
+    let pages_by_author (author: string) =
+        (get ()).Pages
+        |> Array.filter (fun r ->
+            r.author.Equals(author, StringComparison.OrdinalIgnoreCase))
+
+    /// Pages in a specific category (case-insensitive, from the `category`
+    /// front-matter field; pages without the field match "").
+    let pages_by_category (category: string) =
+        (get ()).Pages
+        |> Array.filter (fun r ->
+            r.category.Equals(category, StringComparison.OrdinalIgnoreCase))
+
+    /// Sort pages by a field ("title", "date", "slug") and direction
+    /// ("asc"/"desc"). Canonical `pages_sorted_by` name; delegates to
+    /// `sort_pages_by`.
+    let pages_sorted_by (field: string) (direction: string) =
+        sort_pages_by field direction
+
+    /// Restrict results to the first N pages (negative N behaves like 0).
+    let pages_limit (n: int) =
+        (get ()).Pages |> Array.truncate (max 0 n)
+
+    /// Skip the first N pages (negative N behaves like 0).
+    let pages_offset (n: int) =
+        (get ()).Pages |> Array.skip (max 0 n)
+
+    // ── Phase 5: time-based grouping ───────────────────────────────
+
+    /// Group pages by year-month (yyyy-MM) from the date field, sorted
+    /// newest-first. Pages with no usable date land under "unknown".
+    let group_pages_by_month () =
+        (get ()).Pages
+        |> Array.filter (fun r -> r.date <> "")
+        |> Array.groupBy (fun r ->
+            if r.date.Length >= 7 then r.date.[..6]
+            else try r.date.[..3] with _ -> "unknown")
+        |> Array.sortByDescending fst
+        |> Array.map (fun (month, pages) -> month, pages |> Array.toList)
+        |> Array.toList
+
+    // ── Phase 5: advanced search ────────────────────────────────────
+
+    /// Regex-based search across title, url, description and tags
+    /// (case-insensitive). Invalid patterns match nothing instead of throwing.
+    let search_pages_advanced (pattern: string) =
+        let re =
+            try
+                Some (System.Text.RegularExpressions.Regex(
+                    pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            with _ -> None
+        match re with
+        | None -> [||]
+        | Some re ->
+            (get ()).Pages
+            |> Array.filter (fun r ->
+                re.IsMatch(r.title) || re.IsMatch(r.url) || re.IsMatch(r.description)
+                || r.tags |> Array.exists (fun t -> re.IsMatch(t)))
+
+    // ── Phase 5: content relationships ──────────────────────────────
+
+    /// Related pages sharing the same category, excluding the page itself.
+    /// Returns at most `count` results (empty when the current page has no
+    /// category or cannot be found).
+    let related_pages_by_category (page_url: string) (count: int) =
+        let current =
+            (get ()).Pages |> Array.tryFind (fun r ->
+                r.url.TrimEnd('/').Equals(page_url.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+        match current with
+        | None -> [||]
+        | Some cur when cur.category = "" -> [||]
+        | Some cur ->
+            (get ()).Pages
+            |> Array.filter (fun r ->
+                not (r.url.TrimEnd('/').Equals(page_url.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+                && r.category.Equals(cur.category, StringComparison.OrdinalIgnoreCase))
+            |> Array.truncate (max 0 count)
+
+    /// Tag cloud with weighted importance: weight = count ^ `weight` (default
+    /// 1.0 gives plain counts; a higher exponent amplifies frequent tags).
+    /// Returns (tag, weight, count) triples sorted by weight descending.
+    let tag_cloud_weighted (weight: float) =
+        (get ()).Pages
+        |> Array.collect (fun r -> r.tags)
+        |> Array.groupBy id
+        |> Array.map (fun (tag, occurrences) ->
+            let count = occurrences.Length
+            tag, (float count) ** weight, count)
+        |> Array.sortByDescending (fun (_, w, _) -> w)
+        |> Array.toList

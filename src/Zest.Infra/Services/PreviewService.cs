@@ -83,6 +83,10 @@ public class PreviewService : HttpServer
                 outputDir,
                 IgnoredDirNames!,
                 cssOnly => Rebuild(cssOnly));
+
+            // Force a full refresh at startup so the served site reflects the
+            // latest sources even when the incremental cache thinks nothing changed.
+            Rebuild(cssOnly: false, forceRefresh: true);
         }
     }
 
@@ -136,10 +140,17 @@ public class PreviewService : HttpServer
         LogWriter.Info($"Total requests: {TotalRequests}, rebuilds: {_rebuildCount}");
     }
 
-    private void Rebuild(bool cssOnly)
+    private void Rebuild(bool cssOnly, bool forceRefresh = false)
     {
         lock (_rebuildLock)
         {
+            if (forceRefresh)
+            {
+                // Startup refresh — wipe incremental caches so the build
+                // regenerates every page instead of reusing previous output.
+                BuildCache.clearDiskCache(GetOutputDir());
+            }
+
             // Engine upgrade detection — consistent with DevServer behavior.
             if (BuildCache.hasEngineChanged())
             {

@@ -97,6 +97,20 @@ module LiquidConverter =
         found
 
     // ── Expression rewrites ──────────────────────────────────────
+    /// Map a Liquid filter name to its Nunjucks equivalent. Unknown names
+    /// pass through unchanged (they may be registered custom filters).
+    let private filterAlias (name: string) : string =
+        match name.ToLowerInvariant() with
+        | "downcase" -> "lower"
+        | "upcase" -> "upper"
+        | "size" -> "length"
+        | "group_by" -> "groupby"
+        | "strip_html" -> "striptags"
+        | "escape_once" -> "escape"
+        | "raw" -> "safe"
+        | "newline_to_br" -> "nl2br"
+        | n -> n
+
     /// Rewrite Liquid filter argument syntax `name: a, b` → `name(a, b)`.
     let private rewriteFilters (expr: string) : string =
         match splitTopLevel '|' expr with
@@ -107,13 +121,27 @@ module LiquidConverter =
                 let seg = seg.Trim()
                 let m = reFilterArg.Match seg
                 if m.Success then
-                    let name = m.Groups.[1].Value
-                    let args =
-                        m.Groups.[2].Value |> splitTopLevel ',' |> List.map (fun a -> a.Trim())
-                        |> String.concat ", "
-                    sb.Append(" | ").Append(name).Append("(").Append(args).Append(")") |> ignore
+                    let rawName = m.Groups.[1].Value
+                    let alias = filterAlias rawName
+                    let args = m.Groups.[2].Value |> splitTopLevel ',' |> List.map (fun a -> a.Trim())
+                    if alias = "selectattr" && rawName.ToLowerInvariant() = "where" then
+                        // where: "attr" → selectattr(attr); where: "attr", "v" →
+                        // selectattr(attr, "equalto", v)
+                        let selectArgs =
+                            match args with
+                            | [a] -> a
+                            | a :: v :: _ -> sprintf "%s, \"equalto\", %s" a v
+                            | [] -> ""
+                        sb.Append(" | selectattr(").Append(selectArgs).Append(")") |> ignore
+                    else
+                        sb.Append(" | ").Append(alias).Append("(").Append(String.concat ", " args).Append(")") |> ignore
                 else
-                    sb.Append(" | ").Append(seg) |> ignore
+                    // Bare filter (no args): map known aliases, keep the rest.
+                    let bareAlias = filterAlias seg
+                    if bareAlias = seg then
+                        sb.Append(" | ").Append(seg) |> ignore
+                    else
+                        sb.Append(" | ").Append(bareAlias).Append("()") |> ignore
             sb.ToString()
 
     /// Shared expression normalization: ranges, forloop, nil, filter args.
@@ -150,6 +178,7 @@ module LiquidConverter =
 
     let private reRawClose     = Regex(@"\{%-?\s*endraw\s*-?%\}", RegexOptions.Compiled)
     let private reCmtClose     = Regex(@"\{%-?\s*endcomment\s*-?%\}", RegexOptions.Compiled)
+    let private reLiquidClose  = Regex(@"\{%-?\s*endliquid\s*-?%\}", RegexOptions.Compiled)
 
     let private tokenize (text: string) : Token list =
         let tokens = ResizeArray<Token>()
@@ -201,6 +230,15 @@ module LiquidConverter =
                             i <- m.Index + m.Length
                         else
                             tokens.Add(TTag(lstrip, body, rstrip)); i <- e + 2
+                    elif body = "liquid" then
+                        // {% liquid %} tag: capture the body, prefixed so the
+                        // conversion walker can re-parse each line.
+                        let m = reLiquidClose.Match(text, e + 2)
+                        if m.Success then
+                            tokens.Add(TTag(lstrip, "liquid:" + text.Substring(e + 2, m.Index - (e + 2)), rstrip))
+                            i <- m.Index + m.Length
+                        else
+                            tokens.Add(TTag(lstrip, body, rstrip)); i <- e + 2
                     else
                         tokens.Add(TTag(lstrip, body, rstrip))
                         i <- e + 2
@@ -221,48 +259,48 @@ module LiquidConverter =
 
                 let inForBody () = ctxStack |> Seq.contains "for"
 
-                for tok in tokens do
-                    match tok with
-                    | TText t -> sb.Append(t) |> ignore
-
-                    | TOutput(l, expr, r) ->
-                        // Liquid never auto-escapes; Nunjucks does. `| safe` restores
-                        // the raw-output contract, and is idempotent if already safe.
+                // Handle one Liquid tag line. Used for top-level tokens and for
+                // each line inside a {% liquid %} block.
+                let rec convertTagBody (l: bool) (r: bool) (body: string) : unit =
+                    let words =
+                        body.Split([|' '; '\t'; '\n'; '\r'|], StringSplitOptions.RemoveEmptyEntries)
+                        |> Array.toList
+                    let name = if words.IsEmpty then "" else words.Head
+                    let rest = if words.IsEmpty then "" else String.Join(" ", words.Tail)
+                    let emitTag (inner: string) =
+                        sb.Append("{%") |> ignore
+                        if l then sb.Append("-") |> ignore
+                        sb.Append(' ') |> ignore
+                        sb.Append(inner) |> ignore
+                        sb.Append(' ') |> ignore
+                        if r then sb.Append("-") |> ignore
+                        sb.Append("%}") |> ignore
+                    let emitOutput (inner: string) =
                         sb.Append("{{") |> ignore
                         if l then sb.Append("-") |> ignore
                         sb.Append(' ') |> ignore
-                        sb.Append(rewriteExpr expr) |> ignore
-                        sb.Append(" | safe") |> ignore
+                        sb.Append(inner) |> ignore
                         sb.Append(' ') |> ignore
                         if r then sb.Append("-") |> ignore
                         sb.Append("}}") |> ignore
+                    let popContext (expected: string) =
+                        if ctxStack.Count > 0 && ctxStack.[ctxStack.Count-1] = expected then
+                            ctxStack.RemoveAt(ctxStack.Count-1)
 
-                    | TTag(l, body, r) ->
-                        let words =
-                            body.Split([|' '; '\t'; '\n'; '\r'|], StringSplitOptions.RemoveEmptyEntries)
-                            |> Array.toList
-                        let name = if words.IsEmpty then "" else words.Head
-                        let rest = if words.IsEmpty then "" else String.Join(" ", words.Tail)
-                        let emitTag (inner: string) =
-                            sb.Append("{%") |> ignore
-                            if l then sb.Append("-") |> ignore
-                            sb.Append(' ') |> ignore
-                            sb.Append(inner) |> ignore
-                            sb.Append(' ') |> ignore
-                            if r then sb.Append("-") |> ignore
-                            sb.Append("%}") |> ignore
-                        let emitOutput (inner: string) =
-                            sb.Append("{{") |> ignore
-                            if l then sb.Append("-") |> ignore
-                            sb.Append(' ') |> ignore
-                            sb.Append(inner) |> ignore
-                            sb.Append(' ') |> ignore
-                            if r then sb.Append("-") |> ignore
-                            sb.Append("}}") |> ignore
-                        let popContext (expected: string) =
-                            if ctxStack.Count > 0 && ctxStack.[ctxStack.Count-1] = expected then
-                                ctxStack.RemoveAt(ctxStack.Count-1)
-
+                    // {% liquid %} block: each non-empty line is a tag or output.
+                    if name.StartsWith("liquid:") then
+                        let block = body.Substring("liquid:".Length)
+                        for line in block.Split('\n') do
+                            let lt = line.Trim()
+                            if lt <> "" then
+                                if lt.StartsWith("{%") && lt.EndsWith("%}") then
+                                    convertTagBody false false (lt.Substring(2, lt.Length - 4).Trim())
+                                elif lt.StartsWith("{{") && lt.EndsWith("}}") then
+                                    let expr = lt.Substring(2, lt.Length - 4).Trim()
+                                    sb.Append("{{ ").Append(rewriteExpr expr).Append(" | safe }}") |> ignore
+                                else
+                                    convertTagBody false false lt
+                    else
                         match name with
                         | "" -> ()
 
@@ -331,7 +369,7 @@ module LiquidConverter =
                         | "endfor" ->
                             popContext "for"; emitTag "endfor"
 
-                        // ── include (with / for forms) ───────────────
+                        // ── include / render (with / for forms) ──────
                         | "include" when words.Length >= 2 ->
                             match words.Tail |> List.tryFindIndex (fun w -> w = "for") with
                             | Some fi when fi >= 1 && fi + 2 < words.Tail.Length ->
@@ -345,6 +383,10 @@ module LiquidConverter =
                                 // `with x` drops away: the Nunjucks include passes the full
                                 // context, so the variable is already visible inside.
                                 emitTag ("include " + words.Tail.Head)
+                        | "render" when words.Length >= 2 ->
+                            // Liquid's render isolates scope; the Nunjucks include
+                            // shares the full context — close enough for static sites.
+                            emitTag ("include " + words.[1])
 
                         // ── cycle → loop.cycle (inside a for body) ───
                         | "cycle" when inForBody () ->
@@ -362,5 +404,23 @@ module LiquidConverter =
                         // Unknown tags (increment/decrement/tablerow/...)
                         // fail loudly at render time — see module docs.
                         | _ -> emitTag body
+
+                for tok in tokens do
+                    match tok with
+                    | TText t -> sb.Append(t) |> ignore
+
+                    | TOutput(l, expr, r) ->
+                        // Liquid never auto-escapes; Nunjucks does. `| safe` restores
+                        // the raw-output contract, and is idempotent if already safe.
+                        sb.Append("{{") |> ignore
+                        if l then sb.Append("-") |> ignore
+                        sb.Append(' ') |> ignore
+                        sb.Append(rewriteExpr expr) |> ignore
+                        sb.Append(" | safe") |> ignore
+                        sb.Append(' ') |> ignore
+                        if r then sb.Append("-") |> ignore
+                        sb.Append("}}") |> ignore
+
+                    | TTag(l, body, r) -> convertTagBody l r body
 
                 sb.ToString())

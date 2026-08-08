@@ -323,31 +323,166 @@ module DslSugar =
     /// Inject the self-contained pjax client script.
     /// Place in head or before closing body tag.
     /// Usage: `pjax_script ()`
+    ///
+    /// Reuses Zest.Engine.Resources.ZestPjax.script (the single source of
+    /// truth also served to Nunjucks templates via `{{ pjaxScript | safe }}`),
+    /// so the DSL and template paths always ship the same script.
     let pjax_script () : string =
-        """<script>
-(function(){
-function c(){return document.querySelector('main')||document.getElementById('content')||document.body}
-function load(href,push){if(!push)push=true;
-document.dispatchEvent(new CustomEvent('pjax:start',{detail:{url:href}}));
-var container=c();container.style.opacity='0.3';container.style.transition='opacity .15s';
-fetch(href,{headers:{'X-PJAX':'true'}}).then(function(r){if(!r.ok)throw Error(r.status);
-return r.text()}).then(function(html){var doc=new DOMParser().parseFromString(html,'text/html');
-var next=doc.querySelector('main')||doc.getElementById('content')||doc.body;
-var container=c();
-if(next)container.innerHTML=next.innerHTML;
-if(push)history.pushState({pjax:true,url:href},'',href);
-document.title=doc.title;
-container.style.opacity='1';
-document.dispatchEvent(new CustomEvent('pjax:end',{detail:{url:href}}));
-}).catch(function(e){var container=c();container.style.opacity='1';
-if(push)location.href=href})}
-document.addEventListener('click',function(e){var a=e.target.closest('a[href]');
-if(!a)return;var href=a.getAttribute('href');
-if(!href||href.startsWith('#')||href.startsWith('javascript:')||href.startsWith('mailto:')||href.startsWith('tel:'))return;
-if(a.host!==location.host)return;if(a.hasAttribute('download'))return;
-if(a.getAttribute('target')==='_blank')return;
-e.preventDefault();load(href,true)});
-window.addEventListener('popstate',function(e){if(e.state&&e.state.pjax)
-load(e.state.url||location.href,false)})
-})();
-</script>"""
+        Zest.Engine.Resources.ZestPjax.script
+
+    // ── Error handling ──────────────────────────────────────────
+
+    /// Execute `tryFn` and recover via `onError` when it raises.
+    /// `onError` receives the exception and must produce a result.
+    ///
+    ///   try_catch (fun () -> risky ()) (fun ex -> sprintf "failed: %s" ex.Message)
+    let try_catch (tryFn: unit -> 'T) (onError: exn -> 'T) : 'T =
+        try tryFn ()
+        with ex -> onError ex
+
+    // ── Async / concurrency ─────────────────────────────────────
+
+    /// Map a function over a list concurrently on the .NET thread pool,
+    /// preserving input order in the result. Exceptions propagate to the
+    /// caller (wrap with `try_catch` to recover per item).
+    let async_map (f: 'a -> 'b) (items: 'a list) : 'b list =
+        items
+        |> List.map (fun x -> async { return f x })
+        |> Async.Parallel
+        |> Async.RunSynchronously
+        |> Array.toList
+
+    // ── Timing control ──────────────────────────────────────────
+
+    /// Debounce: returns a wrapper that postpones invoking `f` until
+    /// `delayMs` milliseconds have elapsed without another call. A call while
+    /// a timer is pending resets the delay (trailing-edge semantics). The
+    /// last argument received wins.
+    let debounce (delayMs: int) (f: 'T -> unit) : ('T -> unit) =
+        let syncRoot = obj ()
+        let mutable timer = new System.Threading.Timer(fun _ -> ())
+        let mutable pending = false
+        fun (arg: 'T) ->
+            lock syncRoot (fun () ->
+                if not pending then
+                    pending <- true
+                    timer.Dispose()
+                    timer <-
+                        new System.Threading.Timer(
+                            (fun _ ->
+                                lock syncRoot (fun () -> pending <- false)
+                                f arg),
+                            null, delayMs, System.Threading.Timeout.Infinite)
+                else
+                    timer.Change(delayMs, System.Threading.Timeout.Infinite) |> ignore)
+
+    /// Throttle: returns a wrapper that invokes `f` at most once per
+    /// `intervalMs` window (leading-edge semantics); calls within the window
+    /// are dropped.
+    let throttle (intervalMs: int) (f: 'T -> unit) : ('T -> unit) =
+        let sw = System.Diagnostics.Stopwatch.StartNew()
+        let mutable lastRun = 0L
+        fun (arg: 'T) ->
+            let now = sw.ElapsedMilliseconds
+            if now - lastRun >= int64 intervalMs then
+                lastRun <- now
+                f arg
+
+    // ── Performance ─────────────────────────────────────────────
+
+    /// Memoize a unary function with a bounded cache. When the cache reaches
+    /// `maxSize` entries it is cleared entirely (simple bounded strategy).
+    /// `maxSize <= 0` disables caching and returns `f` unchanged.
+    let memoize (maxSize: int) (f: 'a -> 'b) : ('a -> 'b) =
+        let cache = System.Collections.Generic.Dictionary<'a, 'b>()
+        if maxSize <= 0 then f
+        else
+            fun x ->
+                lock cache (fun () ->
+                    match cache.TryGetValue x with
+                    | true, v -> v
+                    | _ ->
+                        let v = f x
+                        if cache.Count >= maxSize then cache.Clear ()
+                        cache.[x] <- v
+                        v)
+
+    // ── Functional composition helpers ──────────────────────────
+
+    /// Tap: run a side effect and return the value unchanged.
+    ///   tap (fun v -> printfn "%O" v) 42
+    let tap (f: 'T -> unit) (value: 'T) =
+        f value; value
+
+    /// Curry: turn a function of a pair into a two-argument function.
+    ///   curry (fun (a, b) -> a + b) 1 2   → 3
+    let curry (f: 'a * 'b -> 'c) (a: 'a) (b: 'b) : 'c = f (a, b)
+
+    /// Uncurry: turn a two-argument function into a function of a pair.
+    let uncurry (f: 'a -> 'b -> 'c) (pair: 'a * 'b) : 'c = f (fst pair) (snd pair)
+
+    /// Compose two unary functions: `pipe2 f g x = g (f x)`.
+    let pipe2 (f: 'a -> 'b) (g: 'b -> 'c) (x: 'a) : 'c = g (f x)
+
+    /// Compose three unary functions: `pipe3 f g h x = h (g (f x))`.
+    let pipe3 (f: 'a -> 'b) (g: 'b -> 'c) (h: 'c -> 'd) (x: 'a) : 'd = h (g (f x))
+
+    // ── Array / list manipulation ───────────────────────────────
+
+    /// Flatten one level of nesting. Repeated calls flatten deeper structures:
+    /// `flatten (flatten [[[1];[2]]])` → `[1;2]`.
+    let flatten (items: 'a list list) : 'a list =
+        items |> List.collect id
+
+    /// Interleave multiple lists element-by-element, taking one element from
+    /// each list in turn until all lists are exhausted.
+    ///   interleave [["a";"b";"c"]; ["1";"2"]]  →  ["a";"1";"b";"2";"c"]
+    let interleave (lists: 'a list list) : 'a list =
+        let rec loop (remaining: 'a list list) (acc: 'a list) : 'a list =
+            let active =
+                remaining
+                |> List.choose (function
+                    | x :: rest -> Some (x, rest)
+                    | [] -> None)
+            match active with
+            | [] -> List.rev acc
+            | pairs ->
+                let heads, tails = List.unzip pairs
+                loop tails (List.rev heads @ acc)
+        loop lists []
+
+    /// Zip two lists with a custom combiner, stopping at the shorter list
+    /// (no exception when lengths differ).
+    ///   zip_with (fun a b -> a + b) [1;2;3] [10;20]  →  [11;22]
+    let zip_with (f: 'a -> 'b -> 'c) (left: 'a list) (right: 'b list) : 'c list =
+        let n = min left.Length right.Length
+        [ for i in 0 .. n - 1 -> f left.[i] right.[i] ]
+
+    // ── String processing ───────────────────────────────────────
+
+    /// Split a string by a literal separator (not a regex).
+    ///   split_by "," "a,b,c"  →  ["a";"b";"c"]
+    let split_by (separator: string) (s: string) : string list =
+        if isNull s then []
+        elif String.IsNullOrEmpty separator then [ s ]
+        else
+            s.Split([| separator |], StringSplitOptions.None)
+            |> Array.toList
+
+    /// Case-sensitive prefix check.
+    let starts_with (prefix: string) (s: string) : bool =
+        not (isNull s) && not (isNull prefix) && s.StartsWith(prefix, StringComparison.Ordinal)
+
+    /// Case-sensitive suffix check.
+    let ends_with (suffix: string) (s: string) : bool =
+        not (isNull s) && not (isNull suffix) && s.EndsWith(suffix, StringComparison.Ordinal)
+
+    /// Case-sensitive substring check.
+    let contains (substr: string) (s: string) : bool =
+        not (isNull s) && not (isNull substr) && s.IndexOf(substr, StringComparison.Ordinal) >= 0
+
+    /// Replace every occurrence of `oldValue` with `newValue` (literal, not regex).
+    let replace_all (oldValue: string) (newValue: string) (s: string) : string =
+        if isNull s then s
+        elif String.IsNullOrEmpty oldValue then s
+        else s.Replace(oldValue, newValue)

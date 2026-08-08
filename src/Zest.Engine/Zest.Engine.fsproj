@@ -15,9 +15,10 @@
     <Compile Include="Theme/ThemeResolver.fs" />
     <Compile Include="Theme/ThemeConfigLoader.fs" />
 
-    <!-- ZCSS pipeline -->
+    <!-- ZCSS pipeline (bottom-up: AST → file cache → parser → compiler → processor) -->
     <Compile Include="Zcss/ZcssAst.fs" />
     <Compile Include="Zcss/ZcssCache.fs" />
+    <!-- Parser layer (depends on AST + cache) -->
     <Compile Include="Zcss/BuiltinFunctions.fs" />
     <Compile Include="Zcss/ColorPipeline.fs" />
     <Compile Include="Zcss/MathEvaluator.fs" />
@@ -29,8 +30,10 @@
     <Compile Include="Zcss/BuiltinStyles.fs" />
     <Compile Include="Zcss/ZcssHelpers.fs" />
     <Compile Include="Zcss/ZcssModules.fs" />
+    <!-- Compilation + entry points (depend on the parser layer) -->
     <Compile Include="Zcss/ZcssCompiler.fs" />
     <Compile Include="Zcss/ZcssProcessor.fs" />
+    <!-- Tooling -->
     <Compile Include="Zcss/ZcssCompletions.fs" />
     <Compile Include="Zcss/TypeChecker.fs" />
 
@@ -65,18 +68,21 @@
     <Compile Include="Html/PagedResult.fs" />
     <Compile Include="Html/TemplateData.fs" />
 
-    <!-- Scripting (depends on Domain, Routing, Parsing, Template, Html) -->
+    <!-- Static resources (no project dependencies; consumed by Scripting/Build) -->
+    <Compile Include="Resources/ZestPjax.fs" />
+
+    <!-- I18n locale system (consumed by Scripting filters and the Build pipeline) -->
+    <Compile Include="I18n/LocaleLoader.fs" />
+
+    <!-- Scripting (depends on Domain, Routing, Parsing, Template, Html, Resources) -->
     <Compile Include="Scripting/FsiSession.fs" />
     <Compile Include="Scripting/InitEngine.fs" />
     <Compile Include="Scripting/PageQuery.fs" />
-    <Compile Include="Resources/ZestPjax.fs" />
     <Compile Include="Scripting/FilterRegistry.fs" />
     <Compile Include="Scripting/ScriptDiscovery.fs" />
     <Compile Include="Scripting/ScriptRunner.fs" />
     <Compile Include="Scripting/ScriptEvaluator.fs" />
 
-    <!-- I18n locale system -->
-    <Compile Include="I18n/LocaleLoader.fs" />
     <!-- Build pipeline (depends on everything above) -->
     <Compile Include="Build/PathResolver.fs" />
     <Compile Include="Build/BuildProgress.fs" />

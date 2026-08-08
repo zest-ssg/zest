@@ -43,7 +43,8 @@ module HamlConverter =
     let private commentLine = Regex(@"^\s*/", RegexOptions.Compiled)
     let private silentCode  = Regex(@"^\s*-", RegexOptions.Compiled)
     let private expression  = Regex(@"^\s*=\s+", RegexOptions.Compiled)
-    let private filterStart = Regex(@"^\s*:(css|javascript|js|coffee|markdown|plain)\s*$", RegexOptions.Compiled)
+    let private rawExpression = Regex(@"^\s*!=\s+", RegexOptions.Compiled)
+    let private filterStart = Regex(@"^\s*:(css|javascript|js|coffee|scss|sass|less|markdown|plain)\s*$", RegexOptions.Compiled)
     let private hamlTag     =
         Regex(@"^\s*(%(?<tag>[a-zA-Z][a-zA-Z0-9]*))?(\#(?<id>[a-zA-Z][a-zA-Z0-9\-_]*))?(\.(?<cls>[a-zA-Z][a-zA-Z0-9\-_]+))*(?<attrs>\{[^\}]*\})?(?<rest>.*)$",
               RegexOptions.Compiled)
@@ -108,10 +109,16 @@ module HamlConverter =
                             i <- i + 1
                         let bodyText = body.ToString().TrimEnd()
                         match filterName with
-                        | "css" -> sb.AppendFormat("<style>\n{0}\n</style>\n", bodyText) |> ignore
+                        | "css" | "scss" | "sass" | "less" ->
+                            sb.AppendFormat("<style>\n{0}\n</style>\n", bodyText) |> ignore
                         | "javascript" | "js" -> sb.AppendFormat("<script>\n{0}\n</script>\n", bodyText) |> ignore
                         | "markdown" -> sb.AppendFormat("{0}\n", bodyText) |> ignore  // pass through to MD pipeline
                         | _ -> sb.Append(bodyText).Append('\n') |> ignore
+                elif rawExpression.IsMatch(line) then
+                    // `!= expr` — unescaped output (bypasses Nunjucks auto-escape).
+                    let exp = rawExpression.Replace(line.Trim(), "")
+                    sb.AppendLine(sprintf "{{ %s | safe }}" exp) |> ignore
+                    i <- i + 1
                 elif expression.IsMatch(line) then
                     let exp = expression.Replace(line.Trim(), "")
                     sb.AppendLine(sprintf "{{ %s }}" exp) |> ignore
@@ -159,10 +166,14 @@ module HamlConverter =
                                         if parts.Length >= 2 then
                                             let key = parts.[0].Trim()
                                             let value = parts.[1..] |> String.concat ":" |> (fun s -> s.Trim().Trim('"', '\''))
-                                            sb.Append(sprintf " %s=\"%s\"" key (TemplateUtils.attrEncode value)) |> ignore
+                                            match value.ToLowerInvariant() with
+                                            | "true" -> sb.Append(sprintf " %s" key) |> ignore
+                                            | "false" -> ()  // boolean false → attribute omitted
+                                            | _ -> sb.Append(sprintf " %s=\"%s\"" key (TemplateUtils.attrEncode value)) |> ignore
 
                                 let content =
-                                    if rest.StartsWith("=") then sprintf "{{ %s }}" (rest.Substring(1).Trim())
+                                    if rest.StartsWith("!=") then sprintf "{{ %s | safe }}" (rest.Substring(2).Trim())
+                                    elif rest.StartsWith("=") then sprintf "{{ %s }}" (rest.Substring(1).Trim())
                                     else rest
 
                                 if TemplateUtils.isVoidElement tag then
