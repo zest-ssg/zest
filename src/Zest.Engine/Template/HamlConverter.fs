@@ -18,11 +18,23 @@ open System.Text.RegularExpressions
 //   %tag{attr: v}  → <tag attr="v"></tag>
 //   Content text   → inline content (no tag, just text)
 //   = expression   → evaluated (escaped placeholder)
+//   != expression  → unescaped output ({{ expr | safe }})
+//   &= expression  → escaped output (alias of =)
+//   #{expr}        → Nunjucks {{ expr }} interpolation
+//   !!! / !!! 5    → DOCTYPE declaration
 //   - code         → silent code (stripped)
 //   / comment      → HTML comment
 //   :css           → <style> block (indented body captured)
 //   :javascript    → <script> block
 //   :markdown      → passthrough (left for the Markdown pipeline)
+//   Multiline `{...}` attribute hashes spread over following lines.
+//
+// Deliberately NOT supported (Ruby semantics have no Nunjucks equivalent):
+//   [obj, :method] object references  → Ruby objects cannot be evaluated here;
+//     the token passes through as literal text.
+//   ~ expression (preserve whitespace) → no Nunjucks equivalent; falls through
+//     as plain text.
+//   Ruby code inside `-` lines is stripped, not executed.
 //
 // Optimisations vs. original:
 //   • All regexes hoisted to module-level static fields (no per-call
@@ -52,11 +64,47 @@ module HamlConverter =
     let private clsIdPat =
         Regex(@"^(?:%[a-zA-Z][a-zA-Z0-9]*)?(?:\#[a-zA-Z][a-zA-Z0-9\-_]*)?((?:\.[a-zA-Z][a-zA-Z0-9\-_]+)*)",
               RegexOptions.Compiled)
+    let private interpRegex    = Regex(@"#\{([^}]+)\}", RegexOptions.Compiled)
+    let private doctypeLine    = Regex(@"^\s*!!!\s*(.*)$", RegexOptions.Compiled)
+    let private ampExpression  = Regex(@"^\s*&=\s+", RegexOptions.Compiled)
 
     /// Count leading whitespace as an indent LEVEL.
     /// Strict: one tab or two spaces per level; returns None for mixed or
     /// odd-width indentation so the caller can report instead of guessing.
     let private indentLevel (line: string) = TemplateUtils.indentLevelStrict line
+
+    /// Replace HAML `#{expr}` interpolation with Nunjucks `{{ expr }}`.
+    let private renderInterp (s: string) : string =
+        interpRegex.Replace(s, fun m -> "{{ " + m.Groups.[1].Value.Trim() + " }}")
+
+    /// DOCTYPE string for the common HAML `!!!` variants.
+    let private doctypeHtml (variant: string) : string =
+        match variant.Trim().ToLowerInvariant() with
+        | "" | "5" | "html" ->
+            "<!DOCTYPE html>"
+        | "strict" ->
+            "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">"
+        | "frameset" ->
+            "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Frameset//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-frameset.dtd\">"
+        | "transitional" ->
+            "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">"
+        | "1.1" ->
+            "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.1//EN\" \"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd\">"
+        | "basic" ->
+            "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML Basic 1.1//EN\" \"http://www.w3.org/TR/xhtml-basic/xhtml-basic11.dtd\">"
+        | "mobile" ->
+            "<!DOCTYPE html PUBLIC \"-//WAPFORUM//DTD XHTML Mobile 1.2//EN\" \"http://www.openmobilealliance.org/tech/DTD/xhtml-mobile12.dtd\">"
+        | "xml" ->
+            "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
+        | _ ->
+            "<!DOCTYPE html>"
+
+    /// Net `{` minus `}` on a line, used to detect attribute hashes that span
+    /// multiple lines. Quote contents are not tracked, so a brace inside a
+    /// string value is counted; multiline hashes rarely embed such braces.
+    let private braceBalance (s: string) : int =
+        (s |> Seq.filter (fun c -> c = '{') |> Seq.length)
+        - (s |> Seq.filter (fun c -> c = '}') |> Seq.length)
 
     /// Minimal HAML-to-HTML conversion.
     /// Returns the HTML string (not wrapped in additional tags).
@@ -123,23 +171,50 @@ module HamlConverter =
                     let exp = expression.Replace(line.Trim(), "")
                     sb.AppendLine(sprintf "{{ %s }}" exp) |> ignore
                     i <- i + 1
+                elif ampExpression.IsMatch(line) then
+                    // `&= expr` — escaped output (alias of `=`).
+                    let exp = ampExpression.Replace(line.Trim(), "")
+                    sb.AppendLine(sprintf "{{ %s }}" exp) |> ignore
+                    i <- i + 1
+                elif doctypeLine.IsMatch(line) then
+                    // `!!!` / `!!! 5` — DOCTYPE declaration.
+                    let variant = doctypeLine.Match(line).Groups.[1].Value
+                    sb.AppendLine(doctypeHtml variant) |> ignore
+                    i <- i + 1
                 else
+                    // A tag line may carry a `{...}` attribute hash that spans
+                    // several lines; join them until the braces balance. The
+                    // original line still drives indentation, while `logicalLine`
+                    // is what the tag parser sees.
+                    let logicalLine, nextI =
+                        if braceBalance line > 0 then
+                            let acc = StringBuilder(line)
+                            let mutable j = i + 1
+                            let mutable depth = braceBalance line
+                            while j < n && depth > 0 do
+                                acc.Append(' ').Append(lines.[j].Trim()) |> ignore
+                                depth <- depth + braceBalance lines.[j]
+                                j <- j + 1
+                            acc.ToString(), j
+                        else line, i + 1
+
                     match indentLevel line with
                     | None ->
                         // Refuse to guess a nesting level: mixed tabs/spaces or
                         // an odd space width cannot build a sound tree.
                         sb.AppendLine(sprintf "<!-- Haml indent error: %s -->" (TemplateUtils.htmlEncode (line.Trim()))) |> ignore
+                        i <- nextI
                     | Some indent ->
                         closeUntil indent
 
-                        let m = hamlTag.Match(line)
+                        let m = hamlTag.Match(logicalLine)
                         if m.Success then
                             let tagRaw = if m.Groups.["tag"].Success then m.Groups.["tag"].Value else ""
                             let id     = if m.Groups.["id"].Success  then m.Groups.["id"].Value  else ""
                             let rest   = if m.Groups.["rest"].Success then m.Groups.["rest"].Value.Trim() else ""
 
                             let cls =
-                                let clsMatch = clsIdPat.Match(line.TrimStart())
+                                let clsMatch = clsIdPat.Match(logicalLine.TrimStart())
                                 if clsMatch.Success && clsMatch.Groups.[1].Success then
                                     clsMatch.Groups.[1].Value.Split('.', System.StringSplitOptions.RemoveEmptyEntries)
                                     |> String.concat " "
@@ -149,8 +224,8 @@ module HamlConverter =
                                       elif tagRaw = "" then "" else tagRaw
 
                             if tag = "" then
-                                let plainText = line.Trim()
-                                if plainText <> "" then sb.AppendLine(TemplateUtils.htmlEncode plainText) |> ignore
+                                let plainText = logicalLine.Trim()
+                                if plainText <> "" then sb.AppendLine(TemplateUtils.htmlEncode (renderInterp plainText)) |> ignore
                             else
                                 let attrsRaw = if m.Groups.["attrs"].Success then m.Groups.["attrs"].Value else ""
                                 let attrs = if attrsRaw.Length >= 2 then attrsRaw.Substring(1, attrsRaw.Length - 2) else attrsRaw
@@ -169,12 +244,12 @@ module HamlConverter =
                                             match value.ToLowerInvariant() with
                                             | "true" -> sb.Append(sprintf " %s" key) |> ignore
                                             | "false" -> ()  // boolean false → attribute omitted
-                                            | _ -> sb.Append(sprintf " %s=\"%s\"" key (TemplateUtils.attrEncode value)) |> ignore
+                                            | _ -> sb.Append(sprintf " %s=\"%s\"" key (TemplateUtils.attrEncode (renderInterp value))) |> ignore
 
                                 let content =
                                     if rest.StartsWith("!=") then sprintf "{{ %s | safe }}" (rest.Substring(2).Trim())
                                     elif rest.StartsWith("=") then sprintf "{{ %s }}" (rest.Substring(1).Trim())
-                                    else rest
+                                    else renderInterp rest
 
                                 if TemplateUtils.isVoidElement tag then
                                     sb.Append('>') |> ignore; sb.AppendLine() |> ignore
@@ -187,8 +262,8 @@ module HamlConverter =
                                     sb.AppendLine(">") |> ignore
                                     indentStack <- (indent, tag) :: indentStack
                         else
-                            sb.AppendLine(TemplateUtils.htmlEncode (line.Trim())) |> ignore
-                    i <- i + 1
+                            sb.AppendLine(TemplateUtils.htmlEncode (renderInterp (logicalLine.Trim()))) |> ignore
+                        i <- nextI
 
             // Close remaining open tags
             while indentStack.Length > 0 do

@@ -18,6 +18,8 @@ open System.Text.RegularExpressions
 //   - var x = expr             → {% set x = expr %}
 //   if / else if / else / unless → {% if %}/{% elif %}/{% else %}/{% if not %}
 //   each item in list / each val, key in obj → {% for %} (key, val swapped)
+//   case / when / default      → {% if %}/{% elif %}/{% else %} chain
+//   while cond                 → bounded {% for %} + {% break %} (see caveats)
 //   mixin / +mixin             → {% macro %} / {{ macro() }}
 //   extends / block            → {% extends %}/{% block %}
 //   include path               → {% include "path" %}
@@ -26,8 +28,22 @@ open System.Text.RegularExpressions
 //   // comment / //-           → HTML comment / stripped
 //   #{expr}                    → {{ expr }} (text interpolation)
 //
+// Best-effort approximations with documented caveats:
+//   while          Nunjucks has no while loop. It is lowered to
+//     {% for __while_i in range(0, 100000) %} with an immediate break check,
+//     so loops beyond 100000 iterations silently truncate. Conditions that
+//     mutate state every iteration behave correctly only up to that cap.
+//   case/when      `when a, b` multiple values become `a or b` equality tests.
+//     Inline `when x: ...` bodies, `||` value lists, and `default` placed before
+//     a later `when` are not supported; `default` must be the last branch.
+//   attributes     Comma-separated attributes and nested `()/[]/{}` values
+//     (e.g. class=['a','b'], style={...}) are preserved as literal values.
+//     Class merging between `(class="x")` and `.y` shorthand, `&attributes`,
+//     `*` spread, and JavaScript expressions in attribute values are not
+//     evaluated; they pass through as raw text or are dropped.
+//
 // Build as an indentation tree (recursive descent) so block constructs
-// (if/each/mixin/extends/block) can be converted to their Nunjucks
+// (if/each/case/while/mixin/extends/block) can be converted to their Nunjucks
 // equivalents instead of being flattened.
 // ============================================================
 
@@ -48,6 +64,9 @@ module PugConverter =
     let private unlessPat    = Regex(@"^\s*unless\s+(.+)$", RegexOptions.Compiled)
     let private elsePat      = Regex(@"^\s*else\s*(if\s+(.+))?\s*$", RegexOptions.Compiled)
     let private eachPat      = Regex(@"^\s*each\s+([\w, ]+?)\s+in\s+(.+)$", RegexOptions.Compiled)
+    let private casePat      = Regex(@"^\s*case\s+(.+)$", RegexOptions.Compiled)
+    let private whenPat      = Regex(@"^\s*when\s+(.+)$", RegexOptions.Compiled)
+    let private whilePat     = Regex(@"^\s*while\s+(.+)$", RegexOptions.Compiled)
     let private doctypePat   = Regex(@"^\s*doctype\s*([\w.]*)\s*$", RegexOptions.Compiled)
     let private pugTag       =
         Regex(@"^\s*(?<tag>[a-zA-Z][a-zA-Z0-9-]*)?(\#(?<id>[a-zA-Z][a-zA-Z0-9\-_]*))?((?:\.[a-zA-Z][a-zA-Z0-9\-_]+)*)(\((?<attrs>[^\)]*)\))?(?<rest>.*)$",
@@ -90,14 +109,17 @@ module PugConverter =
 
     /// Parse a Pug attribute list `a="x" b='y' c=3 d=var e` into (key, rendered) pairs.
     /// A key without a value (or =true) renders as a bare attribute; =false drops it.
+    /// Commas between attributes are optional; nested `()/[]/{}` values are kept
+    /// whole so `class=['a','b']` and `style={...}` survive as single values.
     let private parseAttrs (s: string) : (string * string) list =
         let res = ResizeArray<string * string>()
         let n = s.Length
         let mutable i = 0
         while i < n do
-            while i < n && Char.IsWhiteSpace s.[i] do i <- i + 1
+            // Skip whitespace and optional comma separators.
+            while i < n && (Char.IsWhiteSpace s.[i] || s.[i] = ',') do i <- i + 1
             let kb = i
-            while i < n && (Char.IsLetterOrDigit s.[i] || s.[i] = '-' || s.[i] = '_') do i <- i + 1
+            while i < n && (Char.IsLetterOrDigit s.[i] || s.[i] = '-' || s.[i] = '_' || s.[i] = ':') do i <- i + 1
             if i > kb then
                 let key = s.Substring(kb, i - kb)
                 while i < n && Char.IsWhiteSpace s.[i] do i <- i + 1
@@ -113,11 +135,22 @@ module PugConverter =
                             res.Add(key, renderAttrValue (s.Substring(vStart, vEnd - vStart)) false)
                             i <- vEnd + 1
                     else
+                        // Bare value: read until top-level whitespace/comma,
+                        // tracking brackets so `[a,b]` / `{...}` / `(...)` stay intact.
                         let vStart = i
-                        while i < n && not (Char.IsWhiteSpace s.[i]) && s.[i] <> ',' do i <- i + 1
+                        let mutable depth = 0
+                        while i < n && (depth > 0 || (not (Char.IsWhiteSpace s.[i]) && s.[i] <> ',')) do
+                            match s.[i] with
+                            | '(' | '[' | '{' -> depth <- depth + 1
+                            | ')' | ']' | '}' -> depth <- depth - 1
+                            | _ -> ()
+                            i <- i + 1
                         res.Add(key, renderAttrValue (s.Substring(vStart, i - vStart)) true)
                 else
                     res.Add(key, "")   // boolean attribute (renders bare)
+            else
+                // Unknown lead character (e.g. `&attributes`, `*`): skip it.
+                i <- i + 1
         List.ofSeq res
 
     // ── AST ──────────────────────────────────────────────────
@@ -129,6 +162,8 @@ module PugConverter =
         | If of cond: string * thenNodes: PNode list * elseOpt: (PNode list) option
         | Unless of cond: string * body: PNode list
         | Each of varName: string * iter: string * body: PNode list * elseOpt: (PNode list) option
+        | Case of subject: string * branches: (string option * PNode list) list
+        | While of cond: string * body: PNode list
         | MixinDef of name: string * args: string * body: PNode list
         | MixinCall of name: string * args: string
         | Extends of path: string
@@ -213,6 +248,33 @@ module PugConverter =
             | [v; k] -> k + ", " + v
             | l -> String.concat ", " l
 
+        // Collect children indented deeper than an arbitrary level, so `case`
+        // branches can each consume their own indented body.
+        let childrenAt (level: int) (restAfter: (int * string) list) : PNode list * (int * string) list =
+            match restAfter with
+            | (cind, _) :: _ when cind > level -> parseBlock restAfter cind
+            | _ -> [], restAfter
+
+        // Parse the `when`/`default` branches of a `case` statement. Branches
+        // sit at a fixed indentation `level`; each consumes its deeper body.
+        let rec caseBranches (rest: (int * string) list) (level: int)
+                             (acc: (string option * PNode list) list)
+                             : (string option * PNode list) list * (int * string) list =
+            match rest with
+            | (bind, btxt) :: btail when bind = level ->
+                let bt = btxt.Trim()
+                if bt.StartsWith("when", StringComparison.OrdinalIgnoreCase) then
+                    let m = whenPat.Match btxt
+                    if m.Success then
+                        let body, ra = childrenAt level btail
+                        caseBranches ra level (acc @ [Some (m.Groups.[1].Value.Trim()), body])
+                    else caseBranches btail level acc
+                elif String.Equals(bt, "default", StringComparison.OrdinalIgnoreCase) then
+                    let body, ra = childrenAt level btail
+                    caseBranches ra level (acc @ [None, body])
+                else acc, rest
+            | _ -> acc, rest
+
         if t.StartsWith("doctype", StringComparison.OrdinalIgnoreCase) then
             let m = doctypePat.Match text
             Doctype(if m.Success && m.Groups.[1].Success then m.Groups.[1].Value else ""), tail
@@ -272,6 +334,19 @@ module PugConverter =
                     | _ -> None, restAfter
                 Each(parseEachVar m.Groups.[1].Value, m.Groups.[2].Value.Trim(), body, elseOpt), restAfter2
             else Silent t, tail
+        elif casePat.IsMatch text then
+            let m = casePat.Match text
+            let subject = m.Groups.[1].Value.Trim()
+            let branchLevel =
+                match tail with
+                | (cind, _) :: _ when cind > ind -> cind
+                | _ -> ind + 1
+            let branches, restAfter = caseBranches tail branchLevel []
+            Case(subject, branches), restAfter
+        elif whilePat.IsMatch text then
+            let m = whilePat.Match text
+            let body, restAfter = takeChildren tail
+            While(m.Groups.[1].Value.Trim(), body), restAfter
         elif t.StartsWith("//") then
             let emit = not (t.StartsWith("//-"))
             let c = commentPat.Replace(text, "").Trim()
@@ -320,6 +395,15 @@ module PugConverter =
                 Text t, tail
 
     // ── Conversion (AST → Nunjucks text) ─────────────────────
+    /// Build the Nunjucks equality chain for a Pug `when` value list. Pug
+    /// allows `when 1, 2`; commas split into separate `or`-joined tests.
+    let private whenCondition (subject: string) (value: string) : string =
+        value.Split(',')
+        |> Array.map (fun s -> s.Trim())
+        |> Array.filter (fun s -> s <> "")
+        |> Array.map (fun v -> sprintf "%s == %s" subject v)
+        |> String.concat " or "
+
     let rec renderNodes (nodes: PNode list) (sb: StringBuilder) (indent: int) : unit =
         for node in nodes do renderNode node sb indent
 
@@ -406,6 +490,28 @@ module PugConverter =
                 sb.Append(pad).Append("{% else %}\n") |> ignore
                 renderNodes eb sb (indent + 1)
             | _ -> ()
+            sb.Append(pad).Append("{% endfor %}\n") |> ignore
+        | Case(_, []) -> ()
+        | Case(subject, branches) ->
+            let rec emitBranches (brs: (string option * PNode list) list) (first: bool) =
+                match brs with
+                | [] -> sb.Append(pad).Append("{% endif %}\n") |> ignore
+                | (valueOpt, body) :: rest ->
+                    match valueOpt with
+                    | None ->
+                        sb.Append(pad).Append("{% else %}\n") |> ignore
+                        renderNodes body sb (indent + 1)
+                        emitBranches rest false
+                    | Some value ->
+                        let kw = if first then "if" else "elif"
+                        sb.Append(pad).Append(sprintf "{%% %s %s %%}\n" kw (whenCondition subject value)) |> ignore
+                        renderNodes body sb (indent + 1)
+                        emitBranches rest false
+            emitBranches branches true
+        | While(cond, body) ->
+            sb.Append(pad).Append("{%% for __while_i in range(0, 100000) %%}\n") |> ignore
+            sb.Append(pad).Append(sprintf "{%% if not (%s) %%}{%% break %%}{%% endif %%}\n" cond) |> ignore
+            renderNodes body sb (indent + 1)
             sb.Append(pad).Append("{% endfor %}\n") |> ignore
         | If(cond, thenNodes, elseOpt) -> renderIfBranches cond thenNodes elseOpt sb indent false
         | Element(tag, id, cls, attrs, rest, children) -> renderElement tag id cls attrs rest children sb indent

@@ -31,10 +31,19 @@ open System.Text.RegularExpressions
 //   (a..b)                     → range(a, b + 1)
 //   nil                        → null
 //
-// Deliberately NOT supported (Nunjucks semantics cannot express them; rare in
-// real themes): increment/decrement state, tablerow, forloop.parentloop,
-// break/continue. Unknown tags are left untouched so they fail loudly at
-// render time instead of silently producing wrong output.
+// Best-effort approximations with documented caveats:
+//   increment/decrement → set-based arithmetic. Liquid keeps these in a
+//     separate counter namespace, so `{% assign n = 5 %}{% increment n %}`
+//     prints 0 (not 6); the conversion instead increments the assigned value.
+//   forloop.parentloop  → captured into `__parentloop` before each nested loop.
+//     Only the immediate parent is captured; deeper nesting reuses the same
+//     variable, so `parentloop.parentloop` is not preserved.
+//   break / continue   → Nunjucks break/continue (semantics match).
+//
+// Deliberately NOT supported (Nunjucks has no equivalent; rare in real
+// themes): tablerow (HTML table row generation). Unknown tags are left
+// untouched so they fail loudly at render time instead of silently producing
+// wrong output.
 //
 // Filter aliases and new filters (`take`, `contains`, `split`, `downcase`,
 // ...) are registered on the Nunjucks engine by FilterRegistry.
@@ -147,11 +156,16 @@ module LiquidConverter =
     /// Shared expression normalization: ranges, forloop, nil, filter args.
     let private rewriteExpr (expr: string) : string =
         let step1 = reRange.Replace(expr, fun m -> sprintf "range(%s, %d)" m.Groups.[1].Value (int m.Groups.[2].Value + 1))
-        let step2 = step1.Replace("forloop.", "loop.")
+        // Parent-loop access is rewritten before the generic forloop→loop map
+        // so the saved variable keeps its `.index`/`.rindex` suffixes.
+        let step2 = step1.Replace("forloop.parentloop", "__parentloop")
+        let step3 = step2.Replace("forloop.", "loop.")
         // Liquid rindex/rindex0 (1-based from the end) == Nunjucks revindex/revindex0.
-        let step3 = step2.Replace("loop.rindex0", "loop.revindex0").Replace("loop.rindex", "loop.revindex")
-        let step4 = reNil.Replace(step3, "null")
-        rewriteFilters step4
+        let step4 = step3
+                        .Replace("loop.rindex0", "loop.revindex0").Replace("loop.rindex", "loop.revindex")
+                        .Replace("__parentloop.rindex0", "__parentloop.revindex0").Replace("__parentloop.rindex", "__parentloop.revindex")
+        let step5 = reNil.Replace(step4, "null")
+        rewriteFilters step5
 
     /// Condition rewrites: `contains` / `not contains` / `== empty`.
     let private rewriteCond (cond: string) : string =
@@ -347,6 +361,10 @@ module LiquidConverter =
 
                         // ── for loops (with limit/offset/reversed) ───
                         | "for" when words.Length >= 4 && words.[2] = "in" ->
+                            // Nested loop: capture the enclosing `loop` so the
+                            // body's `forloop.parentloop` can resolve to it.
+                            if inForBody () then
+                                emitTag "set __parentloop = loop"
                             let mutable limit = None
                             let mutable offset = None
                             let mutable reversed = false
@@ -368,6 +386,23 @@ module LiquidConverter =
                             ctxStack.Add("for")
                         | "endfor" ->
                             popContext "for"; emitTag "endfor"
+
+                        // ── loop control ──────────────────────────────
+                        | "break" -> emitTag "break"
+                        | "continue" -> emitTag "continue"
+
+                        // ── increment / decrement → set arithmetic ─────
+                        // Liquid keeps a separate counter namespace and prints
+                        // the new value; the set-based conversion folds both
+                        // behaviours into one Nunjucks statement plus output.
+                        | "increment" when words.Length >= 2 ->
+                            let v = words.[1].Trim()
+                            emitTag (sprintf "set %s = (%s | default(-1) | int) + 1" v v)
+                            emitOutput v
+                        | "decrement" when words.Length >= 2 ->
+                            let v = words.[1].Trim()
+                            emitTag (sprintf "set %s = (%s | default(0) | int) - 1" v v)
+                            emitOutput v
 
                         // ── include / render (with / for forms) ──────
                         | "include" when words.Length >= 2 ->
@@ -401,8 +436,8 @@ module LiquidConverter =
                             emitOutput (sprintf "loop.cycle(%s)" values)
 
                         // ── everything else passes through unchanged ──
-                        // Unknown tags (increment/decrement/tablerow/...)
-                        // fail loudly at render time — see module docs.
+                        // Unknown tags (tablerow/...) fail loudly at render
+                        // time — see module docs.
                         | _ -> emitTag body
 
                 for tok in tokens do
