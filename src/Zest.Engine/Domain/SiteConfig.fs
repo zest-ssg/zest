@@ -68,6 +68,7 @@ type SiteConfig = {
     EnableMinification: bool
     EnableAssetFormatting: bool
     EnableHtmlFormatting: bool
+    EnableHtmlMinification: bool
     EnableCacheBusting: bool
     SiteVersion: string
     // Performance
@@ -157,6 +158,7 @@ module SiteConfigDefaults =
           EnableMinification = false
           EnableAssetFormatting = false
           EnableHtmlFormatting = false
+          EnableHtmlMinification = false
           EnableCacheBusting = false
           SiteVersion = "1.0"
           EnableParallelBuild = true

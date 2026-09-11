@@ -317,23 +317,31 @@ module ContentPipeline =
         layoutSw.Stop()
         eprintfn "[Zest][timing] content-batchlayout: %d ms (%d pages)" layoutSw.ElapsedMilliseconds rebuildPages.Count
 
-        // ── HTML formatting pass (separate so its cost is visible) ──
-        // Format the final HTML for pages that have a layout result. Pages
-        // without a layout result keep their raw content untouched, matching
-        // the previous write-time behaviour.
-        let formatSw = System.Diagnostics.Stopwatch.StartNew()
-        let formattedHtml =
-            if config.EnableHtmlFormatting then
+        // ── HTML post-processing pass (separate so its cost is visible) ──
+        // Pretty-print (enable_html_formatting) or minify
+        // (enable_html_minification) the final HTML for pages that have a
+        // layout result. Formatting takes priority when both flags are
+        // enabled. Pages without a layout result keep their raw content
+        // untouched, matching the previous write-time behaviour.
+        let htmlPostProcess =
+            if config.EnableHtmlFormatting then HtmlFormatter.formatDefault
+            else HtmlFormatter.minifySafe
+        let needsHtmlPostProcess = config.EnableHtmlFormatting || config.EnableHtmlMinification
+        let postSw = System.Diagnostics.Stopwatch.StartNew()
+        let processedHtml =
+            if needsHtmlPostProcess then
                 rebuildPages
                 |> Seq.choose (fun page ->
                     match batchedHtml.TryFind page.SourcePath with
-                    | Some html -> Some (page.SourcePath, HtmlFormatter.formatDefault html)
+                    | Some html -> Some (page.SourcePath, htmlPostProcess html)
                     | None -> None)
                 |> Map.ofSeq
             else Map.empty
-        formatSw.Stop()
+        postSw.Stop()
         if config.EnableHtmlFormatting then
-            eprintfn "[Zest][timing] html-format: %d ms (%d pages)" formatSw.ElapsedMilliseconds formattedHtml.Count
+            eprintfn "[Zest][timing] html-format: %d ms (%d pages)" postSw.ElapsedMilliseconds processedHtml.Count
+        elif config.EnableHtmlMinification then
+            eprintfn "[Zest][timing] html-minify: %d ms (%d pages)" postSw.ElapsedMilliseconds processedHtml.Count
 
         // Write each result in parallel. The content hash for the cache comes
         // from the first-pass file cache, so no second ReadAllText is needed.
@@ -352,7 +360,7 @@ module ContentPipeline =
                     | Some (layoutPath, _) -> BuildCache.recordDependency page.SourcePath layoutPath
                     | None -> ()
                     let finalHtml =
-                        if config.EnableHtmlFormatting then formattedHtml.[page.SourcePath]
+                        if needsHtmlPostProcess then processedHtml.[page.SourcePath]
                         else batchedHtml.[page.SourcePath]
                     AtomicFile.write outPath (System.Text.Encoding.UTF8.GetBytes finalHtml)
                     let srcText = fileContentCache.GetOrAdd(page.SourcePath, fun _ -> File.ReadAllText page.SourcePath)

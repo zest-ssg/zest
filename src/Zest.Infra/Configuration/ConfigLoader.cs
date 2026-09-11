@@ -103,6 +103,7 @@ public static class ConfigLoader
             var enableMinification    = FromSiteBool("enable_minification",     TomlReader.GetBool(model, "enable_minification",     config.EnableMinification));
             var enableAssetFormatting  = FromSiteBool("enable_asset_formatting", TomlReader.GetBool(model, "enable_asset_formatting", config.EnableAssetFormatting));
             var enableHtmlFormatting  = FromSiteBool("enable_html_formatting",  TomlReader.GetBool(model, "enable_html_formatting",  config.EnableHtmlFormatting));
+            var enableHtmlMinification = FromSiteBool("enable_html_minification", TomlReader.GetBool(model, "enable_html_minification", config.EnableHtmlMinification));
             var enableCacheBusting   = FromSiteBool("enable_cache_busting",    TomlReader.GetBool(model, "enable_cache_busting",    config.EnableCacheBusting));
             var enableParallel       = FromSiteBool("enable_parallel_build",   TomlReader.GetBool(model, "enable_parallel_build",   config.EnableParallelBuild));
             var enableIncremental    = FromSiteBool("enable_incremental_build",TomlReader.GetBool(model, "enable_incremental_build",config.EnableIncrementalBuild));
@@ -310,6 +311,7 @@ public static class ConfigLoader
                 enableMinification: enableMinification,
                 enableAssetFormatting: enableAssetFormatting,
                 enableHtmlFormatting: enableHtmlFormatting,
+                enableHtmlMinification: enableHtmlMinification,
                 enableCacheBusting: enableCacheBusting,
                 siteVersion: siteVersion,
                 enableParallelBuild: enableParallel,

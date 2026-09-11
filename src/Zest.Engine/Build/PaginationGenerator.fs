@@ -119,29 +119,36 @@ module PaginationGenerator =
             layoutSw.Stop()
             eprintfn "[Zest][timing] pagination-batchlayout: %d ms (%d pages)" layoutSw.ElapsedMilliseconds pages.Length
 
-            // Formatting is pulled out of the write loop so its CPU cost is
-            // reported on its own, matching the content pipeline's split.
-            let formatSw = System.Diagnostics.Stopwatch.StartNew()
-            let formattedHtml =
-                if config.EnableHtmlFormatting then
+            // Post-processing (format or minify) is pulled out of the write loop
+            // so its CPU cost is reported on its own, matching the content
+            // pipeline's split. Formatting takes priority over minification.
+            let htmlPostProcess =
+                if config.EnableHtmlFormatting then HtmlFormatter.formatDefault
+                else HtmlFormatter.minifySafe
+            let needsHtmlPostProcess = config.EnableHtmlFormatting || config.EnableHtmlMinification
+            let postSw = System.Diagnostics.Stopwatch.StartNew()
+            let processedHtml =
+                if needsHtmlPostProcess then
                     pages
                     |> Seq.map (fun (page: ContentPage) ->
                         let raw =
                             match batchedHtml.TryFind page.SourcePath with
                             | Some html -> html
                             | None -> page.Content
-                        page.SourcePath, HtmlFormatter.formatDefault raw)
+                        page.SourcePath, htmlPostProcess raw)
                     |> Map.ofSeq
                 else Map.empty
-            formatSw.Stop()
+            postSw.Stop()
             if config.EnableHtmlFormatting then
-                eprintfn "[Zest][timing] pagination-format: %d ms (%d pages)" formatSw.ElapsedMilliseconds formattedHtml.Count
+                eprintfn "[Zest][timing] pagination-format: %d ms (%d pages)" postSw.ElapsedMilliseconds processedHtml.Count
+            elif config.EnableHtmlMinification then
+                eprintfn "[Zest][timing] pagination-minify: %d ms (%d pages)" postSw.ElapsedMilliseconds processedHtml.Count
 
             let writeSw = System.Diagnostics.Stopwatch.StartNew()
             System.Threading.Tasks.Parallel.ForEach(pages, fun (page: ContentPage) ->
                 try
                     let finalHtml =
-                        if config.EnableHtmlFormatting then formattedHtml.[page.SourcePath]
+                        if needsHtmlPostProcess then processedHtml.[page.SourcePath]
                         else
                             match batchedHtml.TryFind page.SourcePath with
                             | Some html -> html
