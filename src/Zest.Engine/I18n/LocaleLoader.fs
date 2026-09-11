@@ -4,6 +4,10 @@
 // provides key-based translations with a deterministic fallback chain and
 // {name} parameter interpolation for templates and DSL scripts.
 //
+// Invariants:
+//   - Keys are dot-separated; nested TOML/JSON objects flatten to the same shape.
+//   - Theme locales load first, then project locales merge over them per key.
+//
 // Dependencies: Tomlyn, System.Text.Json, System.IO, System.Collections.Generic
 
 namespace Zest.Engine.I18n
@@ -11,6 +15,7 @@ namespace Zest.Engine.I18n
 open System.IO
 open System.Collections.Generic
 open System.Text
+open System.Text.Json
 
 /// <summary>
 /// Loads locale files and resolves translation keys for templates.
@@ -35,18 +40,22 @@ module LocaleLoader =
     /// Flatten a JSON locale document into a flat key/value dictionary,
     /// mirroring the TOML loader's dot-separated nesting convention.
     /// </summary>
-    let rec flattenJson (node: System.Text.Json.JsonElement) (prefix: string) (dict: Dictionary<string, string>) =
+    let rec flattenJson (node: JsonElement) (prefix: string) (dict: Dictionary<string, string>) =
         match node.ValueKind with
-        | System.Text.Json.JsonValueKind.Object ->
+        | JsonValueKind.Object ->
             for prop in node.EnumerateObject() do
                 flattenJson prop.Value (if prefix = "" then prop.Name else prefix + "." + prop.Name) dict
-        | System.Text.Json.JsonValueKind.Array ->
+        | JsonValueKind.Array ->
+            // Read strings verbatim; JsonElement.ToString() would re-quote them.
             let items =
                 node.EnumerateArray()
-                |> Seq.map (fun e -> e.ToString().Trim('"'))
+                |> Seq.map (fun e ->
+                    match e.ValueKind with
+                    | JsonValueKind.String -> e.GetString()
+                    | _ -> e.ToString())
                 |> String.concat ", "
             dict.[prefix] <- items
-        | System.Text.Json.JsonValueKind.String ->
+        | JsonValueKind.String ->
             let v = node.GetString()
             if not (isNull v) then dict.[prefix] <- v
         | _ -> dict.[prefix] <- node.ToString()   // numbers / booleans / null
@@ -59,7 +68,7 @@ module LocaleLoader =
         let dict = Dictionary<string, string>()
         if File.Exists path then
             if path.EndsWith(".json", System.StringComparison.OrdinalIgnoreCase) then
-                use doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path))
+                use doc = JsonDocument.Parse(File.ReadAllText(path))
                 flattenJson doc.RootElement "" dict
             else
                 let model = Tomlyn.Toml.ToModel(File.ReadAllText(path))
@@ -72,9 +81,9 @@ module LocaleLoader =
     /// keys merge in so later directories win per-key. Parse failures are
     /// reported instead of silently swallowed.
     /// </summary>
-    let private loadLocaleDir (dir: string) (result: Dictionary<string, Dictionary<string, string>>) =
+    let private loadLocaleDir (dir: string) (result: Dictionary<string, IDictionary<string, string>>) =
         if Directory.Exists dir then
-            for file in Directory.GetFiles(dir, "*.*") do
+            for file in Directory.EnumerateFiles(dir) do
                 let ext = Path.GetExtension(file).ToLowerInvariant()
                 if ext = ".toml" || ext = ".json" then
                     let lang = Path.GetFileNameWithoutExtension(file)
@@ -82,7 +91,7 @@ module LocaleLoader =
                         let dict = loadLocaleFile file
                         match result.TryGetValue lang with
                         | true, existing -> for kv in dict do existing.[kv.Key] <- kv.Value
-                        | _ -> result.[lang] <- dict
+                        | _ -> result.[lang] <- dict :> IDictionary<string, string>
                     with ex ->
                         eprintfn "[Zest] WARN: Failed to parse locale file %s: %s" file ex.Message
 
@@ -92,7 +101,9 @@ module LocaleLoader =
     /// Theme locales load first, then project locales overwrite them.
     /// </summary>
     let loadLocales (projectRoot: string) (themeDir: string option) : IDictionary<string, IDictionary<string, string>> =
-        let result = Dictionary<string, Dictionary<string, string>>()
+        // The inner dictionaries are built directly as IDictionary values so no
+        // second map and copy is needed to widen the result.
+        let result = Dictionary<string, IDictionary<string, string>>()
 
         // Theme locales first (fallback layer for project overrides).
         match themeDir with
@@ -102,11 +113,7 @@ module LocaleLoader =
         // Project locales overwrite theme keys.
         loadLocaleDir (Path.Combine(projectRoot, "_locales")) result
 
-        // Widen the inner dictionaries to the public interface type.
-        let outer = Dictionary<string, IDictionary<string, string>>()
-        for kv in result do
-            outer.[kv.Key] <- kv.Value :> IDictionary<string, string>
-        outer :> IDictionary<string, IDictionary<string, string>>
+        result :> IDictionary<string, IDictionary<string, string>>
 
     /// <summary>
     /// Replace {name} placeholders in a translation with argument values.
@@ -115,23 +122,28 @@ module LocaleLoader =
     let formatText (text: string) (args: IDictionary<string, string>) : string =
         if isNull text || args.Count = 0 then text
         else
-            let sb = StringBuilder()
+            let sb = StringBuilder(text.Length)
             let mutable i = 0
+            // Start of the current literal run. Runs are appended in bulk so a
+            // 100-character template costs a few appends instead of 100.
+            let mutable runStart = 0
             while i < text.Length do
                 if text.[i] = '{' then
                     let closeIdx = text.IndexOf('}', i + 1)
                     if closeIdx > i + 1 then
                         let name = text.Substring(i + 1, closeIdx - i - 1).Trim()
                         match args.TryGetValue name with
-                        | true, v -> sb.Append(v) |> ignore
-                        | _ -> sb.Append(text.[i]) |> ignore
-                        i <- closeIdx + 1
+                        | true, v ->
+                            sb.Append(text, runStart, i - runStart) |> ignore
+                            sb.Append(v) |> ignore
+                            i <- closeIdx + 1
+                            runStart <- i
+                        | _ -> i <- i + 1   // Unknown placeholder: keep it in the run.
                     else
-                        sb.Append(text.[i]) |> ignore
                         i <- i + 1
                 else
-                    sb.Append(text.[i]) |> ignore
                     i <- i + 1
+            sb.Append(text, runStart, text.Length - runStart) |> ignore
             sb.ToString()
 
     /// <summary>
@@ -167,6 +179,10 @@ module LocaleLoader =
             | _ -> key
         formatText resolved args
 
+    /// Shared empty argument bag so a lookup without interpolation allocates nothing.
+    let private emptyArgs : IDictionary<string, string> =
+        Dictionary<string, string>() :> IDictionary<string, string>
+
     /// <summary>
     /// Resolve a translation key for a given language without interpolation.
     /// </summary>
@@ -174,10 +190,10 @@ module LocaleLoader =
                   (defaultLang: string)
                   (key: string)
                   (lang: string option) : string =
-        translateWithArgs locales defaultLang key lang (dict [])
+        translateWithArgs locales defaultLang key lang emptyArgs
 
     /// <summary>
     /// Get all available locale codes, sorted for stable ordering.
     /// </summary>
-    let availableLocales (locales: IDictionary<string, IDictionary<string, string>>) =
+    let availableLocales (locales: IDictionary<string, IDictionary<string, string>>) : string list =
         locales.Keys |> Seq.toList |> List.sort

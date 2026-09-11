@@ -1,3 +1,24 @@
+// ThemeConfigLoader.fs
+//
+// Loads a theme's declarative _theme.toml manifest. The manifest replaces the
+// old _theme.zest.fsx scripting approach: it is simpler, avoids FSI evaluation
+// at build time, and matches how _config.toml is handled.
+//
+// The loaded data is merged into global data as `site.theme.*`, and top-level
+// scalar keys become template-accessible globals (e.g. `{{ theme.author }}`),
+// mirroring how _init.zest.fsx addGlobal works.
+//
+// Supported sections:
+//   [theme]       — metadata (name, version, author, desc); [meta] also accepted
+//   [data]        — arbitrary key/value pairs exposed as globals
+//   [filters]     — filter declarations (name = "module::function")
+//   [[afterBuild]] — post-build command array entries
+//
+// Invariant: a missing or malformed file yields an empty manifest rather than
+// an exception, so a broken theme never aborts the build.
+//
+// Dependencies: Tomlyn, System, System.Collections.Generic, System.IO
+
 namespace Zest.Engine
 
 open System
@@ -5,24 +26,6 @@ open System.Collections.Generic
 open System.IO
 open Tomlyn
 open Tomlyn.Model
-
-// ============================================================
-// ThemeConfigLoader — Load _theme.toml from a theme directory
-// ============================================================
-// Replaces the old _theme.zest.fsx approach with a declarative
-// TOML config file. This is simpler, faster (no FSI evaluation),
-// and consistent with how _config.toml works.
-//
-// The loaded data is merged into global data as `site.theme.*`
-// and top-level keys become template-accessible globals (e.g.
-// `{{ theme.author }}`), mirroring how _init.zest.fsx addGlobal works.
-//
-// Supported sections:
-//   [theme]       — metadata (name, version, author, desc)
-//   [data]        — arbitrary key/value pairs exposed as globals
-//   [filters]     — filter declarations (name = "module::function")
-//   [[afterBuild]] — post-build command array entries
-// ============================================================
 
 /// Theme-level configuration loaded from _theme.toml.
 type ThemeManifest = {
@@ -43,7 +46,7 @@ module ThemeConfigLoader =
     let rec private tomlToNative (v: obj) : obj =
         match v with
         | :? TomlTable as t ->
-            let d = Dictionary<string, obj>()
+            let d = Dictionary<string, obj>(t.Count)
             for kv in t do d.[kv.Key] <- tomlToNative kv.Value
             d :> obj
         | :? TomlArray as a ->
@@ -64,8 +67,14 @@ module ThemeConfigLoader =
     /// Try to get a value from a TomlTable safely.
     let private tryGet (table: TomlTable) (key: string) : obj option =
         match table.TryGetValue(key) with
-        | true, v when v <> null -> Some v
+        | true, v when not (isNull v) -> Some v
         | _ -> None
+
+    /// Read an entry as a string, or None when it is absent or null.
+    let private tryGetString (table: TomlTable) (key: string) : string option =
+        match tryGet table key with
+        | Some v -> Some (v.ToString())
+        | None -> None
 
     /// Load _theme.toml from the given theme directory.
     /// Returns an empty manifest if the file doesn't exist or fails to parse.
@@ -77,17 +86,15 @@ module ThemeConfigLoader =
                 let model = Toml.ToModel(File.ReadAllText(themeTomlPath))
                 if isNull model then emptyManifest
                 else
-                    // ── [meta] / [theme] section ──
-                    // Accept either [meta] or [theme] as the metadata table.
-                    // [theme] is preferred; [meta] is a fallback for clarity.
-                    let metaDict = Dictionary<string, obj>()
+                    // ── [theme] / [meta] section ──
+                    // [theme] is preferred; [meta] is a fallback.
+                    let metaDict = Dictionary<string, obj>(model.Count)
                     let metaTable =
-                        match tryGet model "theme" with
-                        | Some (:? TomlTable as tt) -> Some tt
-                        | _ ->
-                            match tryGet model "meta" with
-                            | Some (:? TomlTable as mt) -> Some mt
-                            | _ -> None
+                        [ "theme"; "meta" ]
+                        |> List.tryPick (fun key ->
+                            match tryGet model key with
+                            | Some (:? TomlTable as t) -> Some t
+                            | _ -> None)
                     match metaTable with
                     | Some mt ->
                         for kv in mt do metaDict.[kv.Key] <- tomlToNative kv.Value
@@ -102,20 +109,23 @@ module ThemeConfigLoader =
                             | _ -> metaDict.[kv.Key] <- tomlToNative kv.Value
 
                     // ── [data] section ──
-                    let dataDict = Dictionary<string, obj>()
-                    match tryGet model "data" with
-                    | Some (:? TomlTable as dt) ->
-                        for kv in dt do dataDict.[kv.Key] <- tomlToNative kv.Value
-                    | _ -> ()
+                    let dataDict =
+                        match tryGet model "data" with
+                        | Some (:? TomlTable as dt) ->
+                            let d = Dictionary<string, obj>(dt.Count)
+                            for kv in dt do d.[kv.Key] <- tomlToNative kv.Value
+                            d
+                        | _ -> Dictionary<string, obj>()
 
                     // ── [filters] section ──
-                    let filtersDict = Dictionary<string, string>()
-                    match tryGet model "filters" with
-                    | Some (:? TomlTable as ft) ->
-                        for kv in ft do
-                            filtersDict.[kv.Key] <-
-                                if isNull kv.Value then "" else kv.Value.ToString()
-                    | _ -> ()
+                    let filtersDict =
+                        match tryGet model "filters" with
+                        | Some (:? TomlTable as ft) ->
+                            let d = Dictionary<string, string>(ft.Count)
+                            for kv in ft do
+                                d.[kv.Key] <- if isNull kv.Value then "" else kv.Value.ToString()
+                            d
+                        | _ -> Dictionary<string, string>()
 
                     // ── [[afterBuild]] array of tables ──
                     let afterBuild =
@@ -124,19 +134,13 @@ module ThemeConfigLoader =
                             arr
                             |> Seq.map (fun t ->
                                 let cmd =
-                                    match tryGet t "cmd" with
-                                    | Some c -> c.ToString()
-                                    | None ->
-                                        match tryGet t "command" with
-                                        | Some c2 -> c2.ToString()
-                                        | None -> ""
+                                    tryGetString t "cmd"
+                                    |> Option.orElse (tryGetString t "command")
+                                    |> Option.defaultValue ""
                                 let args =
-                                    match tryGet t "args" with
-                                    | Some a -> a.ToString()
-                                    | None ->
-                                        match tryGet t "arguments" with
-                                        | Some a2 -> a2.ToString()
-                                        | None -> ""
+                                    tryGetString t "args"
+                                    |> Option.orElse (tryGetString t "arguments")
+                                    |> Option.defaultValue ""
                                 cmd, args)
                             |> Seq.toList
                         | _ -> []

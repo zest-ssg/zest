@@ -1,3 +1,17 @@
+// MetaParser.fs
+//
+// Parses page front matter from three interchangeable header formats and
+// normalizes them into the flat ContentMeta record. It also strips the header
+// from the body so downstream renderers never see metadata comments.
+//
+// Invariants:
+//   - Text is normalized once (\r\n and \r collapse to \n) and reused by every
+//     sub-parser; sub-parsers never re-split the input themselves.
+//   - When a +++ TOML block yields no metadata, the body is reported unchanged
+//     so a malformed header degrades into normal content instead of a failure.
+//
+// Dependencies: Tomlyn, System, System.Text.RegularExpressions, Zest.Engine
+
 namespace Zest.Engine.Parsing
 
 open System
@@ -9,7 +23,7 @@ open Zest.Engine
 /// <summary>
 /// Frontmatter metadata parser — fully compatible with three header formats:
 ///
-///   1. <b>TOML front matter</b>  — tripe-plus delimiters on their own lines (+++)
+///   1. <b>TOML front matter</b>  — triple-plus delimiters on their own lines (+++)
 ///      Supports nested local-date / local-datetime / offset-datetime,
 ///      inline tables, arrays, booleans, integers, and [section] tables.
 ///
@@ -28,6 +42,9 @@ module MetaParser =
               "date"; "tags"; "tag"; "categories"; "draft"
               "author"; "updated"; "weight"; "order"
               "template"; "collection" ]
+
+    /// Splits a tag list on commas, semicolons, or whitespace.
+    let private tagSplitPat = Regex(@"[,;\s]+", RegexOptions.Compiled)
 
     let private applyPair (m: ContentMeta) (key: string) (rawVal: string) =
         let v = rawVal.Trim('"', '\'')
@@ -49,7 +66,7 @@ module MetaParser =
             // `@tags hugo, terminal` / `@tags hugo terminal` /
             // `@tags ["hugo", "terminal"].
             let tags =
-                System.Text.RegularExpressions.Regex.Split(v.Trim('[', ']'), @"[,;\s]+")
+                tagSplitPat.Split(v.Trim('[', ']'))
                 |> Array.map (fun t -> t.Trim().Trim('"', '\''))
                 |> Array.filter (fun t -> t.Length > 0)
                 |> Array.toList
@@ -191,62 +208,79 @@ module MetaParser =
     let private normalizeLines (text: string) : string[] =
         text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n')
 
-    /// Parse TOML front matter using pre-normalized lines. Returns (meta, body).
-    let private parseTomlWithLines (lines: string[]) : ContentMeta * string =
+    /// Parse TOML front matter using pre-normalized lines.
+    /// Returns Some (meta, body) only when a non-empty +++ block parses successfully;
+    /// otherwise None so the caller can try the extension-specific header format.
+    let private parseTomlWithLines (lines: string[]) : (ContentMeta * string) option =
         match findTomlBlock lines with
         | Some (_openIdx, _closeIdx, tomlBlock, body) when tomlBlock.Length > 0 ->
             try
                 let table = Toml.ToModel(tomlBlock)
-                if table <> null && table.Count > 0 then
-                    (metaFromTomlTable table, body)
+                if not (isNull table) && table.Count > 0 then
+                    Some (metaFromTomlTable table, body)
                 else
-                    (ContentMeta.empty, String.Join("\n", lines))
-            with _ ->
-                (ContentMeta.empty, String.Join("\n", lines))
-        | _ -> (ContentMeta.empty, String.Join("\n", lines))
+                    None
+            with ex ->
+                // Degrade to the extension-specific parser, but surface the cause
+                // so a malformed header is not silently ignored.
+                eprintfn "[Zest] WARN: Failed to parse TOML front matter: %s" ex.Message
+                None
+        | _ -> None
 
+    /// <summary>
+    /// Parse TOML front matter from raw text.
+    /// Returns the parsed metadata and body, or empty metadata and the
+    /// normalized text when no valid +++ block is present.
+    /// </summary>
     let parseToml (text: string) : ContentMeta * string =
-        parseTomlWithLines (normalizeLines text)
+        let lines = normalizeLines text
+        match parseTomlWithLines lines with
+        | Some result -> result
+        | None -> (ContentMeta.empty, String.Join("\n", lines))
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     //  F# comment header parser
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    let private isMetaLinePat = Regex(@"^//\s*@\w+", RegexOptions.Compiled)
-    let private fsxMetaPat    = Regex(@"^//\s*@(\w+)\s*(.*)$", RegexOptions.Compiled)
-
-    let private isMetadataLine (line: string) = isMetaLinePat.IsMatch(line.Trim())
+    let private fsxMetaPat = Regex(@"^//\s*@(\w+)\s*(.*)$", RegexOptions.Compiled)
 
     let private parseFsxCommentsWithLines (lines: string[]) : ContentMeta =
         let pairs = ResizeArray<string>()
         let mutable inHeader = true
         let mutable pendingKey : string option = None
+        let mutable i = 0
 
-        for line in lines do
-            let t = line.Trim()
-            if inHeader then
-                if isMetadataLine t then
-                    let m = fsxMetaPat.Match(t)
-                    if m.Success then
-                        let k = m.Groups.[1].Value.ToLowerInvariant()
-                        let v = m.Groups.[2].Value.Trim().Trim('"', '\'')
-                        if v.Length > 0 then
-                            pairs.Add(k + ": " + v)
-                            pendingKey <- None
-                        else
-                            pendingKey <- Some k
-                elif pendingKey.IsSome && t <> "" && not (t.StartsWith("//")) then
-                    pairs.Add(pendingKey.Value + ": " + t)
+        // The header ends at the first content line, so stop scanning there
+        // instead of walking the whole (potentially large) body. A single Match
+        // both detects and captures a metadata line.
+        while inHeader && i < lines.Length do
+            let t = lines.[i].Trim()
+            let m = fsxMetaPat.Match(t)
+            if m.Success then
+                let k = m.Groups.[1].Value.ToLowerInvariant()
+                let v = m.Groups.[2].Value.Trim().Trim('"', '\'')
+                if v.Length > 0 then
+                    pairs.Add(k + ": " + v)
                     pendingKey <- None
-                elif pendingKey.IsSome && t.StartsWith("//") && not (isMetadataLine t) then
-                    let plain = t.TrimStart('/').Trim()
-                    pairs.Add(pendingKey.Value + ": " + plain)
-                    pendingKey <- None
-                elif t = "" then ()
-                elif not (t.StartsWith("//")) then
-                    inHeader <- false
+                else
+                    pendingKey <- Some k
+            elif pendingKey.IsSome && t <> "" && not (t.StartsWith("//")) then
+                pairs.Add(pendingKey.Value + ": " + t)
+                pendingKey <- None
+            elif pendingKey.IsSome && t.StartsWith("//") then
+                let plain = t.TrimStart('/').Trim()
+                pairs.Add(pendingKey.Value + ": " + plain)
+                pendingKey <- None
+            elif t = "" then ()
+            elif not (t.StartsWith("//")) then
+                inHeader <- false
+            i <- i + 1
         parsePairs pairs ContentMeta.empty
 
+    /// <summary>
+    /// Parse an F# comment header (leading contiguous `// @key value` lines).
+    /// Multi-line values continue with a `// @key` line carrying no value.
+    /// </summary>
     let parseFsxComments (text: string) : ContentMeta =
         parseFsxCommentsWithLines (normalizeLines text)
 
@@ -272,14 +306,10 @@ module MetaParser =
                         metaPairs.Add(k + ": " + v)
                 elif t = "" then
                     cleanedLines.Add(lines.[i])
-                elif t.StartsWith("<!--") then
-                    cleanedLines.Add(lines.[i])
-                    inHeader <- false
-                elif not (t.StartsWith("<!--")) then
-                    cleanedLines.Add(lines.[i])
-                    inHeader <- false
                 else
+                    // The first non-comment, non-blank line ends the header.
                     cleanedLines.Add(lines.[i])
+                    inHeader <- false
             else
                 cleanedLines.Add(lines.[i])
 
@@ -287,6 +317,10 @@ module MetaParser =
         let body = String.Join("\n", cleanedLines)
         (meta, body)
 
+    /// <summary>
+    /// Parse an HTML comment header (`&lt;!-- @key value --&gt;` lines) and
+    /// strip those comments from the returned body.
+    /// </summary>
     let parseHtmlComments (text: string) : ContentMeta * string =
         parseHtmlCommentsWithLines (normalizeLines text)
 
@@ -297,7 +331,10 @@ module MetaParser =
     /// Apply a single default key/value to a ContentMeta.
     /// Only sets fields that are not already present (defaults don't override).
     let applyDefault (meta: ContentMeta) (key: string) (value: string) : ContentMeta =
-        match key.ToLowerInvariant() with
+        // Lowercase once so recognized keys and Extra entries share one spelling;
+        // mixing cases would otherwise produce duplicate Extra keys.
+        let k = key.ToLowerInvariant()
+        match k with
         | "layout" when meta.Layout.IsNone    -> { meta with Layout      = Some value }
         | "title" when meta.Title.IsNone       -> { meta with Title       = Some value }
         | "permalink" when meta.Permalink.IsNone -> { meta with Permalink = Some value }
@@ -309,21 +346,28 @@ module MetaParser =
             match DateTime.TryParse value with
             | true, dt -> { meta with Date = Some dt }
             | _ -> meta
-        | _ -> { meta with Extra = meta.Extra |> Map.add key value }
+        | _ -> { meta with Extra = meta.Extra |> Map.add k value }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     //  Unified entry point
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    /// Unified entry point. Returns (meta, body).
-    /// Text is normalized once (\r\n → \n, split to lines) and reused across all parsers.
+    /// <summary>
+    /// Parse front matter from page text and return the metadata plus the body
+    /// with any header comments removed. Text is normalized once and reused.
+    /// The +++ TOML block is tried first; when it yields nothing, the header
+    /// format is chosen by file extension (HTML comments for template files,
+    /// F# comments otherwise).
+    /// </summary>
+    /// <param name="ext">File extension including the leading dot, e.g. ".md".</param>
+    /// <param name="text">Raw page text.</param>
+    /// <returns>The parsed metadata and the body text.</returns>
     let parse (ext: string) (text: string) : ContentMeta * string =
         let lines = normalizeLines text
-        // Always try TOML first — it's the canonical format
-        let tomlMeta, tomlBody = parseTomlWithLines lines
-        if tomlMeta <> ContentMeta.empty then
-            (tomlMeta, tomlBody)
-        else
+        // Always try TOML first — it's the canonical format.
+        match parseTomlWithLines lines with
+        | Some (meta, body) when meta <> ContentMeta.empty -> (meta, body)
+        | _ ->
             match ext with
             | FileExtensions.Nunjucks | FileExtensions.Liquid | FileExtensions.Handlebars
             | FileExtensions.Mustache | FileExtensions.Haml | FileExtensions.Pug
