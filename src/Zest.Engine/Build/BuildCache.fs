@@ -30,7 +30,7 @@ open System.Security.Cryptography
 module BuildCache =
 
     // ── Cache format ──
-    let private CACHE_FORMAT_VERSION = 5
+    let private CACHE_FORMAT_VERSION = 3
     let private cacheFilePath (outputDir: string) = Path.Combine(outputDir, ".zest-cache.log")
     let private depsFilePath  (outputDir: string) = Path.Combine(outputDir, ".zest-deps.log")
 
