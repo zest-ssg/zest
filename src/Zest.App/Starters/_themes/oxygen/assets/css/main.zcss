@@ -1,14 +1,201 @@
-// main.zcss
-//
-// Stylesheet entry point for the oxygen theme. Each @use below pulls in one
-// logical slice of the design system; head.html links only this compiled
-// file, so load order matches declaration order here.
-//
-// Dependencies: tokens.zcss, base.zcss, components.zcss, pages.zcss,
-// responsive.zcss
+let paper      = #ffffff
+let ink        = #111111
+let link       = #0b5394
+let surface    = #f5f5f0
+let rule       = #d4d4d0
+let muted      = #6b6b66
+let font-serif = 'Latin Modern Roman', 'CMU Serif', Georgia, 'Times New Roman', serif
+let font-mono  = 'Latin Modern Mono', 'CMU Typewriter Text', 'SF Mono', Consolas, monospace
+let measure    = 42rem
 
-@use "tokens.zcss";
-@use "base.zcss";
-@use "components.zcss";
-@use "pages.zcss";
-@use "responsive.zcss";
+*, *:before, *:after [
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+]
+
+body [
+  background: paper;
+  color: ink;
+  font-family: font-serif;
+  font-size: 1rem;
+  line-height: 1.625;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+]
+
+h1, h2, h3, h4, h5, h6 [
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+]
+
+h1 [ font-size: 1.875rem; ]
+h2 [ font-size: 1.5rem; ]
+h3 [ font-size: 1.25rem; ]
+
+p, ul, ol, blockquote, pre, table, figure [
+  margin-top: 1rem;
+]
+
+ul, ol [
+  padding-left: 1.5rem;
+]
+
+a [
+  color: link;
+  text-decoration: none;
+]
+
+a:hover [
+  text-decoration: underline;
+  text-underline-offset: 2px;
+]
+
+:focus-visible [
+  outline: 2px solid ink;
+  outline-offset: 2px;
+]
+
+img [
+  display: block;
+  max-width: 100%;
+  height: auto;
+]
+
+blockquote [
+  background: surface;
+  padding: 1rem 1.25rem;
+  font-style: italic;
+  color: muted;
+]
+
+code, pre [
+  font-family: font-mono;
+  background: surface;
+]
+
+code [
+  padding: 0.1rem 0.3rem;
+  font-size: 0.9em;
+]
+
+pre [
+  padding: 1rem;
+  overflow-x: auto;
+  font-size: 0.9rem;
+  line-height: 1.5;
+]
+
+pre code [
+  background: transparent;
+  padding: 0;
+]
+
+hr [
+  border-top: 1px solid rule;
+  margin-top: 2rem;
+]
+
+table [
+  width: 100%;
+  border-collapse: collapse;
+  border-top: 2px solid ink;
+  border-bottom: 2px solid ink;
+]
+
+thead th [
+  border-bottom: 1px solid ink;
+]
+
+th, td [
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+]
+
+.page [
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+]
+
+.site-header [
+  width: 100%;
+  max-width: measure;
+  margin: 0 auto;
+  padding: 1.5rem 1.5rem 1rem;
+  border-bottom: 1px solid rule;
+]
+
+.site-header__title [
+  color: ink;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+]
+
+.site-header__title:hover [
+  text-decoration: none;
+]
+
+.page__main [
+  flex: 1;
+  width: 100%;
+  max-width: measure;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 4rem;
+]
+
+.paper__head [
+  text-align: center;
+  margin-bottom: 3rem;
+]
+
+.paper__title [
+  font-size: 2.25rem;
+  line-height: 1.15;
+]
+
+.paper__author [
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+]
+
+.paper__date [
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  font-style: italic;
+  color: muted;
+]
+
+.paper__body [
+  word-wrap: break-word;
+]
+
+.paper__body h2, .paper__body h3, .paper__body h4 [
+  margin-top: 2rem;
+]
+
+@media (max-width: 640px) [
+  .paper__title [ font-size: 1.75rem; ]
+
+  .page__main [
+    padding-left: 1rem;
+    padding-right: 1rem;
+  ]
+
+  table [
+    display: block;
+    overflow-x: auto;
+  ]
+]
+
+@media print [
+  .site-header [ display: none; ]
+
+  body [
+    background: #ffffff;
+    color: #000000;
+    font-size: 12pt;
+  ]
+]

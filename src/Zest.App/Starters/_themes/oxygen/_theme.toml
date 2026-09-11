@@ -1,20 +1,7 @@
-# oxygen — a calm, editorial starter theme for Zest.
-#
-# Warm paper background, ink text, a single jade accent, serif headings,
-# hairline rules. Deliberately quiet: no animation, no shadows, no hover
-# lifts, no smooth scrolling — just typography and whitespace.
-
 name = "oxygen"
-version = "2.4.0"
-description = "A quiet, minimal blog theme restyled after Eleventy Duo: paper background, ink text, one accent, uppercase navigation, roomy editorial typography. Colors and navigation are configurable via [params] in _config.toml. Ships pagination, tag clouds, archives, static search, and RSS/Atom feeds."
+version = "1.0.0"
+description = "The default theme for Zest SSG."
 
 [theme]
-author = "Zest"
-license = "MIT"
-tags = ["minimal", "editorial", "light", "dark"]
-
-[data]
-reading_time_label = "min read"
-default_og_image = "/assets/img/og-default.png"
-
-[filters]
+author = "exyone"
+license = "BSD-2-Clause"

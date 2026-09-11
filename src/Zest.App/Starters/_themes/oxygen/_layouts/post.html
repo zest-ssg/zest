@@ -1,49 +1,23 @@
 <!DOCTYPE html>
-{# post.html — single article layout: header, body, tags and pagination. #}
 <html lang="{{ site.language | default('en') }}">
 <head>
   {{ include head.html }}
 </head>
 <body>
-  <div class="layout-wrapper">
+  <div class="page">
     {{ include header.html }}
-    <main class="main">
-      <article class="post">
-        <header class="post__header">
-          <h1>{{ page.title }}</h1>
-          <div class="post__details">
-            <time datetime="{{ page.date | date('%Y-%m-%d') }}">{{ page.date | date('%B %e, %Y') }}</time>
-            <span> | </span>
-            <span>{{ content | readingTime }} {{ 'meta.min_read' | t }}</span>
-          </div>
+    <main class="page__main">
+      <article class="paper">
+        <header class="paper__head">
+          <h1 class="paper__title">{{ page.title }}</h1>
+          {% if site.author %}<p class="paper__author">{{ site.author }}</p>{% endif %}
+          {% if page.date %}<p class="paper__date">{{ page.date | date('%B %e, %Y') }}</p>{% endif %}
         </header>
-
-        <div class="post__content">
+        <div class="paper__body">
           {{ content | safe }}
         </div>
-
-        <aside class="post__aside">
-          {% if page.tags %}
-          <div class="post__tags">
-            {% for tag in page.tags %}<a href="/tags/{{ tag }}/">#{{ tag }}</a>{% endfor %}
-          </div>
-          {% endif %}
-
-          <nav class="post__pagination" aria-label="{{ 'post.prev' | t }}">
-            {% set older = collections.posts | prevPost(page.url) %}
-            {% set newer = collections.posts | nextPost(page.url) %}
-            {% if older %}
-            <a href="{{ older.url }}"><span>←</span><span>{{ older.title }}</span></a>
-            {% endif %}
-            {% if newer %}
-            <a href="{{ newer.url }}"><span>{{ newer.title }}</span><span>→</span></a>
-            {% endif %}
-          </nav>
-        </aside>
       </article>
     </main>
-    {{ include footer.html }}
   </div>
-  {{ pjaxScript | safe }}
 </body>
 </html>
