@@ -102,8 +102,7 @@ module PaginationGenerator =
     /// Apply the layout chain to all generated pages in ONE batched FSI pass
     /// and write the results. Pagination pages share the same F# layout, so
     /// entering FSI per page wasted a full evaluation round each; batching cuts
-    /// that to one FSI run per layout-chain level. The layout, formatting, and
-    /// write passes are timed separately so each cost is visible in the log.
+    /// that to one FSI run per layout-chain level.
     let private batchRenderAndWrite (pages: ContentPage list)
                                     (config: SiteConfig) (outputDir: string)
                                     (layouts: Map<string, string * string>)
@@ -113,20 +112,15 @@ module PaginationGenerator =
         else
             let tasks =
                 pages |> List.map (fun p -> p, (p.Layout |> Option.defaultValue config.DefaultLayout))
-            let layoutSw = System.Diagnostics.Stopwatch.StartNew()
             let batchedHtml =
                 LayoutEngine.applyLayoutsBatched tasks layouts includes config globalData
-            layoutSw.Stop()
-            eprintfn "[Zest][timing] pagination-batchlayout: %d ms (%d pages)" layoutSw.ElapsedMilliseconds pages.Length
 
-            // Post-processing (format or minify) is pulled out of the write loop
-            // so its CPU cost is reported on its own, matching the content
-            // pipeline's split. Formatting takes priority over minification.
+            // Post-processing (format or minify) is pulled out of the write loop.
+            // Formatting takes priority over minification.
             let htmlPostProcess =
                 if config.EnableHtmlFormatting then HtmlFormatter.formatDefault
                 else HtmlFormatter.minifySafe
             let needsHtmlPostProcess = config.EnableHtmlFormatting || config.EnableHtmlMinification
-            let postSw = System.Diagnostics.Stopwatch.StartNew()
             let processedHtml =
                 if needsHtmlPostProcess then
                     pages
@@ -138,13 +132,7 @@ module PaginationGenerator =
                         page.SourcePath, htmlPostProcess raw)
                     |> Map.ofSeq
                 else Map.empty
-            postSw.Stop()
-            if config.EnableHtmlFormatting then
-                eprintfn "[Zest][timing] pagination-format: %d ms (%d pages)" postSw.ElapsedMilliseconds processedHtml.Count
-            elif config.EnableHtmlMinification then
-                eprintfn "[Zest][timing] pagination-minify: %d ms (%d pages)" postSw.ElapsedMilliseconds processedHtml.Count
 
-            let writeSw = System.Diagnostics.Stopwatch.StartNew()
             System.Threading.Tasks.Parallel.ForEach(pages, fun (page: ContentPage) ->
                 try
                     let finalHtml =
@@ -161,8 +149,6 @@ module PaginationGenerator =
                 with ex ->
                     // A single failing page must not abort the whole build.
                     eprintfn "[Zest] Pagination page '%s' failed: %s" page.Url ex.Message) |> ignore
-            writeSw.Stop()
-            eprintfn "[Zest][timing] pagination-write: %d ms (%d pages)" writeSw.ElapsedMilliseconds pages.Length
 
     /// Snapshot a sorted collection window into the shape templates expect:
     /// a shallow array of page dicts (url/title/date/tags/description/...).

@@ -118,8 +118,7 @@ module TaxonomyGenerator =
     /// Apply the layout chain to all generated pages in ONE batched FSI pass
     /// and write the results. Rendering layout per page entered FSI ~25 times
     /// (once per tag), which dominated the whole build; batching cuts that to
-    /// one FSI run per layout-chain level. The layout, formatting, and write
-    /// passes are timed separately so each cost is visible in the build log.
+    /// one FSI run per layout-chain level.
     let private batchRenderAndWrite (pages: ContentPage list)
                                     (config: SiteConfig) (outputDir: string)
                                     (layouts: Map<string, string * string>)
@@ -129,20 +128,15 @@ module TaxonomyGenerator =
         else
             let tasks =
                 pages |> List.map (fun p -> p, (p.Layout |> Option.defaultValue config.DefaultLayout))
-            let layoutSw = System.Diagnostics.Stopwatch.StartNew()
             let batchedHtml =
                 LayoutEngine.applyLayoutsBatched tasks layouts includes config globalData
-            layoutSw.Stop()
-            eprintfn "[Zest][timing] taxonomy-batchlayout: %d ms (%d pages)" layoutSw.ElapsedMilliseconds pages.Length
 
-            // Post-processing (format or minify) is pulled out of the write loop
-            // so its CPU cost is reported on its own, matching the content
-            // pipeline's split. Formatting takes priority over minification.
+            // Post-processing (format or minify) is pulled out of the write loop.
+            // Formatting takes priority over minification.
             let htmlPostProcess =
                 if config.EnableHtmlFormatting then HtmlFormatter.formatDefault
                 else HtmlFormatter.minifySafe
             let needsHtmlPostProcess = config.EnableHtmlFormatting || config.EnableHtmlMinification
-            let postSw = System.Diagnostics.Stopwatch.StartNew()
             let processedHtml =
                 if needsHtmlPostProcess then
                     pages
@@ -154,13 +148,7 @@ module TaxonomyGenerator =
                         page.SourcePath, htmlPostProcess raw)
                     |> Map.ofSeq
                 else Map.empty
-            postSw.Stop()
-            if config.EnableHtmlFormatting then
-                eprintfn "[Zest][timing] taxonomy-format: %d ms (%d pages)" postSw.ElapsedMilliseconds processedHtml.Count
-            elif config.EnableHtmlMinification then
-                eprintfn "[Zest][timing] taxonomy-minify: %d ms (%d pages)" postSw.ElapsedMilliseconds processedHtml.Count
 
-            let writeSw = System.Diagnostics.Stopwatch.StartNew()
             System.Threading.Tasks.Parallel.ForEach(pages, fun (page: ContentPage) ->
                 try
                     let finalHtml =
@@ -177,8 +165,6 @@ module TaxonomyGenerator =
                 with ex ->
                     // A single failing term must not abort the whole build.
                     eprintfn "[Zest] Taxonomy page '%s' failed: %s" page.Url ex.Message) |> ignore
-            writeSw.Stop()
-            eprintfn "[Zest][timing] taxonomy-write: %d ms (%d pages)" writeSw.ElapsedMilliseconds pages.Length
 
     /// True when a real content page already owns this output path or URL.
     /// Checking the in-memory page list (not the file system) is what lets
@@ -271,7 +257,6 @@ module TaxonomyGenerator =
         // URL-occupancy checks do not re-filter the full page set per term.
         let pages = PageQuery.getPages()
         let generatedPages = ResizeArray<ContentPage>()
-        let termSw = System.Diagnostics.Stopwatch.StartNew()
         for tax in config.Taxonomies do
             // Terms are only extractable for the tag taxonomy today; pages
             // carry tags via ContentPage.Tags, which PageQuery.getAllTags uses.
@@ -286,8 +271,5 @@ module TaxonomyGenerator =
                 | Some page ->
                     generatedPages.Add(page); generated <- generated + 1
                 | None -> ()
-        termSw.Stop()
-        eprintfn "[Zest][timing] taxonomy-render: %d ms" termSw.ElapsedMilliseconds
-        // batchRenderAndWrite reports its own layout/format/write sub-phases.
         batchRenderAndWrite (Seq.toList generatedPages) config outputDir layouts includes globalData
         generated

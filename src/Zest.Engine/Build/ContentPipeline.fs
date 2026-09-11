@@ -44,11 +44,6 @@ module ContentPipeline =
         let errors = ConcurrentBag<string>()
         let mutable processed = 0
         let mutable cached    = 0
-        let phaseSw = System.Diagnostics.Stopwatch.StartNew()
-        let markPhase (name: string) =
-            phaseSw.Stop()
-            eprintfn "[Zest][timing] %s: %d ms" name phaseSw.ElapsedMilliseconds
-            phaseSw.Restart()
 
         let allFiles =
             if not (Directory.Exists contentDir) then
@@ -166,7 +161,6 @@ module ContentPipeline =
         PageQuery.setAllPages metaPages
         PageQuery.setDraftPages (draftPages |> Seq.toList)
         ScriptRunner.resetSession ()
-        markPhase "metadata-pass"
 
         // Exclude pagination templates from normal evaluation/writing — the
         // PaginationGenerator owns their output paths.
@@ -281,7 +275,6 @@ module ContentPipeline =
                 progress.IncErrors()
 
         Parallel.ForEach(fsxFiles, fun f -> processFsxFile f) |> ignore
-        markPhase "evaluate"
 
         // Write output — lock-safe atomic writes that never conflict with the
         // preview server's open read handles. Layout chains are applied to all
@@ -305,7 +298,6 @@ module ContentPipeline =
                     rebuildPages.Add(page)
 
         // One batched layout pass over every page that needs a rebuild.
-        let layoutSw = System.Diagnostics.Stopwatch.StartNew()
         let batchedHtml =
             if rebuildPages.Count = 0 then Map.empty
             else
@@ -314,10 +306,8 @@ module ContentPipeline =
                     |> Seq.map (fun p -> p, (p.Layout |> Option.defaultValue config.DefaultLayout))
                     |> Seq.toList
                 LayoutEngine.applyLayoutsBatched tasks layouts safeIncludes config safeData
-        layoutSw.Stop()
-        eprintfn "[Zest][timing] content-batchlayout: %d ms (%d pages)" layoutSw.ElapsedMilliseconds rebuildPages.Count
 
-        // ── HTML post-processing pass (separate so its cost is visible) ──
+        // ── HTML post-processing pass ──
         // Pretty-print (enable_html_formatting) or minify
         // (enable_html_minification) the final HTML for pages that have a
         // layout result. Formatting takes priority when both flags are
@@ -327,7 +317,6 @@ module ContentPipeline =
             if config.EnableHtmlFormatting then HtmlFormatter.formatDefault
             else HtmlFormatter.minifySafe
         let needsHtmlPostProcess = config.EnableHtmlFormatting || config.EnableHtmlMinification
-        let postSw = System.Diagnostics.Stopwatch.StartNew()
         let processedHtml =
             if needsHtmlPostProcess then
                 rebuildPages
@@ -337,15 +326,9 @@ module ContentPipeline =
                     | None -> None)
                 |> Map.ofSeq
             else Map.empty
-        postSw.Stop()
-        if config.EnableHtmlFormatting then
-            eprintfn "[Zest][timing] html-format: %d ms (%d pages)" postSw.ElapsedMilliseconds processedHtml.Count
-        elif config.EnableHtmlMinification then
-            eprintfn "[Zest][timing] html-minify: %d ms (%d pages)" postSw.ElapsedMilliseconds processedHtml.Count
 
         // Write each result in parallel. The content hash for the cache comes
         // from the first-pass file cache, so no second ReadAllText is needed.
-        let writeSw = System.Diagnostics.Stopwatch.StartNew()
         Parallel.ForEach(rebuildPages, fun page ->
             try
                 let outPath = Path.Combine(outputDir, page.OutputPath)
@@ -376,11 +359,8 @@ module ContentPipeline =
                 // A single page must never abort the whole build.
                 errors.Add(sprintf "Failed to write '%s': %s" page.SourcePath ex.Message)
                 progress.IncErrors()) |> ignore
-        writeSw.Stop()
-        eprintfn "[Zest][timing] content-write: %d ms (%d files)" writeSw.ElapsedMilliseconds rebuildPages.Count
         processed <- processed + localProcessed
         cached    <- cached + localCached
-        markPhase "write"
 
         // Collect any errors from the error bag
         for e in errors do

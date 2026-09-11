@@ -286,18 +286,11 @@ module BuildEngine =
             let afterBuildCmds = themeAfterBuild @ initResult.AfterBuildCommands
 
             // ── Content pipeline: discover → evaluate → write output ──
-            markPhase "setup-init"
-            // The FSI interpreter cold start (spawn + first script load) is a
-            // fixed per-build cost that is otherwise hidden inside setup-init.
-            // Surface it so long setup times are attributable to FSI or to the
-            // init scripts themselves.
-            let fsiColdStart = FsiSession.getColdStartMs ()
-            if fsiColdStart > 0L then
-                eprintfn "[Zest][timing] fsi-cold-start: %d ms" fsiColdStart
+            markPhase "setup"
             progress.Phase <- BuildPhase.Discovering
             let struct(total, contentProcessed, contentCached, evalResults) =
                 ContentPipeline.processContent contentDir outputDir config gDict layouts includes progress
-            markPhase "content-pipeline"
+            markPhase "content"
 
             processed <- contentProcessed
             cached    <- contentCached
@@ -334,7 +327,6 @@ module BuildEngine =
             | None -> ()
 
             assets <- copyAssets root outputDir
-            markPhase "assets-copy"
             progress.AssetsCopied <- assets
             if config.EnableIncrementalBuild then saveCache outputDir templateSig
 
@@ -370,7 +362,7 @@ module BuildEngine =
                         eprintfn "[Zest] Asset processing failed for '%s': %s" file ex.Message) |> ignore
 
             progress.Phase <- BuildPhase.Finalizing
-            markPhase "asset-format"
+            markPhase "assets"
             if config.EnableAssetFormatting || config.EnableMinification then
                 eprintfn "[Zest] Asset post-process: %s %d file(s)"
                     (if config.EnableAssetFormatting then "formatted" else "minified")
