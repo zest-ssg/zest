@@ -317,6 +317,24 @@ module ContentPipeline =
         layoutSw.Stop()
         eprintfn "[Zest][timing] content-batchlayout: %d ms (%d pages)" layoutSw.ElapsedMilliseconds rebuildPages.Count
 
+        // ── HTML formatting pass (separate so its cost is visible) ──
+        // Format the final HTML for pages that have a layout result. Pages
+        // without a layout result keep their raw content untouched, matching
+        // the previous write-time behaviour.
+        let formatSw = System.Diagnostics.Stopwatch.StartNew()
+        let formattedHtml =
+            if config.EnableHtmlFormatting then
+                rebuildPages
+                |> Seq.choose (fun page ->
+                    match batchedHtml.TryFind page.SourcePath with
+                    | Some html -> Some (page.SourcePath, HtmlFormatter.formatDefault html)
+                    | None -> None)
+                |> Map.ofSeq
+            else Map.empty
+        formatSw.Stop()
+        if config.EnableHtmlFormatting then
+            eprintfn "[Zest][timing] html-format: %d ms (%d pages)" formatSw.ElapsedMilliseconds formattedHtml.Count
+
         // Write each result in parallel. The content hash for the cache comes
         // from the first-pass file cache, so no second ReadAllText is needed.
         let writeSw = System.Diagnostics.Stopwatch.StartNew()
@@ -327,18 +345,18 @@ module ContentPipeline =
                 if dir <> null then Directory.CreateDirectory dir |> ignore
                 let layoutName = page.Layout |> Option.defaultValue config.DefaultLayout
                 match batchedHtml.TryFind page.SourcePath with
-                | Some finalHtml ->
+                | Some _ ->
                     // Record page→layout dependency so future layout changes
                     // trigger a rebuild of only the affected pages.
                     match layouts.TryFind layoutName with
                     | Some (layoutPath, _) -> BuildCache.recordDependency page.SourcePath layoutPath
                     | None -> ()
-                    let formattedHtml =
-                        if config.EnableHtmlFormatting then HtmlFormatter.formatDefault finalHtml
-                        else finalHtml
-                    AtomicFile.write outPath (System.Text.Encoding.UTF8.GetBytes formattedHtml)
+                    let finalHtml =
+                        if config.EnableHtmlFormatting then formattedHtml.[page.SourcePath]
+                        else batchedHtml.[page.SourcePath]
+                    AtomicFile.write outPath (System.Text.Encoding.UTF8.GetBytes finalHtml)
                     let srcText = fileContentCache.GetOrAdd(page.SourcePath, fun _ -> File.ReadAllText page.SourcePath)
-                    BuildCache.updateCacheWithHash page.SourcePath formattedHtml srcText
+                    BuildCache.updateCacheWithHash page.SourcePath finalHtml srcText
                     Interlocked.Increment(&localProcessed) |> ignore
                 | None ->
                     // No layout result (missing top layout) — write the raw content.
@@ -351,7 +369,7 @@ module ContentPipeline =
                 errors.Add(sprintf "Failed to write '%s': %s" page.SourcePath ex.Message)
                 progress.IncErrors()) |> ignore
         writeSw.Stop()
-        eprintfn "[Zest][timing] content-formatwrite: %d ms" writeSw.ElapsedMilliseconds
+        eprintfn "[Zest][timing] content-write: %d ms (%d files)" writeSw.ElapsedMilliseconds rebuildPages.Count
         processed <- processed + localProcessed
         cached    <- cached + localCached
         markPhase "write"

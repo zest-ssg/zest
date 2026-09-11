@@ -43,7 +43,7 @@ Built on the philosophy that your templating language and your host language sho
 
 - **11ty‑compatible templates** — Full Nunjucks (.njk), Liquid (.liquid), Handlebars (.hbs), Mustache (.mustache), HAML (.haml), Pug (.pug), and WebC (.webc) support. Nunjucks, Liquid, HAML, Pug, and WebC are auto‑converted to the Nunjucks engine for filters, macros, template inheritance, and Zest API integration; `.hbs`/`.mustache` run on a dedicated Mustache/Handlebars engine that preserves their native syntax.
 
-- **`_init.fsx`** — Optional initialization script (runs before build) to inject dynamic data, load JSON/TOML, read env vars.
+- **`_init.zest.fsx`** — Optional initialization script (runs before build) to inject dynamic data, load JSON/TOML, read env vars.
 
 - **TOML config** — Zero‑config defaults; customize via `_config.toml` and `_data/*.toml`. No YAML.
 
@@ -326,7 +326,7 @@ else
 
 ---
 
-### `_init.fsx` API
+### `_init.zest.fsx` API
 
 | Function           | Purpose                                           |
 |--------------------|----------------------------------------------------|
@@ -361,19 +361,6 @@ dotnet publish src/Zest.App/Zest.App.csproj -c Release -r win-x64 --self-contain
 4. **The output is the deliverable.** Static HTML, no JavaScript required, host it anywhere.
 
 Zest is not a general‑purpose static site generator. It is a specific answer to specific constraints: F# as the template, TOML as the contract, no Node.js, no YAML.
-
----
-
-## Acknowledgements
-
-Zest would not have been possible without the help of my capable AI assistants, who supported me through design, debugging, and documentation:
-
-- **Claude** — architecture and design review
-- **GLM** — research and experimentation
-- **DeepSeek** — debugging and performance tuning
-- **Hunyuan** — implementation and documentation support
-
-Thank you all for helping bring this project to life.
 
 ---
 

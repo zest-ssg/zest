@@ -223,7 +223,7 @@ module internal NunjucksCompiler =
         match findTopOp t [ " is not "; " is " ] with
         | Some(i, op) when t.[..i-1].Trim() <> "" && t.[i+op.Length..].Trim() <> "" ->
             let negated = op = " is not "
-            CBin(if negated then "is not" else "is",
+            CBin((if negated then "is not" else "is"),
                  compileAdd (t.[..i-1]),
                  CLit(box (t.[i+op.Length..].Trim())))
         | _ ->

@@ -29,8 +29,9 @@ module FsiSession =
     let private sync = obj ()
     let mutable private proc : Process option = None
     let mutable private stdinWriter : StreamWriter option = None
-    let mutable private stdoutLines = ConcurrentQueue<string> ()
-    let mutable private stderrLines = ConcurrentQueue<string> ()
+    let mutable private stdoutLines = new BlockingCollection<string> ()
+    let mutable private stderrLines = new BlockingCollection<string> ()
+    let mutable private lastColdStartMs = 0L
 
     let private kill () =
         match proc with
@@ -57,6 +58,7 @@ module FsiSession =
             | None -> ()
 
     let private startSession () : bool =
+        let coldSw = Stopwatch.StartNew ()
         try
             let psi = ProcessStartInfo "dotnet"
             psi.ArgumentList.Add "fsi"
@@ -71,29 +73,35 @@ module FsiSession =
             psi.StandardOutputEncoding <- Encoding.UTF8
             psi.StandardErrorEncoding <- Encoding.UTF8
             let p = Process.Start psi
-            stdoutLines <- ConcurrentQueue<string> ()
-            stderrLines <- ConcurrentQueue<string> ()
+            stdoutLines <- new BlockingCollection<string> ()
+            stderrLines <- new BlockingCollection<string> ()
             proc <- Some p
             stdinWriter <- Some p.StandardInput
 
-            let startReader (getLine: unit -> string) (q: ConcurrentQueue<string>) =
+            let startReader (getLine: unit -> string) (q: BlockingCollection<string>) =
                 Task.Run (fun () ->
                     try
                         let mutable line = getLine ()
                         while not (isNull line) do
-                            q.Enqueue line
+                            q.Add line
                             line <- getLine ()
                     with _ -> ())
                 |> ignore
 
             startReader (fun () -> p.StandardOutput.ReadLine ()) stdoutLines
             startReader (fun () -> p.StandardError.ReadLine ()) stderrLines
+            lastColdStartMs <- coldSw.ElapsedMilliseconds
             true
         with _ -> false
 
-    let private drain (q: ConcurrentQueue<string>) (sb: StringBuilder) : string =
+    /// Milliseconds spent starting the most recent FSI session (spawn to
+    /// readers attached). Reported separately so the cold-start cost is not
+    /// buried inside the first evaluation phase.
+    let getColdStartMs () = lastColdStartMs
+
+    let private drain (q: BlockingCollection<string>) (sb: StringBuilder) : string =
         let mutable line = null
-        while q.TryDequeue (&line) do
+        while q.TryTake(&line) do
             sb.AppendLine line |> ignore
         sb.ToString ()
 
@@ -165,7 +173,7 @@ module FsiSession =
                         if p.HasExited then None
                         else
                             let mutable line = null
-                            if stdoutLines.TryDequeue (&line) then
+                            if stdoutLines.TryTake(&line, 10) then
                                 if not (isNull line) && line.Contains marker then
                                     // A script may end without a trailing newline
                                     // (e.g. `printf`-based render), so the marker
@@ -201,7 +209,6 @@ module FsiSession =
                                     kill ()
                                     None
                                 else
-                                    Thread.Sleep 10
                                     loop ()
                     loop ()
             with _ ->

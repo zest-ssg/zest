@@ -21,6 +21,15 @@ type HbsHelper = obj list -> Map<string, obj> -> obj
 
 module internal HbsTypes =
 
+    // ── AST nodes ──────────────────────────────────────────────────────
+    type HbsNode =
+        | NText of string
+        | NExpr of expr: string * triple: bool
+        | NBlock of name: string * args: string * blockParams: string list * body: HbsNode list * elseBody: HbsNode list option
+        | NInverted of name: string * args: string * blockParams: string list * body: HbsNode list
+        | NPartial of name: string * args: string
+        | NPartialBlock of name: string * args: string * body: HbsNode list
+
     /// <summary>
     /// Per-render environment. Data is a stack of `@`-variable frames; the
     /// head is the innermost scope, so `@../index` reads the parent frame.
@@ -56,12 +65,3 @@ module internal HbsTypes =
         | TPartial of name: string * args: string
         | TPartialBlock of name: string * args: string
         | TComment
-
-    // ── AST nodes ──────────────────────────────────────────────────────
-    type HbsNode =
-        | NText of string
-        | NExpr of expr: string * triple: bool
-        | NBlock of name: string * args: string * blockParams: string list * body: HbsNode list * elseBody: HbsNode list option
-        | NInverted of name: string * args: string * blockParams: string list * body: HbsNode list
-        | NPartial of name: string * args: string
-        | NPartialBlock of name: string * args: string * body: HbsNode list

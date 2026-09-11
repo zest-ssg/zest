@@ -167,7 +167,7 @@ module internal HbsContext =
     let private resolveParam (p: string) (paramsFrames: Map<string, obj> list) : obj option =
         let dot = p.IndexOf('.')
         let first = if dot >= 0 then p.[..dot - 1] else p
-        let rec find frames =
+        let rec find (frames: Map<string, obj> list) : obj option =
             match frames with
             | frame :: tail ->
                 match frame.TryFind first with
