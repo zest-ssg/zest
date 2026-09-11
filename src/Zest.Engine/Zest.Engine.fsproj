@@ -15,27 +15,24 @@
     <Compile Include="Theme/ThemeResolver.fs" />
     <Compile Include="Theme/ThemeConfigLoader.fs" />
 
-    <!-- ZCSS pipeline (bottom-up: AST → file cache → parser → compiler → processor) -->
-    <Compile Include="Zcss/ZcssAst.fs" />
-    <Compile Include="Zcss/ZcssCache.fs" />
-    <!-- Parser layer (depends on AST + cache) -->
-    <Compile Include="Zcss/BuiltinFunctions.fs" />
-    <Compile Include="Zcss/ColorPipeline.fs" />
-    <Compile Include="Zcss/MathEvaluator.fs" />
-    <Compile Include="Zcss/CoreParser.fs" />
-    <Compile Include="Zcss/ZcssEvaluator.fs" />
-    <Compile Include="Zcss/BraceParser.fs" />
-    <Compile Include="Zcss/IndentParser.fs" />
-    <Compile Include="Zcss/ZcssParser.fs" />
-    <Compile Include="Zcss/BuiltinStyles.fs" />
-    <Compile Include="Zcss/ZcssHelpers.fs" />
-    <Compile Include="Zcss/ZcssModules.fs" />
-    <!-- Compilation + entry points (depend on the parser layer) -->
-    <Compile Include="Zcss/ZcssCompiler.fs" />
-    <Compile Include="Zcss/ZcssProcessor.fs" />
-    <!-- Tooling -->
-    <Compile Include="Zcss/ZcssCompletions.fs" />
-    <Compile Include="Zcss/TypeChecker.fs" />
+    <!-- ZCSS pipeline (layered: Syntax → Evaluation → Parsing → Builtins → Compilation → Tooling) -->
+    <Compile Include="Zcss/Syntax/ZcssAst.fs" />
+    <Compile Include="Zcss/Syntax/CoreParser.fs" />
+    <Compile Include="Zcss/Evaluation/BuiltinFunctions.fs" />
+    <Compile Include="Zcss/Evaluation/ColorPipeline.fs" />
+    <Compile Include="Zcss/Evaluation/MathEvaluator.fs" />
+    <Compile Include="Zcss/Evaluation/Evaluator.fs" />
+    <Compile Include="Zcss/Parsing/BraceParser.fs" />
+    <Compile Include="Zcss/Parsing/IndentParser.fs" />
+    <Compile Include="Zcss/Parsing/Parser.fs" />
+    <Compile Include="Zcss/Builtins/BuiltinStyles.fs" />
+    <Compile Include="Zcss/Builtins/ZcssHelpers.fs" />
+    <Compile Include="Zcss/Builtins/Modules.fs" />
+    <Compile Include="Zcss/Compilation/ZcssCache.fs" />
+    <Compile Include="Zcss/Compilation/Compiler.fs" />
+    <Compile Include="Zcss/Compilation/Processor.fs" />
+    <Compile Include="Zcss/Tooling/Completions.fs" />
+    <Compile Include="Zcss/Tooling/TypeChecker.fs" />
 
     <!-- Routing -->
     <Compile Include="Routing/PermalinkRouter.fs" />

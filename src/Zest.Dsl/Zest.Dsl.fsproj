@@ -5,40 +5,40 @@
   <!-- F# compiles top-down: a file may only reference symbols declared in
        earlier files, so the list below is ordered by dependency. -->
   <ItemGroup>
-    <!-- Core context (no project dependencies) -->
-    <Compile Include="ZestContext.fs" />
+    <!-- Core: build context and the foundational DSL primitives -->
+    <Compile Include="Core/ZestContext.fs" />
+    <Compile Include="Core/Dsl.fs" />
 
-    <!-- HTML DSL + component builders (depend on Context) -->
-    <Compile Include="DslHtml.fs" />
-    <Compile Include="DslComponents.fs" />
+    <!-- Utility: generic string/date/sequence/config helpers -->
+    <Compile Include="Utility/StringHelper.fs" />
+    <Compile Include="Utility/DateHelper.fs" />
+    <Compile Include="Utility/SequenceHelper.fs" />
+    <Compile Include="Utility/DslHelpers.fs" />
 
-    <!-- Standalone utility helpers -->
-    <Compile Include="StringProcessor.fs" />
-    <Compile Include="DateFormatter.fs" />
-    <Compile Include="SequenceProcessor.fs" />
+    <!-- Css: ZCSS DSL, validation, scoping, and the inline style API -->
+    <Compile Include="Css/DslCss.fs" />
+    <Compile Include="Css/CssValidator.fs" />
+    <Compile Include="Css/CssScoper.fs" />
+    <Compile Include="Css/DslStyle.fs" />
 
-    <!-- Sugar + compound builders (depend on Dsl, Context, helpers) -->
-    <Compile Include="DslSugar.fs" />
-    <Compile Include="ContentBuilder.fs" />
+    <!-- Sugar: authoring ergonomics and content guards -->
+    <Compile Include="Sugar/DslSugar.fs" />
+    <Compile Include="Sugar/ContentGuard.fs" />
 
-    <!-- CSS DSL; validator/scoper feed DslStyle (depend on Dsl) -->
-    <Compile Include="DslCss.fs" />
-    <Compile Include="StyleValidator.fs" />
-    <Compile Include="StyleScoper.fs" />
-    <Compile Include="DslStyle.fs" />
+    <!-- Html: high-level component builders (CompoundBuilder opens DslSugar) -->
+    <Compile Include="Html/DslComponents.fs" />
+    <Compile Include="Html/CompoundBuilder.fs" />
 
-    <!-- Content safety guard -->
-    <Compile Include="ContentGuard.fs" />
+    <!-- Data: page query and collection APIs -->
+    <Compile Include="Data/DslCollections.fs" />
 
-    <!-- Collection/page-query APIs (depend on Context) -->
-    <Compile Include="DslCollections.fs" />
+    <!-- Metadata: SEO tags and RSS/Atom/Sitemap feeds -->
+    <Compile Include="Metadata/DslSeo.fs" />
+    <Compile Include="Metadata/DslXml.fs" />
 
-    <!-- Higher-level DSLs (DslMigration opens DslHelpers) -->
-    <Compile Include="DslHelpers.fs" />
-    <Compile Include="DslSeo.fs" />
-    <Compile Include="DslXml.fs" />
-    <Compile Include="DslMigration.fs" />
-    <Compile Include="DslCompat.fs" />
+    <!-- Migration: config/frontmatter conversion and cross-SSG shims -->
+    <Compile Include="Migration/DslMigration.fs" />
+    <Compile Include="Migration/DslCompat.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Tomlyn" Version="0.17.0" />
