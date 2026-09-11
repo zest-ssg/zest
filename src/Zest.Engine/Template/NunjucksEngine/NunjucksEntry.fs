@@ -5,7 +5,7 @@ open System.Collections.Concurrent
 open System.Collections.Generic
 open System.IO
 
-// NunjucksEngine.fs
+// NunjucksEntry.fs
 //
 // Public Nunjucks engine entry point. Implements ITemplateEngine by delegating
 // to the tokenizer, evaluator, block collector, and renderer modules.

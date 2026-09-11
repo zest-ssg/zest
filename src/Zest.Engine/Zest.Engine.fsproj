@@ -53,7 +53,7 @@
     <Compile Include="Template/NunjucksEngine/NunjucksEvaluator.fs" />
     <Compile Include="Template/NunjucksEngine/NunjucksBlocks.fs" />
     <Compile Include="Template/NunjucksEngine/NunjucksRenderer.fs" />
-    <Compile Include="Template/NunjucksEngine/NunjucksEngine.fs" />
+    <Compile Include="Template/NunjucksEngine/NunjucksEntry.fs" />
 
     <!-- Handlebars engine (dependency order: types → tokenizer → parser → context → renderer → engine) -->
     <Compile Include="Template/HbsEngine/HbsTypes.fs" />
@@ -61,7 +61,7 @@
     <Compile Include="Template/HbsEngine/HbsParser.fs" />
     <Compile Include="Template/HbsEngine/HbsContext.fs" />
     <Compile Include="Template/HbsEngine/HbsRenderer.fs" />
-    <Compile Include="Template/HbsEngine/HbsEngine.fs" />
+    <Compile Include="Template/HbsEngine/HbsEntry.fs" />
 
     <Compile Include="Template/HamlConverter.fs" />
     <Compile Include="Template/PugConverter.fs" />

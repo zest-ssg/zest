@@ -5,7 +5,7 @@ open System.Collections.Concurrent
 open System.Collections.Generic
 open System.IO
 
-// HbsEngine.fs
+// HbsEntry.fs
 //
 // Public Handlebars/Mustache engine entry point. Implements ITemplateEngine by
 // delegating to the tokenizer, parser, context, and renderer modules.
