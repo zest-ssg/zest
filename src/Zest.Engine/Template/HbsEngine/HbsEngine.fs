@@ -28,14 +28,30 @@ type HbsEngine() =
 
     let mutable partialLoader: string -> string option = fun _ -> None
 
+    // User-registered helpers, keyed by helper name. Built-in helpers live in
+    // HbsRenderer and are merged with these per render; a user helper of the
+    // same name shadows the built-in.
+    let userHelpers = ConcurrentDictionary<string, HbsHelper>()
+
+    /// Snapshot the registered helpers into an immutable map for one render.
+    let helperMap () =
+        userHelpers |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
+
     member _.SetLoadFile(fn: string -> Result<string, string>) = loadFileFn <- fn
     member _.SetPartialLoader(fn: string -> string option) = partialLoader <- fn
+
+    /// <summary>
+    /// Registers an inline helper under a name usable as `{{name arg key=value}}`.
+    /// The helper receives resolved positional and hash arguments and its
+    /// return value is HTML-escaped unless the template uses a triple mustache.
+    /// </summary>
+    member _.RegisterHelper(name: string, fn: HbsHelper) = userHelpers.[name] <- fn
 
     interface ITemplateEngine with
         member _.Name = "hbs"
 
         member _.Render(templateText: string) (variables: IDictionary<string, obj>) : Result<string, TemplateError> =
-            HbsRenderer.render templateText variables partialLoader
+            HbsRenderer.render templateText variables (helperMap ()) partialLoader
 
         member _.RenderFile(filePath: string) (variables: IDictionary<string, obj>) : Result<string, TemplateError> =
             try
@@ -46,7 +62,7 @@ type HbsEngine() =
                         let t = File.ReadAllText(filePath)
                         fileCache.[filePath] <- struct(File.GetLastWriteTimeUtc(filePath), t)
                         t
-                HbsRenderer.render text variables partialLoader
+                HbsRenderer.render text variables (helperMap ()) partialLoader
             with :? FileNotFoundException -> Error(TemplateError.NotFound filePath)
                | ex -> Error(TemplateError.RuntimeError(ex.Message, 0))
 

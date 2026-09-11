@@ -15,9 +15,8 @@ open HbsTokenizer
 module internal HbsParser =
 
     // ── Recursive-descent parser ───────────────────────────────────────
-    // Builds the AST. parseNode handles one token; blocks recurse.
     let rec parseBodyUntilElse (tokens: HbsToken list) : HbsNode list * HbsToken list * bool =
-        // returns (nodes, rest, hitElse) — stops at TElse/TElseIf/TBlockClose
+        // Returns (nodes, rest, hitElse) — stops at TElse/TElseIf/TBlockClose.
         let rec go acc rest =
             match rest with
             | [] -> List.rev acc, [], false
@@ -45,15 +44,18 @@ module internal HbsParser =
         | TExpr(e, t) -> NExpr(e, t), rest
         | TComment -> NText "", rest
         | TPartial(name, args) -> NPartial(name, args), rest
-        | TBlockOpen(name, args) ->
+        | TPartialBlock(name, args) ->
+            let body, afterBody = parseBodyUntilClose name rest
+            NPartialBlock(name, args, body), afterBody
+        | TBlockOpen(name, args, blockParams) ->
             let body, afterBody, hitElse = parseBodyUntilElse rest
             if not hitElse then
                 match afterBody with
                 | TBlockClose n :: tail when n = name ->
-                    NBlock(name, args, body, None), tail
-                | _ -> NBlock(name, args, body, None), afterBody
+                    NBlock(name, args, blockParams, body, None), tail
+                | _ -> NBlock(name, args, blockParams, body, None), afterBody
             else
-                // collect else / else-if chain
+                // Collect the else / else-if chain.
                 let rec collectElseChain (nodes: HbsNode list) (toks: HbsToken list) : HbsNode list * HbsToken list =
                     match toks with
                     | TElse :: tail ->
@@ -61,7 +63,7 @@ module internal HbsParser =
                         List.rev (List.rev nodes @ eb), after
                     | TElseIf a :: tail ->
                         let eb, after = parseBodyUntilClose name tail
-                        let inner = NBlock("if", a, eb, None)
+                        let inner = NBlock("if", a, [], eb, None)
                         collectElseChain (inner :: nodes) after
                     | TBlockClose n :: tail when n = name ->
                         List.rev nodes, tail
@@ -70,18 +72,16 @@ module internal HbsParser =
                     | [] -> List.rev nodes, []
                     | _ :: tail -> collectElseChain nodes tail
                 let elseBody, tail = collectElseChain [] afterBody
-                if elseBody.IsEmpty then NBlock(name, args, body, None), tail
-                else NBlock(name, args, body, Some elseBody), tail
-        | TInverted(name, args) ->
+                if elseBody.IsEmpty then NBlock(name, args, blockParams, body, None), tail
+                else NBlock(name, args, blockParams, body, Some elseBody), tail
+        | TInverted(name, args, blockParams) ->
             let body, afterBody, _ = parseBodyUntilElse rest
             match afterBody with
-            | TBlockClose n :: tail when n = name -> NInverted(name, args, body), tail
-            | _ -> NInverted(name, args, body), afterBody
+            | TBlockClose n :: tail when n = name -> NInverted(name, args, blockParams, body), tail
+            | _ -> NInverted(name, args, blockParams, body), afterBody
         | TElse | TElseIf _ | TBlockClose _ -> NText "", rest
 
     // ── Parsed AST cache ───────────────────────────────────────────────
-    // A layout rendered once per page (or shared across pages) should parse
-    // once per distinct source. Keyed by content hash via TemplateUtils.
     let private astCache = ConcurrentDictionary<int64, HbsNode list>()
 
     let parse (src: string) : HbsNode list =

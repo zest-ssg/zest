@@ -3,12 +3,14 @@ namespace Zest.Engine.Template
 open System
 open System.Collections.Generic
 open System.Reflection
+open System.Text
 open HbsTypes
 
 // HbsContext.fs
 //
 // Resolves Handlebars values: HTML escaping, truthiness rules, dotted-path
-// lookups, partial argument parsing, and expression resolution against the
+// lookups, `@`-data variables (including `@../` parent frames), quoted
+// argument parsing, helper dispatch, and expression resolution against the
 // per-render context stack.
 
 module internal HbsContext =
@@ -31,37 +33,14 @@ module internal HbsContext =
         | :? int as i -> i = 0
         | :? int64 as i -> i = 0L
         | :? System.Collections.IEnumerable as e when not (v :? string) && not (v :? System.Collections.IDictionary) ->
-            // empty collection → falsey; non-empty → truthy
             let en = e.GetEnumerator()
             if en.MoveNext() then false else true
         | _ -> false
 
     let isTruthy (v: obj) = not (isFalsey v)
 
-    /// Resolve a dotted path (and `../`, `this`, `.`, `@root`) against a value.
-    let rec private lookupPath (path: string) (current: obj) (root: obj) (idx: Map<string, obj>) : obj =
-        if isNull path then null
-        else
-            let mutable v = current
-            // `../` walks up handled by caller (Stack); here only root/idx/base
-            if path = "this" || path = "." then v
-            elif path.StartsWith("@root") then
-                let rest = if path.Length > 5 then path.Substring(6).TrimStart('.') else ""
-                if rest = "" then root else lookupPath rest root root Map.empty
-            elif path.StartsWith("@") then
-                match idx.TryFind path with
-                | Some x -> x
-                | None -> null
-            else
-                let parts = path.Split('.')
-                let mutable failed = false
-                for p in parts do
-                    if not failed && v <> null then
-                        v <- getProp p v
-                        if isNull v then failed <- true
-                if failed then null else v
-
-    and getProp (name: string) (v: obj) : obj =
+    /// Resolve a property on a value: dictionary key, list index, or POCO property.
+    let rec getProp (name: string) (v: obj) : obj =
         match v with
         | null -> null
         | :? IDictionary<string, obj> as d ->
@@ -86,42 +65,168 @@ module internal HbsContext =
             let p = t.GetProperty(name, BindingFlags.Public ||| BindingFlags.Instance ||| BindingFlags.IgnoreCase)
             if p <> null && p.CanRead then p.GetValue(v) else null
 
-    /// Split helper args like `items` or `a b='x' c=3` into (positional, named).
+    /// Split helper/partial args like `items` or `a b='x y' c=3` into
+    /// (positional, named). Quoted values keep interior whitespace; bare
+    /// named values are coerced to number/bool/string literals.
     let parseArgs (args: string) : string list * (string * obj) list =
         if String.IsNullOrWhiteSpace args then [], []
         else
             let positional = ResizeArray<string>()
             let named = ResizeArray<string * obj>()
-            let parts = args.Split([| ' '; '\t'; '\r'; '\n' |], StringSplitOptions.RemoveEmptyEntries)
-            for p in parts do
-                let eq = p.IndexOf('=')
-                if eq > 0 then
-                    let k = p.Substring(0, eq)
-                    let raw = p.Substring(eq + 1)
-                    let value: obj =
-                        if raw.Length >= 2 && ((raw.[0] = '"' && raw.[raw.Length - 1] = '"') || (raw.[0] = '\'' && raw.[raw.Length - 1] = '\'')) then
-                            raw.Substring(1, raw.Length - 2) :> obj
-                        else
-                            match Double.TryParse raw with
-                            | true, d -> d :> obj
-                            | _ -> raw :> obj
-                    named.Add(k, value)
-                else positional.Add p
+            let n = args.Length
+            let mutable i = 0
+
+            // Read a quoted run starting at args.[i] (which must be the quote char).
+            let readQuoted (q: char) : string =
+                i <- i + 1
+                let sb = StringBuilder()
+                let mutable closed = false
+                while i < n && not closed do
+                    let c = args.[i]
+                    if c = '\\' && i + 1 < n then
+                        sb.Append(args.[i + 1]) |> ignore
+                        i <- i + 2
+                    elif c = q then
+                        closed <- true
+                        i <- i + 1
+                    else
+                        sb.Append(c) |> ignore
+                        i <- i + 1
+                sb.ToString()
+
+            let coerceLiteral (raw: string) : obj =
+                match Double.TryParse raw with
+                | true, d -> box d
+                | _ ->
+                    match raw.ToLowerInvariant() with
+                    | "true" -> box true
+                    | "false" -> box false
+                    | "null" -> null
+                    | _ -> box raw
+
+            while i < n do
+                while i < n && Char.IsWhiteSpace args.[i] do i <- i + 1
+                if i < n then
+                    if args.[i] = '"' || args.[i] = '\'' then
+                        positional.Add(readQuoted args.[i])
+                    else
+                        // Read a bare name; stop at whitespace or `=`.
+                        let nameSb = StringBuilder()
+                        let mutable hasEq = false
+                        while i < n && not (Char.IsWhiteSpace args.[i]) && args.[i] <> '=' do
+                            nameSb.Append(args.[i]) |> ignore
+                            i <- i + 1
+                        if i < n && args.[i] = '=' then
+                            hasEq <- true
+                            i <- i + 1
+                        let name = nameSb.ToString()
+                        if hasEq then
+                            while i < n && Char.IsWhiteSpace args.[i] do i <- i + 1
+                            let value =
+                                if i < n && (args.[i] = '"' || args.[i] = '\'') then
+                                    box (readQuoted args.[i])
+                                else
+                                    let vb = StringBuilder()
+                                    while i < n && not (Char.IsWhiteSpace args.[i]) do
+                                        vb.Append(args.[i]) |> ignore
+                                        i <- i + 1
+                                    coerceLiteral (vb.ToString())
+                            named.Add(name, value)
+                        elif name <> "" then
+                            positional.Add name
             positional |> Seq.toList, named |> Seq.toList
 
-    let resolveExpr (env: RenderEnv) (expr: string) : obj =
+    /// Resolve a plain dotted path against a starting value.
+    let rec private lookupDots (path: string) (v: obj) : obj =
+        let parts = path.Split('.')
+        let mutable cur = v
+        let mutable ok = true
+        for part in parts do
+            if ok && not (isNull cur) then
+                cur <- getProp part cur
+                if isNull cur then ok <- false
+        if ok then cur else null
+
+    /// Resolve an `@`-data path (`@index`, `@../index`) against the data stack.
+    let rec private resolveData (path: string) (data: Map<string, obj> list) : obj =
+        let mutable frames = data
+        let mutable key = path
+        while key.StartsWith("../") do
+            key <- key.Substring(3)
+            match frames with
+            | _ :: tail -> frames <- tail
+            | [] -> frames <- []
+        match frames with
+        | frame :: _ ->
+            match frame.TryFind key with
+            | Some v -> v
+            | None -> null
+        | [] -> null
+
+    /// Resolve a block-parameter name (first path segment) against param frames.
+    let private resolveParam (p: string) (paramsFrames: Map<string, obj> list) : obj option =
+        let dot = p.IndexOf('.')
+        let first = if dot >= 0 then p.[..dot - 1] else p
+        let rec find frames =
+            match frames with
+            | frame :: tail ->
+                match frame.TryFind first with
+                | Some v ->
+                    if dot >= 0 then Some (lookupDots (p.Substring(dot + 1)) v)
+                    else Some v
+                | None -> find tail
+            | [] -> None
+        find paramsFrames
+
+    /// Invoke a registered helper if the expression's leading word names one.
+    let rec private tryInvokeHelper (env: RenderEnv) (expr: string) : obj option =
         let e = expr.Trim()
-        if e = "" then null
-        elif e.StartsWith("../") then
-            // walk up the stack
-            let upCount = e |> Seq.takeWhile ((=) '.') |> Seq.length |> fun n -> n / 2
-            let path = e.Substring(upCount * 3)
+        if e = "" then None
+        else
+            let mutable i = 0
+            while i < e.Length && (Char.IsLetterOrDigit e.[i] || e.[i] = '_') do i <- i + 1
+            let name = if i > 0 then e.Substring(0, i) else ""
+            match env.Helpers.TryFind name with
+            | None -> None
+            | Some fn ->
+                let rest = e.Substring(name.Length).Trim()
+                let pos, named = parseArgs rest
+                let posVals = pos |> List.map (fun p -> resolveExpr env p)
+                let namedMap = named |> Map.ofList
+                Some (fn posVals namedMap)
+
+    /// Resolve a path expression against the current context (no helper dispatch).
+    and private resolvePath (p: string) (current: obj) (env: RenderEnv) : obj =
+        if p = "this" || p = "." then current
+        elif p = "@root" then env.Root
+        elif p.StartsWith("@root.") then lookupDots (p.Substring(6)) env.Root
+        elif p.StartsWith("@") then resolveData (p.Substring(1)) env.Data
+        elif p.StartsWith("../") then
+            let upCount = (p |> Seq.takeWhile ((=) '.') |> Seq.length) / 2
+            let rest = p.Substring(upCount * 3)
             let rec goUp n st =
                 if n <= 0 || List.isEmpty st then st
                 else goUp (n - 1) (List.tail st)
             match goUp upCount env.Stack with
+            | c :: _ -> if rest = "" then c else lookupDots rest c
             | [] -> null
-            | cur :: _ -> lookupPath path cur env.Root env.Meta
         else
-            let cur = match env.Stack with c :: _ -> c | [] -> box env.Vars
-            lookupPath e cur env.Root env.Meta
+            match resolveParam p env.Params with
+            | Some v -> v
+            | None -> lookupDots p current
+
+    /// <summary>
+    /// Resolve a full Handlebars expression: subexpressions `(...)`, helper
+    /// calls, `@`-data variables, and dotted paths.
+    /// </summary>
+    and resolveExpr (env: RenderEnv) (expr: string) : obj =
+        let e = expr.Trim()
+        if e = "" then null
+        elif e.StartsWith("(") && e.EndsWith(")") then
+            resolveExpr env (e.Substring(1, e.Length - 2).Trim())
+        else
+            match tryInvokeHelper env e with
+            | Some v -> v
+            | None ->
+                let cur = match env.Stack with c :: _ -> c | [] -> box env.Vars
+                resolvePath e cur env
