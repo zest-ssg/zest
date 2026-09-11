@@ -2,7 +2,7 @@
   <img src="zest.png" alt="Zest" width="128" height="128">
 </p>
 <h1 align="center">Zest SSG</h1>
-<p align="center"><em>Zealous Efficient Static Toolkit</em></p>
+<p align="center"><em>Zest: Easy Static-site Toolkit</em></p>
 <p align="center">
   <a href="LICENSE">License</a> · <a href="#quick-start">Quick Start</a> · <a href="#documentation">Docs</a>
 </p>

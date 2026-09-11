@@ -45,8 +45,24 @@
 
     <!-- Template engines -->
     <Compile Include="Template/ITemplateEngine.fs" />
-    <Compile Include="Template/HbsEngine.fs" />
-    <Compile Include="Template/NunjucksEngine.fs" />
+
+    <!-- Nunjucks engine (dependency order: types → tokenizer → compiler → evaluator → blocks → renderer → engine) -->
+    <Compile Include="Template/NunjucksEngine/NunjucksTypes.fs" />
+    <Compile Include="Template/NunjucksEngine/NunjucksTokenizer.fs" />
+    <Compile Include="Template/NunjucksEngine/NunjucksCompiler.fs" />
+    <Compile Include="Template/NunjucksEngine/NunjucksEvaluator.fs" />
+    <Compile Include="Template/NunjucksEngine/NunjucksBlocks.fs" />
+    <Compile Include="Template/NunjucksEngine/NunjucksRenderer.fs" />
+    <Compile Include="Template/NunjucksEngine/NunjucksEngine.fs" />
+
+    <!-- Handlebars engine (dependency order: types → tokenizer → parser → context → renderer → engine) -->
+    <Compile Include="Template/HbsEngine/HbsTypes.fs" />
+    <Compile Include="Template/HbsEngine/HbsTokenizer.fs" />
+    <Compile Include="Template/HbsEngine/HbsParser.fs" />
+    <Compile Include="Template/HbsEngine/HbsContext.fs" />
+    <Compile Include="Template/HbsEngine/HbsRenderer.fs" />
+    <Compile Include="Template/HbsEngine/HbsEngine.fs" />
+
     <Compile Include="Template/HamlConverter.fs" />
     <Compile Include="Template/PugConverter.fs" />
     <Compile Include="Template/LiquidConverter.fs" />
