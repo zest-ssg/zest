@@ -19,64 +19,48 @@ module LayoutEngine =
               FileExtensions.Handlebars; FileExtensions.Mustache
               FileExtensions.ZestScript; FileExtensions.FSharpScript ]
 
-    let private layoutCache2 = ConcurrentDictionary<string, struct(DateTime * Map<string, string * string>)>()
+    /// Load every layout in a directory, keyed by its extension-stripped name.
+    /// Files are read on every call rather than cached by timestamp: an editor
+    /// can rewrite a file without advancing its modification time, and reading
+    /// a handful of templates is negligible next to rendering the site.
     let internal loadLayouts (layoutsDir: string) =
         if not (Directory.Exists layoutsDir) then Map.empty
         else
-            let mutable maxTicks = 0L
             let files = ResizeArray<string * string>()
             for f in Directory.EnumerateFiles(layoutsDir, "*.*", SearchOption.AllDirectories) do
-                let ticks = File.GetLastWriteTimeUtc(f).Ticks
-                if ticks > maxTicks then maxTicks <- ticks
                 let ext = Path.GetExtension(f).ToLowerInvariant()
                 if allowedLayoutExts.Contains ext then
                     let rec stripExts (name: string) =
                         let e = Path.GetExtension(name)
                         if String.IsNullOrEmpty e then name
                         else stripExts (Path.GetFileNameWithoutExtension(name))
-                    let key = stripExts (Path.GetFileName(f))
-                    files.Add(key, f)
-            let mtime = if maxTicks > 0L then DateTime(maxTicks) else DateTime.MinValue
-            let dirTicks = Directory.GetLastWriteTimeUtc(layoutsDir).Ticks
-            let mtime = if dirTicks > mtime.Ticks then DateTime(dirTicks) else mtime
-            match layoutCache2.TryGetValue(layoutsDir) with
-            | true, (cachedMtime, cachedLayouts) when cachedMtime = mtime -> cachedLayouts
-            | _ ->
-                let result =
-                    files
-                    |> Seq.map (fun (key, f) -> key, (f, File.ReadAllText(f)))
-                    |> Map.ofSeq
-                layoutCache2.[layoutsDir] <- struct(mtime, result)
-                result
+                    files.Add(stripExts (Path.GetFileName(f)), f)
+            files
+            |> Seq.map (fun (key, f) -> key, (f, File.ReadAllText(f)))
+            |> Map.ofSeq
 
-    let private includesCache = ConcurrentDictionary<string, struct(DateTime * IDictionary<string, string>)>()
-    // Highest mtime seen across all loadIncludes calls — used by BuildEngine
-    // to invalidate the include-processed layout cache without re-traversing.
-    let private lastIncludesMtimeRef = ref DateTime.MinValue
-    let internal getLastIncludesMtime () = !lastIncludesMtimeRef
+    /// Include name → absolute path for the most recent loadIncludes call.
+    /// BuildEngine merges the theme and project maps so a page can record which
+    /// include files it depends on.
+    let private includePathMapRef = ref Map.empty<string, string>
+    let internal getIncludePathMap () = !includePathMapRef
+    let internal setIncludePathMap (paths: Map<string, string>) = includePathMapRef := paths
+
+    /// Load every include in a directory, keyed by file name. Files are read on
+    /// every call (see loadLayouts for why timestamp caching is not safe here).
     let internal loadIncludes (includesDir: string) : IDictionary<string, string> =
         if not (Directory.Exists includesDir) then
+            includePathMapRef := Map.empty
             Dictionary<string, string>() :> IDictionary<string, string>
         else
-            let mutable maxTicks = 0L
             let files = ResizeArray<string * string>()
             for f in Directory.EnumerateFiles(includesDir, "*.*", SearchOption.AllDirectories) do
-                let ticks = File.GetLastWriteTimeUtc(f).Ticks
-                if ticks > maxTicks then maxTicks <- ticks
                 files.Add(Path.GetFileName(f), f)
-            let mtime = if maxTicks > 0L then DateTime(maxTicks) else DateTime.MinValue
-            let dirTicks = Directory.GetLastWriteTimeUtc(includesDir).Ticks
-            let mtime = if dirTicks > mtime.Ticks then DateTime(dirTicks) else mtime
-            lastIncludesMtimeRef := Operators.max !lastIncludesMtimeRef mtime
-            match includesCache.TryGetValue(includesDir) with
-            | true, (cachedMtime, cachedData) when cachedMtime = mtime -> cachedData
-            | _ ->
-                let d = Dictionary<string, string>()
-                for (name, f) in files do
-                    d.[name] <- File.ReadAllText(f)
-                let result = d :> IDictionary<string, string>
-                includesCache.[includesDir] <- struct(mtime, result)
-                result
+            includePathMapRef := files |> Seq.map (fun (name, path) -> name, path) |> Map.ofSeq
+            let d = Dictionary<string, string>()
+            for (name, f) in files do
+                d.[name] <- File.ReadAllText(f)
+            d :> IDictionary<string, string>
 
     let internal buildReplacements (page: ContentPage) (config: SiteConfig) (globalData: IDictionary<string, obj>) =
         let d = Dictionary<string, string>()
@@ -127,16 +111,40 @@ module LayoutEngine =
                     | _ -> m.Value)
         processText text 0
 
+    /// Resolve the absolute path of every include referenced by a template body,
+    /// following nested includes to the same depth cap processIncludes uses.
+    let internal collectIncludePaths
+        (text: string)
+        (includes: IDictionary<string, string>)
+        (includePaths: Map<string, string>) : string list =
+        let found = HashSet<string>()
+        let rec walk (body: string) (depth: int) =
+            if depth <= 10 then
+                for m in includePattern.Matches body do
+                    let name = m.Groups.[1].Value
+                    match includePaths.TryFind name with
+                    | Some path when found.Add path ->
+                        match includes.TryGetValue name with
+                        | true, nested -> walk nested (depth + 1)
+                        | _ -> ()
+                    | _ -> ()
+        walk text 0
+        Seq.toList found
+
     let private processedLayoutCache = ConcurrentDictionary<string, string>()
-    let private includesMtimeRef = ref DateTime.MinValue
-    let internal setIncludesMtime (t: DateTime) =
-        if t > !includesMtimeRef then
+    let private includesSignatureRef = ref ""
+    /// Set the current include-set content signature. A different signature
+    /// means at least one include body changed, so the include-substituted
+    /// layout cache is discarded. Keyed by content rather than timestamp so a
+    /// same-timestamp edit still invalidates.
+    let internal setIncludesSignature (signature: string) =
+        if signature <> !includesSignatureRef then
             processedLayoutCache.Clear()
-        includesMtimeRef := t
-    let internal currentIncludesMtime () = !includesMtimeRef
+        includesSignatureRef := signature
+    let internal currentIncludesSignature () = !includesSignatureRef
 
     let private applyLayoutCached (path: string) (layoutText: string) (includes: IDictionary<string, string>) =
-        let key = path + "|" + (currentIncludesMtime ()).Ticks.ToString()
+        let key = path + "|" + BuildCache.contentHashOf layoutText + "|" + currentIncludesSignature ()
         match processedLayoutCache.TryGetValue(key) with
         | true, cached -> cached
         | _ ->

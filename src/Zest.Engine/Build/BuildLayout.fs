@@ -10,5 +10,5 @@ module BuildLayout =
     let internal loadLayouts = LayoutEngine.loadLayouts
     let internal loadIncludes = LayoutEngine.loadIncludes
     let internal buildReplacements = LayoutEngine.buildReplacements
-    let internal setIncludesMtime = LayoutEngine.setIncludesMtime
+    let internal setIncludesSignature = LayoutEngine.setIncludesSignature
     let internal applyLayout = LayoutEngine.applyLayout

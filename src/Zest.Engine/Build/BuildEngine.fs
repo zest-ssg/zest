@@ -109,27 +109,39 @@ module BuildEngine =
                 | Some td ->
                     let themeIncludesDir = Path.Combine(td, "_includes")
                     let baseIncludes = loadIncludes includesDir
+                    let projectIncludePaths = LayoutEngine.getIncludePathMap ()
                     if Directory.Exists themeIncludesDir then
                         let themeIncludes = loadIncludes themeIncludesDir
+                        let themeIncludePaths = LayoutEngine.getIncludePathMap ()
                         // Theme keys first; project keys overwrite
                         for kv in themeIncludes do
                             if not (baseIncludes.ContainsKey kv.Key) then
                                 baseIncludes.[kv.Key] <- kv.Value
+                        // Project include paths win, mirroring the text merge above.
+                        LayoutEngine.setIncludePathMap (
+                            Map.fold (fun acc k v -> Map.add k v acc) themeIncludePaths projectIncludePaths)
+                    else
+                        LayoutEngine.setIncludePathMap projectIncludePaths
                     baseIncludes
                 | None -> loadIncludes includesDir
-            // ── includes mtime comes from the single traversal loadIncludes
-            // already performed — no second directory sweep needed ──
-            let includesMtime = LayoutEngine.getLastIncludesMtime ()
-            setIncludesMtime includesMtime
+            // The include-substituted layout cache is keyed by the include set's
+            // content signature, so an include edit invalidates it without
+            // relying on timestamps.
+            setIncludesSignature (computeIncludesSignature includes)
             PageQuery.setIncludes includes
 
-            // Load the incremental cache only after layouts and includes are
-            // in hand, so the template signature reflects their current
-            // content. A template change (edit/add/delete) invalidates the
-            // cache and forces a full rebuild; unchanged templates keep the
-            // per-page cache intact for fast incremental builds.
-            let templateSig = computeTemplateSignature layouts includes
-            if config.EnableIncrementalBuild then loadCache outputDir templateSig
+            // Load the incremental cache only after layouts and includes are in
+            // hand. The cache diffs per-template content hashes and marks only
+            // the pages depending on a changed template stale, so an edit
+            // rebuilds the affected pages instead of the whole site.
+            if config.EnableIncrementalBuild then
+                let templatePairs =
+                    [ for (_, (path, text)) in Map.toList layouts -> path, text
+                      for kv in includes do
+                          match (LayoutEngine.getIncludePathMap ()).TryFind kv.Key with
+                          | Some path -> yield path, kv.Value
+                          | None -> () ]
+                loadCache outputDir templatePairs
 
             // Inject site config into globalData without unnecessary full clone
             let gData = globalData
@@ -328,7 +340,7 @@ module BuildEngine =
 
             assets <- copyAssets root outputDir
             progress.AssetsCopied <- assets
-            if config.EnableIncrementalBuild then saveCache outputDir templateSig
+            if config.EnableIncrementalBuild then saveCache outputDir
 
             // ── CSS/JS post-processing ──
             // Two independent modes, matching the HTML formatting approach:

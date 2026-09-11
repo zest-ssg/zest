@@ -176,13 +176,12 @@ module ContentPipeline =
         let mdToEval =
             if config.EnableIncrementalBuild then
                 mdFiles |> Array.filter (fun f ->
-                    let mtime = File.GetLastWriteTimeUtc(f : string)
-                    match BuildCache.buildCache.TryGetValue(f) with
-                    | true, e when e.Mtime = mtime ->
+                    let text = fileContentCache.GetOrAdd(f, fun _ -> File.ReadAllText f)
+                    if BuildCache.needsRebuildWithText f text then true
+                    else
                         Interlocked.Increment(&cached) |> ignore
                         progress.IncCached()
-                        false
-                    | _ -> true)
+                        false)
             else mdFiles
 
         if mdToEval.Length > 0 then
@@ -203,24 +202,13 @@ module ContentPipeline =
                 let scriptsToEval =
                     fsxFiles
                     |> Array.choose (fun f ->
-                        if config.EnableIncrementalBuild then
-                            let mtime = File.GetLastWriteTimeUtc(f : string)
-                            match BuildCache.buildCache.TryGetValue(f) with
-                            | true, e when e.Mtime = mtime -> None
-                            | _ ->
-                                try
-                                    let text = fileContentCache.GetOrAdd(f, fun _ -> File.ReadAllText(f))
-                                    if ScriptRunner.isPageScript (Path.GetExtension(f).ToLowerInvariant()) text then
-                                        Some (f, text)
-                                    else None
-                                with _ -> None
-                        else
-                            try
-                                let text = fileContentCache.GetOrAdd(f, fun _ -> File.ReadAllText(f))
-                                if ScriptRunner.isPageScript (Path.GetExtension(f).ToLowerInvariant()) text then
-                                    Some (f, text)
-                                else None
-                            with _ -> None)
+                        try
+                            let text = fileContentCache.GetOrAdd(f, fun _ -> File.ReadAllText(f))
+                            if config.EnableIncrementalBuild && not (BuildCache.needsRebuildWithText f text) then None
+                            elif ScriptRunner.isPageScript (Path.GetExtension(f).ToLowerInvariant()) text then
+                                Some (f, text)
+                            else None
+                        with _ -> None)
                     |> Array.toList
 
                 if scriptsToEval.IsEmpty then
@@ -242,25 +230,11 @@ module ContentPipeline =
         // Process batch results and evaluate non-page scripts individually — parallelized
         let processFsxFile f =
             try
-                if config.EnableIncrementalBuild then
-                    let mtime = File.GetLastWriteTimeUtc(f : string)
-                    match BuildCache.buildCache.TryGetValue(f) with
-                    | true, e when e.Mtime = mtime ->
-                        Interlocked.Increment(&cached) |> ignore
-                        progress.IncCached()
-                    | _ ->
-                        let text = fileContentCache.GetOrAdd(f, fun _ -> File.ReadAllText(f))
-                        match Map.tryFind f fsxResults with
-                        | Some batchResult ->
-                            match batchResult with
-                            | Ok htmlContent -> evalResults.Add(ScriptEvaluator.buildPage f config safeData text htmlContent)
-                            | Error evalErr ->
-                                eprintfn "[Zest] WARN: Script evaluation failed '%s': %s — falling back to Markdown mode" f evalErr
-                                evalResults.Add(ScriptEvaluator.evaluateWithText f config safeData text)
-                        | None -> evalResults.Add(ScriptEvaluator.evaluateWithText f config safeData text)
-                        progress.IncProcessed()
+                let text = fileContentCache.GetOrAdd(f, fun _ -> File.ReadAllText(f))
+                if config.EnableIncrementalBuild && not (BuildCache.needsRebuildWithText f text) then
+                    Interlocked.Increment(&cached) |> ignore
+                    progress.IncCached()
                 else
-                    let text = fileContentCache.GetOrAdd(f, fun _ -> File.ReadAllText(f))
                     match Map.tryFind f fsxResults with
                     | Some batchResult ->
                         match batchResult with
@@ -291,8 +265,8 @@ module ContentPipeline =
             match r with
             | Error e -> errors.Add(e); progress.IncErrors()
             | Ok page ->
-                let outPath = Path.Combine(outputDir, page.OutputPath)
-                if config.EnableIncrementalBuild && not (BuildCache.needsRebuildWithDeps page.SourcePath outPath) then
+                let srcText = fileContentCache.GetOrAdd(page.SourcePath, fun _ -> File.ReadAllText page.SourcePath)
+                if config.EnableIncrementalBuild && not (BuildCache.needsRebuildWithText page.SourcePath srcText) then
                     Interlocked.Increment(&localCached) |> ignore
                 else
                     rebuildPages.Add(page)
@@ -337,23 +311,30 @@ module ContentPipeline =
                 let layoutName = page.Layout |> Option.defaultValue config.DefaultLayout
                 match batchedHtml.TryFind page.SourcePath with
                 | Some _ ->
-                    // Record page→layout dependency so future layout changes
-                    // trigger a rebuild of only the affected pages.
-                    match layouts.TryFind layoutName with
-                    | Some (layoutPath, _) -> BuildCache.recordDependency page.SourcePath layoutPath
-                    | None -> ()
+                    // Record every template this page rendered through: each
+                    // level of the layout chain plus the includes those layouts
+                    // reference. A later edit to any of them then scopes the
+                    // rebuild to exactly the affected pages.
+                    let includePaths = LayoutEngine.getIncludePathMap ()
+                    for (lname, lpath, _) in LayoutEngine.layoutChain layoutName layouts do
+                        BuildCache.recordDependency page.SourcePath lpath
+                        match layouts.TryFind lname with
+                        | Some (_, ltext) ->
+                            for includePath in LayoutEngine.collectIncludePaths ltext safeIncludes includePaths do
+                                BuildCache.recordDependency page.SourcePath includePath
+                        | None -> ()
                     let finalHtml =
                         if needsHtmlPostProcess then processedHtml.[page.SourcePath]
                         else batchedHtml.[page.SourcePath]
                     AtomicFile.write outPath (System.Text.Encoding.UTF8.GetBytes finalHtml)
                     let srcText = fileContentCache.GetOrAdd(page.SourcePath, fun _ -> File.ReadAllText page.SourcePath)
-                    BuildCache.updateCacheWithHash page.SourcePath finalHtml srcText
+                    BuildCache.updateCacheWithHash page.SourcePath outPath finalHtml srcText
                     Interlocked.Increment(&localProcessed) |> ignore
                 | None ->
                     // No layout result (missing top layout) — write the raw content.
                     AtomicFile.write outPath (System.Text.Encoding.UTF8.GetBytes page.Content)
                     let srcText = fileContentCache.GetOrAdd(page.SourcePath, fun _ -> File.ReadAllText page.SourcePath)
-                    BuildCache.updateCacheWithHash page.SourcePath page.Content srcText
+                    BuildCache.updateCacheWithHash page.SourcePath outPath page.Content srcText
                     Interlocked.Increment(&localProcessed) |> ignore
             with ex ->
                 // A single page must never abort the whole build.
