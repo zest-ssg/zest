@@ -7,6 +7,7 @@ open NunjucksTypes
 open NunjucksTokenizer
 open NunjucksEvaluator
 open NunjucksBlocks
+open NunjucksCompiler
 
 // NunjucksRenderer.fs
 //
@@ -26,7 +27,7 @@ module internal NunjucksRenderer =
         ChildBlocks: IDictionary<string, Token list>   // blocks from child template
         BlockStack: string list                        // currently active block names
         Depth: int
-        Macros: IDictionary<string, (string list * Token list)>   // macro name → (args, body)
+        Macros: IDictionary<string, ((string * string option) list * Token list)>   // macro name → (args with defaults, body)
         Blocks: IDictionary<string, Token list>        // this template's own block defs (for super())
         CurrentBlock: string option                    // block being rendered (for super())
         CallerBody: Token list option                  // captured {% call %} body (for caller())
@@ -34,6 +35,28 @@ module internal NunjucksRenderer =
         LastLine: int ref                              // most recently processed source line (for errors)
         ControlFlow: string ref                        // "" | "break" | "continue" (consumed by the nearest for loop)
     }
+
+    /// Bind macro arguments. Positional values fill parameters in declaration
+    /// order; any parameter without a value falls back to its default
+    /// expression (evaluated in the caller's context) or to null when no
+    /// default exists. Returns a fresh context so caller variables are not
+    /// mutated.
+    let private bindMacroArgs (argDefs: (string * string option) list) (vals: obj list)
+                              (baseCtx: IDictionary<string, obj>) : Dictionary<string, obj> =
+        let mCtx = Dictionary<string, obj>(baseCtx |> Seq.map (fun kv -> KeyValuePair(kv.Key, kv.Value)))
+        let rec zip defs vs =
+            match defs with
+            | [] -> ()
+            | (name, defOpt) :: restDefs ->
+                match vs with
+                | v :: restVs -> mCtx.[name] <- v; zip restDefs restVs
+                | [] ->
+                    match defOpt with
+                    | Some d -> mCtx.[name] <- evalExpr d baseCtx
+                    | None -> mCtx.[name] <- null
+                    zip restDefs []
+        zip argDefs vals
+        mCtx
 
     // ── Main renderer ──────────────────────────────────────
     // The recursive core works on a Token[] (O(1) indexing, single conversion
@@ -88,18 +111,12 @@ module internal NunjucksRenderer =
                     if pOpen > 0 && exprTrim.EndsWith(")") then
                         let mName = exprTrim.[..pOpen-1].Trim()
                         match env.Macros.TryGetValue mName with
-                        | true, (margNames, mbody) ->
+                        | true, (margDefs, mbody) ->
                             let argsText = exprTrim.[pOpen+1..exprTrim.Length-2].Trim()
                             let argValues =
                                 if argsText = "" then []
-                                else argsText.Split(',') |> Array.map (fun a -> evalExpr a env.Variables) |> Array.toList
-                            // Build a new context with macro arguments
-                            let mCtx = Dictionary<string, obj>(env.Variables |> Seq.map (fun kv -> KeyValuePair(kv.Key, kv.Value)))
-                            let rec zipArgs (names: string list) (vals: obj list) =
-                                match names, vals with
-                                | n::ns, v::vs -> mCtx.[n] <- v; zipArgs ns vs
-                                | _ -> ()
-                            zipArgs margNames argValues
+                                else splitTopLevelArgs argsText |> List.map (fun a -> evalExpr a env.Variables)
+                            let mCtx = bindMacroArgs margDefs argValues env.Variables
                             match renderTokens mbody { env with Variables = mCtx :> IDictionary<string, obj> } with
                             | Ok h -> macroResult <- Some h
                             | Error e -> error <- Some e
@@ -179,9 +196,22 @@ module internal NunjucksRenderer =
                             | :? System.Collections.IList as pair when pair.Count >= 2 ->
                                 ctx.[varNames.[0]] <- pair.[0]
                                 ctx.[varNames.[1]] <- pair.[1]
+                            // Iterating a dictionary directly yields key/value
+                            // pairs, so `for key, value in dict` destructures them.
+                            | :? KeyValuePair<string, obj> as kvp ->
+                                ctx.[varNames.[0]] <- box kvp.Key
+                                ctx.[varNames.[1]] <- kvp.Value
+                            | :? System.Collections.DictionaryEntry as de ->
+                                ctx.[varNames.[0]] <- de.Key
+                                ctx.[varNames.[1]] <- de.Value
                             | _ -> ctx.[loopVar] <- item
                         else
-                            ctx.[loopVar] <- item
+                            match item with
+                            // A single loop variable over a dictionary binds the
+                            // key, matching Nunjucks dictionary iteration.
+                            | :? KeyValuePair<string, obj> as kvp -> ctx.[loopVar] <- box kvp.Key
+                            | :? System.Collections.DictionaryEntry as de -> ctx.[loopVar] <- de.Key
+                            | _ -> ctx.[loopVar] <- item
                     // Reuse a single context + a single loop dictionary across all
                     // iterations to avoid per-iteration heap allocations (perf).
                     let mkCtx () =
@@ -312,8 +342,17 @@ module internal NunjucksRenderer =
                     let eqIdx = setText.IndexOf("=")
                     if eqIdx >= 0 then
                         let sname = setText.[..eqIdx-1].Trim()
-                        let sval = evalExpr setText.[eqIdx+1..] env.Variables
-                        env.Variables.[sname] <- sval
+                        let rhsText = setText.[eqIdx+1..].Trim()
+                        // Multiple assignment: {% set a, b = 1, 2 %} binds each
+                        // left-hand name to the matching right-hand value.
+                        let lhs = sname.Split(',') |> Array.map (fun s -> s.Trim())
+                        if lhs.Length > 1 then
+                            let rhs = splitTopLevelArgs rhsText |> List.map (fun e -> evalExpr e env.Variables)
+                            let n = min lhs.Length rhs.Length
+                            for j in 0..n-1 do env.Variables.[lhs.[j]] <- rhs.[j]
+                        else
+                            let sval = evalExpr rhsText env.Variables
+                            env.Variables.[sname] <- sval
                     else
                         // Block assignment: {% set name %}...{% endset %}
                         let sname = setText.Trim().Trim('"', '\'')
@@ -337,7 +376,13 @@ module internal NunjucksRenderer =
                                     if cp >= pIdx then macroText.[pIdx+1..cp-1].Trim() else ""
                                 let pargs =
                                     if argsPart = "" then []
-                                    else argsPart.Split(',') |> Array.map (fun a -> a.Trim()) |> Array.toList
+                                    else
+                                        splitTopLevelArgs argsPart
+                                        |> List.map (fun a ->
+                                            let a = a.Trim()
+                                            let eq = a.IndexOf('=')
+                                            if eq > 0 then a.[..eq-1].Trim(), Some(a.[eq+1..].Trim())
+                                            else a, None)
                                 name, pargs
                             else macroText.Trim(), []
                         env.Macros.[mname] <- (margs, bodyTokens)
@@ -353,17 +398,11 @@ module internal NunjucksRenderer =
                     let callArgs =
                         if pIdx >= 0 then
                             let at = macroText.[pIdx+1..macroText.Length-2].Trim()
-                            if at = "" then [] else at.Split(',') |> Array.map (fun a -> evalExpr a env.Variables) |> Array.toList
+                            if at = "" then [] else splitTopLevelArgs at |> List.map (fun a -> evalExpr a env.Variables)
                         else []
                     match env.Macros.TryGetValue mname with
-                    | true, (margs, mbody) ->
-                        let mCtx = Dictionary<string, obj>(env.Variables |> Seq.map (fun kv -> KeyValuePair(kv.Key, kv.Value)))
-                        // Bind positional macro arguments
-                        let rec zipArgs (names: string list) (vals: obj list) =
-                            match names, vals with
-                            | n::ns, v::vs -> mCtx.[n] <- v; zipArgs ns vs
-                            | _ -> ()
-                        zipArgs margs callArgs
+                    | true, (margDefs, mbody) ->
+                        let mCtx = bindMacroArgs margDefs callArgs env.Variables
                         // Make the captured body available as caller() (also kept as
                         // a string for backwards compatibility with {{ caller }}).
                         match bodyHtml with

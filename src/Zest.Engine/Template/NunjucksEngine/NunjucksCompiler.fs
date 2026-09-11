@@ -50,7 +50,7 @@ module internal NunjucksCompiler =
 
     /// Split a comma-separated argument list at top level, respecting quotes
     /// and nested parentheses/brackets. Used by loop.cycle / loop.changed.
-    let private splitTopLevelArgs (s: string) : string list =
+    let splitTopLevelArgs (s: string) : string list =
         let res = ResizeArray<string>()
         let sb = StringBuilder()
         let mutable inS = false
@@ -101,6 +101,44 @@ module internal NunjucksCompiler =
         if sb.Length > 0 then res.Add(sb.ToString().Trim())
         List.ofSeq res
 
+    /// Split an inline conditional `then if cond else otherwise` at the
+    /// leftmost top-level `if` and its matching `else`. Returns None when no
+    /// complete conditional is present, so the text falls through to ordinary
+    /// expression parsing. Leftmost-splitting makes the conditional
+    /// right-associative, matching Jinja/Nunjucks.
+    let private splitInlineIf (text: string) : (string * string * string) option =
+        let n = text.Length
+        let isWordAt (k: int) (w: string) =
+            k >= 0 && k + w.Length <= n
+            && String.CompareOrdinal(text, k, w, 0, w.Length) = 0
+            && (k = 0 || not (Char.IsLetterOrDigit text.[k-1] || text.[k-1] = '_'))
+            && (k + w.Length >= n || not (Char.IsLetterOrDigit text.[k+w.Length] || text.[k+w.Length] = '_'))
+        let mutable inS = false
+        let mutable inD = false
+        let mutable depth = 0
+        let mutable ifIdx = -1
+        let mutable elseIdx = -1
+        let mutable i = 0
+        while i < n && elseIdx < 0 do
+            let c = text.[i]
+            if inS then (if c = '\'' then inS <- false); i <- i + 1
+            elif inD then (if c = '"' then inD <- false); i <- i + 1
+            elif c = '\'' then inS <- true; i <- i + 1
+            elif c = '"' then inD <- true; i <- i + 1
+            elif c = '(' || c = '[' then depth <- depth + 1; i <- i + 1
+            elif c = ')' || c = ']' then depth <- depth - 1; i <- i + 1
+            elif depth = 0 then
+                if ifIdx < 0 && isWordAt i "if" then ifIdx <- i; i <- i + 2
+                elif ifIdx >= 0 && isWordAt i "else" then elseIdx <- i; i <- i + 4
+                else i <- i + 1
+            else i <- i + 1
+        if ifIdx >= 0 && elseIdx > ifIdx then
+            let thenE = text.[..ifIdx-1].Trim()
+            let condE = text.[ifIdx+2..elseIdx-1].Trim()
+            let elseE = text.[elseIdx+4..].Trim()
+            if thenE <> "" && condE <> "" && elseE <> "" then Some(thenE, condE, elseE) else None
+        else None
+
     // ── Expression precompilation ────────────────────────────
     // Templates render once per page, but the same expression string inside a
     // loop evaluates once per iteration. Re-parsing it every time (balance
@@ -114,7 +152,9 @@ module internal NunjucksCompiler =
         | CLit of obj
         | CPath of string
         | CNotE of CExpr
+        | CUnary of string * CExpr            // "+" | "-" prefix sign
         | CBin of string * CExpr * CExpr
+        | CIf of CExpr * CExpr * CExpr         // then, condition, else (inline if)
         | CRange of CExpr list
         | CCall of string * CExpr list
         | CParen of CExpr
@@ -135,7 +175,12 @@ module internal NunjucksCompiler =
     let rec compileExpr (exprText: string) : CExpr =
         let t = exprText.Trim()
         if t = "" then CLit ""
-        else compilePipe t
+        else compileCond t
+
+    and compileCond (text: string) : CExpr =
+        match splitInlineIf text with
+        | Some(thenE, condE, elseE) -> CIf(compileCond thenE, compileCond condE, compileCond elseE)
+        | None -> compilePipe text
 
     and compilePipe (text: string) : CExpr =
         let parts = splitTopLevelPipes text
@@ -173,10 +218,14 @@ module internal NunjucksCompiler =
     and compileCompare (text: string) : CExpr =
         let t = text.Trim()
         // `is` / `is not` tests (x is defined, x is not empty). The test name is
-        // kept as a literal string so evaluation can dispatch on it.
+        // kept as a literal string so evaluation can dispatch on it; `is not`
+        // flips the operator so the evaluator negates the test result.
         match findTopOp t [ " is not "; " is " ] with
         | Some(i, op) when t.[..i-1].Trim() <> "" && t.[i+op.Length..].Trim() <> "" ->
-            CBin("is", compileAdd (t.[..i-1]), CLit(box (t.[i+op.Length..].Trim())))
+            let negated = op = " is not "
+            CBin(if negated then "is not" else "is",
+                 compileAdd (t.[..i-1]),
+                 CLit(box (t.[i+op.Length..].Trim())))
         | _ ->
             match findTopOp t [ "=="; "!="; ">="; "<="; ">"; "<"; " not in "; " in " ] with
             | Some(i, op) ->
@@ -184,7 +233,7 @@ module internal NunjucksCompiler =
             | None -> compileAdd t
 
     and compileAdd (text: string) : CExpr =
-        match findTopOp text [ "+"; "-" ] with
+        match findTopOp text [ "+"; "-"; "~" ] with
         | Some(i, op) when text.[..i-1].Trim() <> "" ->
             CBin(op, compileAdd (text.[..i-1]), compileMul (text.[i+op.Length..]))
         | _ -> compileMul text
@@ -192,8 +241,17 @@ module internal NunjucksCompiler =
     and compileMul (text: string) : CExpr =
         match findTopOp text [ "**"; "*"; "/"; "%" ] with
         | Some(i, op) when text.[..i-1].Trim() <> "" ->
-            CBin(op, compileMul (text.[..i-1]), compileAtom (text.[i+op.Length..]))
-        | _ -> compileAtom text
+            CBin(op, compileMul (text.[..i-1]), compileUnary (text.[i+op.Length..]))
+        | _ -> compileUnary text
+
+    /// Unary numeric sign (`-5`, `+3`, `-x`). Nunjucks has no separate unary
+    /// operator level, so the sign binds tighter than `*` and `/` but looser
+    /// than atoms; the prefix marker keeps `-x` distinct from binary `a - x`.
+    and compileUnary (text: string) : CExpr =
+        let t = text.Trim()
+        if t.StartsWith("-") then CUnary("-", compileUnary (t.[1..].Trim()))
+        elif t.StartsWith("+") then CUnary("+", compileUnary (t.[1..].Trim()))
+        else compileAtom t
 
     and compileAtom (text: string) : CExpr =
         let t = text.Trim()

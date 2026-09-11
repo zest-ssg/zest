@@ -2,6 +2,7 @@ namespace Zest.Engine.Template
 
 open System.Collections.Generic
 open NunjucksTypes
+open NunjucksCompiler
 
 // NunjucksBlocks.fs
 //
@@ -54,8 +55,9 @@ module internal NunjucksBlocks =
 
     /// Collect all top-level `{% macro name(args) %}...{% endmacro %}` definitions
     /// from a token array. Returns (name, args, body) tuples so they can be
-    /// registered into the macro table (used by import / from).
-    let collectMacroDefs (tsArr: Token []) : (string * string list * Token list) list =
+    /// registered into the macro table (used by import / from). Each argument
+    /// carries an optional default expression (`arg=default`).
+    let collectMacroDefs (tsArr: Token []) : (string * (string * string option) list * Token list) list =
         let mutable result = []
         let mutable i = 0
         let n = tsArr.Length
@@ -69,7 +71,15 @@ module internal NunjucksBlocks =
                         let name = macroText.[..pIdx-1].Trim()
                         let cp = macroText.IndexOf(')', pIdx)
                         let argsPart = if cp >= pIdx then macroText.[pIdx+1..cp-1].Trim() else ""
-                        let pargs = if argsPart = "" then [] else argsPart.Split(',') |> Array.map (fun x -> x.Trim()) |> Array.toList
+                        let pargs =
+                            if argsPart = "" then []
+                            else
+                                splitTopLevelArgs argsPart
+                                |> List.map (fun x ->
+                                    let a = x.Trim()
+                                    let eq = a.IndexOf('=')
+                                    if eq > 0 then a.[..eq-1].Trim(), Some(a.[eq+1..].Trim())
+                                    else a, None)
                         name, pargs
                     else macroText.Trim(), []
                 let eIdx = findMatchingEnd (i+1) "macro" tsArr

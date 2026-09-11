@@ -146,6 +146,11 @@ module internal NunjucksEvaluator =
         | CPath p -> resolvePath p ctx
         | CParen inner -> evalC inner ctx
         | CNotE inner -> box (not (toBool (evalC inner ctx)))
+        | CUnary(op, inner) ->
+            let n = toNum (evalC inner ctx)
+            box (if op = "-" then -n else n)
+        | CIf(thenE, condE, elseE) ->
+            if toBool (evalC condE ctx) then evalC thenE ctx else evalC elseE ctx
         | CBin("or", l, r) ->
             let lv = evalC l ctx
             if toBool lv then box true else box (toBool (evalC r ctx))
@@ -171,6 +176,8 @@ module internal NunjucksEvaluator =
                 let strContains = match rv with :? string as sv -> sv.Contains(toStr lv) | _ -> false
                 box (not (found || strContains))
             | "is" -> box (applyIsTest (toStr rv) lv)
+            | "is not" -> box (not (applyIsTest (toStr rv) lv))
+            | "~" -> box (toStr lv + toStr rv)
             | "+" ->
                 if (match lv, rv with
                     | (:? string as ls), _ when Double.IsNaN(toNum ls) -> true
@@ -572,15 +579,41 @@ module internal NunjucksEvaluator =
             | _ -> value
 
     /// Apply a Jinja-style `is` test name to a value (x is defined, x is empty).
+    /// Supports a parenthesized argument for `divisibleby(n)`. The argument is
+    /// a literal; expression arguments such as `sameas(x)` are not resolved
+    /// because the compiler keeps the test name as text.
     and applyIsTest (test: string) (v: obj) : bool =
-        match test.Trim().ToLowerInvariant() with
+        let raw = test.Trim()
+        let name, argOpt =
+            let p = raw.IndexOf('(')
+            if p > 0 && raw.EndsWith(")") then
+                raw.[..p-1].Trim().ToLowerInvariant(), Some(raw.[p+1..raw.Length-2].Trim())
+            else raw.ToLowerInvariant(), None
+        match name with
         | "defined" -> v <> null
         | "undefined" | "none" | "null" -> isNull v
         | "truthy" -> toBool v
         | "falsy" -> not (toBool v)
         | "number" -> match v with :? int | :? int64 | :? double | :? single -> true | _ -> false
+        | "integer" -> match v with :? int | :? int64 -> true | _ -> false
+        | "float" -> match v with :? double | :? single -> true | _ -> false
+        | "boolean" -> v :? bool
         | "string" -> v :? string
+        | "lower" -> match v with :? string as s -> s = s.ToLowerInvariant() | _ -> false
+        | "upper" -> match v with :? string as s -> s = s.ToUpperInvariant() | _ -> false
+        | "mapping" -> match v with :? System.Collections.IDictionary -> true | _ -> false
+        | "sequence" ->
+            match v with
+            | :? System.Collections.IEnumerable when not (v :? string) && not (v :? System.Collections.IDictionary) -> true
+            | _ -> false
         | "iterable" -> match v with :? System.Collections.IEnumerable when not (v :? string) -> true | _ -> false
+        | "divisibleby" ->
+            match argOpt with
+            | Some a ->
+                match Int32.TryParse a with
+                | true, n when n <> 0 -> (try int(toNum v) with _ -> 0) % n = 0
+                | _ -> false
+            | None -> false
         | "empty" ->
             match v with
             | null -> true
@@ -591,13 +624,14 @@ module internal NunjucksEvaluator =
                 try not (en.MoveNext())
                 finally match box en with :? IDisposable as d -> d.Dispose() | _ -> ()
             | _ -> false
-        | "odd" -> match v with :? int as i -> i % 2 <> 0 | _ -> false
-        | "even" -> match v with :? int as i -> i % 2 = 0 | _ -> false
+        | "odd" -> match v with :? int as i -> i % 2 <> 0 | :? int64 as i -> i % 2L <> 0L | _ -> false
+        | "even" -> match v with :? int as i -> i % 2 = 0 | :? int64 as i -> i % 2L = 0L | _ -> false
         | _ -> false
 
     /// Apply a value test for `select` / `reject` / `selectattr` filters.
-    /// Supported tests: truthy, falsy, defined, undefined, number, string,
-    /// iterable, empty, equalto/eq, not_equalto/ne, contains, odd, even.
+    /// Supported tests: truthy, falsy, defined, undefined, number, integer,
+    /// float, boolean, string, lower, upper, mapping, sequence, iterable,
+    /// empty, divisibleby, equalto/eq, not_equalto/ne, contains, odd, even.
     and applyValueTest (test: string) (v: obj) (arg: obj) : bool =
         match test.Trim().ToLowerInvariant() with
         | "truthy" -> toBool v
@@ -605,11 +639,25 @@ module internal NunjucksEvaluator =
         | "defined" -> v <> null
         | "undefined" -> isNull v
         | "number" -> match v with :? int | :? int64 | :? double | :? single -> true | _ -> false
+        | "integer" -> match v with :? int | :? int64 -> true | _ -> false
+        | "float" -> match v with :? double | :? single -> true | _ -> false
+        | "boolean" -> v :? bool
         | "string" -> v :? string
+        | "lower" -> match v with :? string as s -> s = s.ToLowerInvariant() | _ -> false
+        | "upper" -> match v with :? string as s -> s = s.ToUpperInvariant() | _ -> false
+        | "mapping" -> match v with :? System.Collections.IDictionary -> true | _ -> false
+        | "sequence" ->
+            match v with
+            | :? System.Collections.IEnumerable when not (v :? string) && not (v :? System.Collections.IDictionary) -> true
+            | _ -> false
         | "iterable" -> match v with :? System.Collections.IEnumerable when not (v :? string) -> true | _ -> false
         | "empty" -> applyIsTest "empty" v
         | "odd" -> applyIsTest "odd" v
         | "even" -> applyIsTest "even" v
+        | "divisibleby" ->
+            match Int32.TryParse(toStr arg) with
+            | true, n when n <> 0 -> (try int(toNum v) with _ -> 0) % n = 0
+            | _ -> false
         | "equalto" | "eq" -> valuesEqual v arg
         | "not_equalto" | "ne" -> not (valuesEqual v arg)
         | "contains" ->
