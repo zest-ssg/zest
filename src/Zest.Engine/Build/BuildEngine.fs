@@ -5,6 +5,8 @@ open System.Collections.Concurrent
 open System.Collections.Generic
 open System.IO
 open System.Diagnostics
+open System.Threading
+open System.Threading.Tasks
 open Zest.Engine.Scripting
 open Zest.Engine.Build
 open Zest.Engine.Html
@@ -24,6 +26,11 @@ module BuildEngine =
         let mutable processed = 0
         let mutable cached    = 0
         let mutable assets    = 0
+        let phaseSw = Stopwatch.StartNew()
+        let markPhase (name: string) =
+            phaseSw.Stop()
+            eprintfn "[Zest][timing] %s: %d ms" name phaseSw.ElapsedMilliseconds
+            phaseSw.Restart()
 
         // ── Initialize progress tracking for the build animator ──
         let progress = ProgressTracker.start ()
@@ -63,8 +70,6 @@ module BuildEngine =
             progress.OutputDir <- outputDir
 
             Directory.CreateDirectory(outputDir) |> ignore
-            // Load persistent cache for incremental builds
-            if config.EnableIncrementalBuild then loadCache outputDir
             // Fast cleanup: delete and recreate to avoid per-file enumeration
             if not config.EnableIncrementalBuild then
                 try Directory.Delete(outputDir, recursive = true); Directory.CreateDirectory(outputDir) |> ignore
@@ -112,19 +117,19 @@ module BuildEngine =
                                 baseIncludes.[kv.Key] <- kv.Value
                     baseIncludes
                 | None -> loadIncludes includesDir
-            // ── includes mtime computed in loadIncludes now via single traversal ──
-            let includesMtime =
-                if not (Directory.Exists includesDir) then DateTime.MinValue
-                else
-                    // Already traversed in loadIncludes — use directory mtime as sufficient proxy
-                    let dirMtime = Directory.GetLastWriteTimeUtc(includesDir).Ticks
-                    let mutable maxFile = dirMtime
-                    for f in Directory.EnumerateFiles(includesDir, "*.*", SearchOption.AllDirectories) do
-                        let t = File.GetLastWriteTimeUtc(f).Ticks
-                        if t > maxFile then maxFile <- t
-                    DateTime(maxFile)
+            // ── includes mtime comes from the single traversal loadIncludes
+            // already performed — no second directory sweep needed ──
+            let includesMtime = LayoutEngine.getLastIncludesMtime ()
             setIncludesMtime includesMtime
             PageQuery.setIncludes includes
+
+            // Load the incremental cache only after layouts and includes are
+            // in hand, so the template signature reflects their current
+            // content. A template change (edit/add/delete) invalidates the
+            // cache and forces a full rebuild; unchanged templates keep the
+            // per-page cache intact for fast incremental builds.
+            let templateSig = computeTemplateSignature layouts includes
+            if config.EnableIncrementalBuild then loadCache outputDir templateSig
 
             // Inject site config into globalData without unnecessary full clone
             let gData = globalData
@@ -281,9 +286,11 @@ module BuildEngine =
             let afterBuildCmds = themeAfterBuild @ initResult.AfterBuildCommands
 
             // ── Content pipeline: discover → evaluate → write output ──
+            markPhase "setup-init"
             progress.Phase <- BuildPhase.Discovering
             let struct(total, contentProcessed, contentCached, evalResults) =
                 ContentPipeline.processContent contentDir outputDir config gDict layouts includes progress
+            markPhase "content-pipeline"
 
             processed <- contentProcessed
             cached    <- contentCached
@@ -299,6 +306,7 @@ module BuildEngine =
             // Content files always win: if /tags/foo/ already exists in the
             // output tree, the generator skips it.
             let taxonomyPages = TaxonomyGenerator.generate config outputDir layouts includes gDict
+            markPhase "taxonomy"
             processed <- processed + taxonomyPages
 
             // ── Generate paginated listing pages (e.g. /posts/, /posts/page/2/) ──
@@ -306,6 +314,7 @@ module BuildEngine =
             // output tree is stable. Content files that declare @paginate are
             // skipped by the pipeline, so this generator owns those URLs.
             let paginationPages = PaginationGenerator.generate config contentDir outputDir layouts includes gDict
+            markPhase "pagination"
             processed <- processed + paginationPages
 
             // ── Copy theme assets first, then project assets overwrite ──
@@ -318,8 +327,9 @@ module BuildEngine =
             | None -> ()
 
             assets <- copyAssets root outputDir
+            markPhase "assets-copy"
             progress.AssetsCopied <- assets
-            if config.EnableIncrementalBuild then saveCache outputDir
+            if config.EnableIncrementalBuild then saveCache outputDir templateSig
 
             // ── CSS/JS post-processing ──
             // Two independent modes, matching the HTML formatting approach:
@@ -329,26 +339,31 @@ module BuildEngine =
             let mutable assetsProcessed = 0
             if (config.EnableAssetFormatting || config.EnableMinification) && Directory.Exists outputDir then
                 let processExts = set [ ".css"; ".js" ]
-                for file in Directory.EnumerateFiles(outputDir, "*.*", SearchOption.AllDirectories) do
-                    let ext = Path.GetExtension(file).ToLowerInvariant()
-                    if processExts.Contains ext then
-                        try
-                            let content = File.ReadAllText(file, System.Text.Encoding.UTF8)
-                            let processed =
-                                if config.EnableAssetFormatting then
-                                    if ext = ".css" then HtmlFormatter.formatCss 2 content
-                                    else HtmlFormatter.formatJs 2 content
-                                elif config.EnableMinification then
-                                    if ext = ".css" then HtmlFormatter.minifyCss content
-                                    else HtmlFormatter.minifyJs content
-                                else content
-                            if processed <> content then
-                                File.WriteAllText(file, processed, System.Text.Encoding.UTF8)
-                                assetsProcessed <- assetsProcessed + 1
-                        with ex ->
-                            eprintfn "[Zest] Asset processing failed for '%s': %s" file ex.Message
+                // Enumerate once, then process files in parallel — formatting is
+                // CPU-bound and independent per file.
+                let assetFiles =
+                    Directory.EnumerateFiles(outputDir, "*.*", SearchOption.AllDirectories)
+                    |> Seq.filter (fun f -> processExts.Contains(Path.GetExtension(f).ToLowerInvariant()))
+                    |> Seq.toArray
+                Parallel.ForEach(assetFiles, fun file ->
+                    try
+                        let content = File.ReadAllText(file, System.Text.Encoding.UTF8)
+                        let processed =
+                            if config.EnableAssetFormatting then
+                                if Path.GetExtension(file).ToLowerInvariant() = ".css" then HtmlFormatter.formatCss 2 content
+                                else HtmlFormatter.formatJs 2 content
+                            elif config.EnableMinification then
+                                if Path.GetExtension(file).ToLowerInvariant() = ".css" then HtmlFormatter.minifyCss content
+                                else HtmlFormatter.minifyJs content
+                            else content
+                        if processed <> content then
+                            AtomicFile.write file (System.Text.Encoding.UTF8.GetBytes processed)
+                            Interlocked.Increment(&assetsProcessed) |> ignore
+                    with ex ->
+                        eprintfn "[Zest] Asset processing failed for '%s': %s" file ex.Message) |> ignore
 
             progress.Phase <- BuildPhase.Finalizing
+            markPhase "asset-format"
 
             // ── Execute afterBuild commands (e.g. sitemap, search index) ──
             for (cmd, args) in afterBuildCmds do

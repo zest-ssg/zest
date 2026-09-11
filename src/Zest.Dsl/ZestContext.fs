@@ -89,9 +89,37 @@ type ZestContext(ctxFile: string) =
         |> Seq.map (fun m -> m.Name, ZestContext.jsonToNative m.Value)
         |> dict
 
-/// Global context instance — set by ScriptRunner before evaluation
+/// Global context instance — set by ScriptRunner before evaluation.
+/// The context is cached by (path, last-write-time) so repeated FSI
+/// evaluations within one build parse the JSON file only once. A fresh
+/// context path (new GUID per build) or a modified file triggers a new
+/// parse automatically, so the cache never serves stale data across builds.
 module Context =
     let mutable current: ZestContext option = None
+
+    let mutable private cachedPath = ""
+    let mutable private cachedMtime = DateTime.MinValue
+    let mutable private cachedCtx: ZestContext option = None
+
+    /// Set the context directly (used by tests and callers that already
+    /// hold a constructed instance).
+    let set (ctx: ZestContext) =
+        current <- Some ctx
+
+    /// Ensure the context for the given context file is loaded, reusing a
+    /// cached instance when the file is unchanged. Returns the active context.
+    let ensure (ctxFile: string) : ZestContext =
+        let mtime = File.GetLastWriteTimeUtc(ctxFile)
+        if ctxFile <> cachedPath || mtime <> cachedMtime then
+            cachedPath <- ctxFile
+            cachedMtime <- mtime
+            cachedCtx <- Some (ZestContext(ctxFile))
+        let ctx =
+            match cachedCtx with
+            | Some c -> c
+            | None -> ZestContext(ctxFile)
+        current <- Some ctx
+        ctx
 
     let get () =
         match current with

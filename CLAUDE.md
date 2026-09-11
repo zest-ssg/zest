@@ -1,122 +1,355 @@
-# Zest SSG - AI 代码质量提升指南
-**版本**: 2.0
-**背景**: 你是资深 .NET/F# 工程师，正在重构 `zest-ssg/zest` 仓库（.NET 10+）。目标是在严格保持架构边界（C# 负责 CLI/基础设施，F# 负责引擎/DSL）的前提下，全面提升代码质量。
-
-## 核心铁律（必须遵守）
-1.  **双词命名**: 所有新增或重构的文件、目录及核心类型，必须使用**两个**语义清晰的英文单词（类型/文件用 PascalCase，成员用 camelCase）。禁用单词命名，禁用三词以上组合。
-2.  **精准注释**: 编写简洁的英文注释，解释**“为什么”**而非**“做什么”**。公开 API 必须使用标准 XML 文档注释。
-3.  **架构纯净**: 严守 C# 与 F# 边界。F# 中优先使用管道符 (`|>`)，C# 中优先使用 LINQ。
-4.  **自然语言提交**: 像正常人说话一样写 Git 提交信息。**禁止使用** `feat:`、`fix:` 等前缀。
+# Zest SSG Engineering Contract
+**Version**: 3.1
+**Scope**: A binding contract for both AI Agents and human maintainers working on the `zest-ssg/zest` repository (.NET 10+).
+**Goal**: Preserve the C#/F# architecture boundary while producing code that is strictly conventional, grammatically precise, and genuinely readable.
 
 ---
 
-## 1. 命名规范
-### 基本规则
-*   **文件/类/目录**: `WordOneWordTwo` (PascalCase)
-*   **方法/变量**: `wordOneWordTwo` (camelCase)
+## 0. Prime Directive: Readability Serves the Reader
 
-### 语义结构
-*   第一个词：**领域/对象** (Template, Config, Build)
-*   第二个词：**动作/角色** (Renderer, Parser, Manager)
+Every rule below exists to reduce comprehension cost. When a rule fights readability, readability wins, and the deviation must be justified in a single comment.
 
-### 禁用模式
-*   **模糊单字**: `Utils`, `Helper`, `Data`, `Manager`。
-*   **冗长命名**: `TemplateRenderEngine` -> 改为 `TemplateRenderer`。
-*   **随意缩写**: `Tmp`, `Cfg`, `Req`。
-*   **模糊动词**: `process()`, `handle()`, `get()`。必须具体：`parseContent()`, `fetchMetadata()`。
+- Consistency is a means, not an end.
+- Never rename something that is already clear merely to satisfy a pattern.
+- Test: can a new maintainer understand this unit within 30 seconds? If not, fix clarity before enforcing style.
 
-### 快速对照表
-| 上下文 | 错误示例 | 正确示例 |
+---
+
+## 1. Architecture Boundary (Non-Negotiable)
+
+| Layer | Language | Responsibility |
 | :--- | :--- | :--- |
-| 文件 | `Render.fs` | `TemplateRenderer.fs` |
-| 类 | `Builder.cs` | `PageBuilder.cs` |
-| 目录 | `Zcss/` | `StyleCompiler/` |
-| 变量 | `temp` | `cacheBuffer` |
+| CLI, infrastructure, I/O, composition root | C# | User-facing entry points, filesystem, processes, configuration loading |
+| Engine, DSL, domain logic, pure functions | F# | Template rendering, parsing, build pipeline, immutable data flow |
+
+Rules:
+- No cross-layer calls. F# must not reference C# CLI types, and C# must not reference F# engine internals.
+- Cross-boundary data uses explicit DTOs. Never use anonymous types or `dynamic` across the boundary.
+- Prefer LINQ in C#. Prefer `|>`, `List`, and `Seq` in F#. Avoid `for` and `while` unless performance evidence demands otherwise.
 
 ---
 
-## 2. 文档与注释规范
-### 文件头注释
-每个文件必须包含头部注释，说明职责和依赖。
+## 2. Naming Convention
+
+### 2.1 Canonical Form: Two Words
+- File, directory, type: `PascalCase` → `TemplateRenderer`, `PageBuilder`
+- Method, variable: `camelCase` → `renderTemplate`, `cacheBuffer`
+
+### 2.2 Semantic Structure
+- First word: the domain object (`Template`, `Config`, `Build`, `Style`).
+- Second word: the action or role (`Renderer`, `Parser`, `Compiler`, `Loader`).
+
+### 2.3 Permitted Exceptions
+Only **framework-mandated names** may violate the two-word rule. Every other exception is rejected.
+
+Allowed:
+- `Program.fs`, `Startup.cs`, `App.razor`, `Main`, `Index` — dictated by .NET, ASP.NET, or build tooling.
+- Language-mandated constructs: `module`, `namespace` keywords aside, F# `Program` entry module.
+
+Rejected:
+- Community-convenient single words (`Router`, `Lexer`, `Parser`) are **not** exceptions. Rename them.
+  - `Router` → `RequestRouter`
+  - `Lexer` → `TokenScanner`
+  - `Parser` → `TemplateParser`
+- "It's already used elsewhere" is not an exception. Fix the usage.
+
+Each permitted exception **must** carry a one-line justification:
+
+```csharp
+// Framework-mandated: ASP.NET Core requires the Startup class name.
+public sealed class Startup { ... }
+```
+
+### 2.4 Forbidden Patterns
+- Vague nouns: `Utils`, `Helper`, `Manager`, `Data`, `Common`, `Misc`, `Core`.
+- Casual abbreviations: `Tmp`, `Cfg`, `Req`, `Mgr`, `Svc`, `Impl`.
+- Vague verbs: `process`, `handle`, `get`, `do`, `run`. Use specific verbs: `parseContent`, `fetchMetadata`, `compileStyle`.
+- Three-word-or-longer combinations: `TemplateRenderEngine` → `TemplateRenderer`.
+
+### 2.5 Rename Discipline
+- **New code**: fully compliant.
+- **Touched files**: rename only when the current name is genuinely harmful. A clear legacy name beats an awkward new one.
+- **Pure renames**: one dedicated commit. Never mixed with logic changes.
+- **No rename without a reason.** If you cannot articulate the reason in one sentence, do not rename.
+
+### 2.6 Reference Table
+
+| Context | Forbidden | Required | Framework Exception |
+| :--- | :--- | :--- | :--- |
+| File | `Render.fs` | `TemplateRenderer.fs` | `Program.fs` |
+| Type | `Builder.cs` | `PageBuilder.cs` | `Startup`, `Main` |
+| Directory | `Zcss/` | `StyleCompiler/` | `Properties/` |
+| Variable | `temp` | `cacheBuffer` | `i` (short loop index) |
+| Module | `Utils` | `PathResolver` | — |
+
+---
+
+## 3. Documentation and Comments
+
+### 3.1 File Header
+Every non-trivial file must state its responsibility, dependencies, and any non-obvious invariant. Do not write a decorative one-liner.
+
 ```fsharp
 // TemplateRenderer.fs
 //
-// Compiles and renders templates using the Nunjucks engine.
-// Handles caching to prevent redundant disk I/O.
+// Compiles Nunjucks templates and caches parsed results in memory.
+// Caching prevents redundant disk reads on every page render.
+//
+// Invariant: cache keys are absolute, normalized paths.
+// Callers must pass paths produced by PathResolver.
 //
 // Dependencies: Zest.Engine.Domain, System.IO
 ```
 
-### API 文档注释
-所有公开接口使用 XML 文档。解释意图，而非实现细节。
+### 3.2 Public API: XML Documentation
+Required for every public type and member in both C# and F#.
+
+Cover:
+- **Intent**: what the caller achieves, not how it is implemented.
+- **Contract**: preconditions, postconditions, invariants.
+- **Failure modes**: what happens on invalid input, and why that behavior was chosen.
+- **Thread safety**: state it explicitly when relevant.
+
 ```fsharp
 /// <summary>
-/// Renders a template with the provided context data.
-/// Returns an empty string if the path is invalid to avoid build failure.
+/// Renders a template with the supplied context data.
+/// Returns an empty string for invalid paths so a single
+/// broken template cannot fail the whole build pipeline.
 /// </summary>
-/// <param name="templatePath">Absolute path to the .njk file.</param>
-/// <param name="context">Data bag for variable interpolation.</param>
+/// <param name="templatePath">Absolute, normalized path to the .njk file.</param>
+/// <param name="context">Data bag used for variable interpolation.</param>
+/// <returns>The rendered output, or an empty string on path failure.</returns>
 let renderTemplate templatePath context = ...
 ```
 
-### 行内注释
-**只解释“为什么”。**
-*   ✅ `// Offset by 1 for 1-based page numbering in UI.`
-*   ❌ `// Add 1 to index.`
+Private members do not require XML documentation. Add a comment only when the code is not self-evident.
 
-### 特殊标记
-*   `// TODO: [目标]. [原因].` (例：`TODO: Replace regex with parser for nested brackets.`)
-*   `// HACK: [为何必要]. [外部限制].` (例：`HACK: Ignore null check; legacy API guarantees non-null here.`)
+### 3.3 Inline Comments: Explain *Why*, Never *What*
+- ✅ `// Offset by 1 to match the 1-based page numbers shown in the UI.`
+- ❌ `// Add 1.`
+- ✅ `// HACK: nunjucks caches by relative path; keying on absolute path survives cwd changes.`
+- ❌ `// Loop through templates.`
+
+Rule of thumb: if the comment restates the code, delete it.
+
+### 3.4 Comment Quality Standard
+High-quality comments share these traits:
+
+1. **They answer a question the code cannot.**
+   - Why this approach over an obvious alternative.
+   - Why this edge case matters.
+   - Why a surprising value was chosen.
+
+2. **They are grammatically complete sentences.**
+   - Capitalize the first word.
+   - End with a period.
+   - Use `that` and `which` correctly.
+   - No sentence fragments, no telegraphic style.
+
+3. **They are concise.**
+   - One idea per comment.
+   - If a comment needs a paragraph, the code likely needs refactoring.
+
+4. **They age well.**
+   - Reference stable facts (specs, RFCs, tickets), not transient state ("currently", "for now").
+   - If the code changes, the comment must change with it. A stale comment is worse than no comment.
+
+5. **They avoid hedging and filler.**
+   - Ban `simply`, `just`, `basically`, `obviously`, `of course`, `note that`.
+   - Ban jokes, sarcasm, and personal remarks.
+
+6. **They use correct technical English.**
+   - Prefer active voice: "the parser rejects X" over "X is rejected by the parser".
+   - Use present tense for behavior: "Returns an empty string" not "Will return an empty string".
+   - Define domain terms on first use.
+
+**Examples:**
+
+Bad:
+```csharp
+// increment counter because we need to count
+counter++;
+```
+
+Good:
+```csharp
+// Track parsed files to detect duplicate includes across templates.
+counter++;
+```
+
+Bad:
+```fsharp
+// loop and check
+for page in pages do
+    validate page
+```
+
+Good:
+```fsharp
+// Fail fast on the first invalid page so the build log points to a single source.
+for page in pages do
+    validate page
+```
+
+### 3.5 Special Markers
+- `// TODO: [Goal]. [Trigger or condition].`
+  Example: `// TODO: Replace regex with a parser once nested brackets are supported.`
+- `// HACK: [Why necessary]. [External constraint].`
+  Example: `// HACK: Legacy API returns null instead of an empty list; guard at the boundary.`
+- `// NOTE: [Non-obvious context].`
+  Example: `// NOTE: Order matters here; later overrides depend on earlier defaults.`
+
+### 3.6 Language
+- All comments, documentation, and commit messages are written in English.
+- Non-English text is permitted only when legally required, prefixed with `// LEGAL:`.
 
 ---
 
-## 3. 重构执行流程
-执行重构时，严格遵循以下步骤：
-1.  **命名扫描**: 识别并重命名所有单字或模糊标识符。
-2.  **注释清洗**: 删除“废话”注释（如 `// loop through items`）。补全 XML 文档。将中文注释翻译为标准技术英语。
-3.  **语义流优化**: 将 F# 中的循环转换为管道 (`|>`)。将 C# 中的循环转换为 LINQ。
+## 4. Refactoring Workflow
+
+AI Agents must proceed in explicit steps and **wait for confirmation between them**:
+
+1. **Scan and report**: list naming, comment, and structural issues without editing.
+2. **Scope**: state exactly which files are in scope. Do not touch anything else.
+3. **Propose**: outline renames, splits, and documentation additions, with risks.
+4. **Execute incrementally**: one class of change per commit (rename / comment / structure) so each is reviewable and revertible.
+5. **Verify**: `dotnet build` passes with zero warnings; `dotnet test` is fully green.
+
+Forbidden:
+- Repo-wide bulk renames without confirmation.
+- Unrelated refactors smuggled into a functional fix.
+- Deleting existing comments without justification.
 
 ---
 
-## 4. Git 提交信息规范（新标准）
-**停止使用 Conventional Commits（禁止使用 `feat:` 或 `fix:`）。**
-请像告知同事变更内容一样书写提交信息，保持简短、清晰、专业。
+## 5. Code Style
 
-### 规则
-1.  **首字母大写**: 句子开头大写。
-2.  **末尾句号**: 必须以英文句号 `.` 结束。
-3.  **无前缀**: 严禁使用 `feat:`、`fix:`、`refactor:` 等标签。
-4.  **自然语言**: 像人说话，而不是像机器生成日志。
+### C#
+- Prefer LINQ over explicit loops unless profiling justifies otherwise.
+- Use `record` for immutable data.
+- Suffix asynchronous methods with `Async` and return `Task` or `ValueTask`.
+- Avoid `dynamic`. Avoid `object` parameters unless the boundary is documented.
 
-### 示例对照
-| 旧风格（禁止） | 新风格（要求） |
+### F#
+- Prefer pipelines (`|>`) over nested calls.
+- Prefer `Option` over `null`. Use `Result` across boundaries.
+- Keep modules small and single-purpose.
+- Avoid `mutable` except on measured hot paths, and document the reason.
+
+### Shared
+- Functions stay under 40 lines. Split when longer.
+- Parameters stay under 5. Beyond that, introduce a configuration record.
+- Nesting stays under 4 levels. Use early returns or extracted functions.
+
+---
+
+## 6. Testing
+
+- New behavior requires tests. Refactors must keep the suite green.
+- Test naming: `[Subject]_[Condition]_[Expectation]`.
+  Example: `renderTemplate_InvalidPath_ReturnsEmpty`.
+- Test files mirror the source layout under `tests/`.
+- Prefer fakes or in-memory implementations over mocks of concrete types.
+
+---
+
+## 7. Git Commit Convention
+
+### 7.1 Style
+Write commit messages in natural English, as if briefing a colleague.
+
+- Capitalize the first word.
+- End with a period.
+- Do not use prefixes: no `feat:`, `fix:`, `chore:`, `refactor:`, `style:`.
+- Keep the subject line under 72 characters.
+
+### 7.2 Reference Table
+
+| Forbidden | Required |
 | :--- | :--- |
 | `feat(theme): add git source` | `Theme supports Git sources now.` |
 | `fix(cache): resolve TOCTOU race` | `Fix race condition when writing cache files.` |
-| `refactor(core): clean utils` | `Split monolithic Utils module into smaller helpers.` |
-| `style: format code` | `Format code to match style guidelines.` |
-| `chore(deps): bump xunit` | `Update xUnit dependency to version 2.9.3.` |
+| `refactor(core): clean utils` | `Split the monolithic Utils module into focused resolvers.` |
+| `chore(deps): bump xunit` | `Update xUnit to 2.9.3.` |
+| `style: format` | `Format code to match style guidelines.` |
 
-### 正文补充（可选）
-如需细节，在摘要后空一行，自然书写：
+### 7.3 Body
+Optional. Separate from the subject by a blank line. Explain the reason and any side effects.
+
 ```
 Fix race condition when writing cache files.
 
-Switch from 'lock' to 'Monitor.Enter' to prevent compiler errors in F#. This keeps the cache thread-safe without breaking the build pipeline.
+Switch from 'lock' to 'Monitor.Enter' to avoid a compiler error
+in F#. The cache stays thread-safe without breaking the build.
 ```
 
----
-
-## 5. 提交前检查清单
-- [ ] **命名**: 全部符合双词规范。无 `Utils`，无 `Temp`。
-- [ ] **注释**: 无废话注释。文件头完整。
-- [ ] **构建**: `dotnet build` 零警告通过。
-- [ ] **提交**: 信息是自然语句，以句号结尾。无前缀。
+### 7.4 Granularity
+- One concern per commit.
+- Pure renames stand alone.
+- Large refactors are split into reviewable steps.
 
 ---
-## 附录：AI 执行逻辑
-当收到重构或编写代码的指令时：
-1.  **扫描**: 立即检查命名违规。
-2.  **重写**: 若发现 `Helper.cs`，将其重命名为具体名称，如 `PathResolver.cs`。
-3.  **文档**: 补全文件头和 XML 注释。
-4.  **提交**: 暂存更改，并以简单自然的句子作为提交信息（如：`Rename helper classes to clarify their roles.`）。
+
+## 8. AI Agent Behavior
+
+The agent collaborates; it does not rewrite the repository unsupervised.
+
+### 8.1 Require Confirmation Before
+- Renaming across more than three files.
+- Deleting or rewriting existing comments.
+- Changing a public API signature.
+- Adding a new dependency.
+- Touching architecture-boundary code.
+
+### 8.2 When Uncertain
+- Ask rather than guess.
+- Offer two options with a recommendation and rationale.
+- Preserve the status quo and mark it: `// TODO: [Issue]. [Suggested action].`
+
+### 8.3 Every Delivery Includes
+1. Change summary (what and why).
+2. Impact scope (affected modules and callers).
+3. Verification results (build, test, lint).
+4. Proposed commit message following Section 7.
+
+### 8.4 Hard Limits
+- No repository-wide renames without confirmation.
+- No deleting tests or comments to make checks pass.
+- No introducing paradigms that conflict with existing style.
+- No skipping build and test verification.
+
+---
+
+## 9. Pre-Commit Checklist
+
+- [ ] **Naming**: new and touched identifiers follow the two-word rule, or carry a framework-exception comment.
+- [ ] **Comments**: no restating comments; file headers complete; public APIs documented.
+- [ ] **Comment quality**: complete sentences, capitalized, punctuated, no filler, correct grammar.
+- [ ] **Architecture**: C#/F# boundary intact; cross-layer data uses DTOs.
+- [ ] **Style**: F# uses pipelines, C# uses LINQ; no deep nesting; functions stay short.
+- [ ] **Tests**: new behavior covered; refactors green.
+- [ ] **Build**: `dotnet build` reports zero warnings; `dotnet test` passes.
+- [ ] **Commit**: natural sentence, capitalized, ends with a period, no prefix.
+- [ ] **Scope**: no unrelated refactors bundled in.
+
+---
+
+## 10. Quick Reference
+
+| Scenario | Rule |
+| :--- | :--- |
+| New file name | Two words, PascalCase. |
+| Existing clear single word | Rename unless framework-mandated. |
+| Framework exception | Allowed only for `Program`, `Startup`, `Main`, `Index`, and equivalents. Justify in one line. |
+| Public API | XML documentation covering intent, contract, and failure modes. |
+| Inline comment | Explains *why*. Complete sentence. No filler. |
+| Comment grammar | Capitalize, punctuate, use active voice, present tense. |
+| F# control flow | Pipelines first. |
+| C# control flow | LINQ first. |
+| Rename | Independent commit, minimal scope. |
+| Commit message | Natural English, ends with a period, no prefix. |
+| Uncertainty | Ask; do not guess. |
+
+---
+
+**One-line principle**: Write as if handing the code to your future self — rules exist so humans can read, not so machines can look tidy.

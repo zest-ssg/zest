@@ -87,6 +87,7 @@
     <Compile Include="Build/PathResolver.fs" />
     <Compile Include="Build/BuildProgress.fs" />
     <Compile Include="Build/BuildCache.fs" />
+    <Compile Include="Build/AtomicFile.fs" />
     <Compile Include="Build/IncrementalBuilder.fs" />
     <Compile Include="Build/BuildScheduler.fs" />
     <Compile Include="Build/BuildData.fs" />

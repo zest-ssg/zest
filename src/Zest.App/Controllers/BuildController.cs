@@ -1,5 +1,6 @@
 using Zest.App.CommandLine;
 using Zest.Engine;
+using Zest.Engine.Scripting;
 using Zest.Infra.Configuration;
 using Zest.Infra.Services;
 
@@ -57,6 +58,11 @@ public static class BuildController
 
         if (opts.Watch)
             WatchAgent.StartWatcher(config);
+        else
+            // A one-shot build must not leave the long-running `dotnet fsi`
+            // child holding the terminal open after we exit. Watch mode keeps
+            // it alive for reuse on subsequent rebuilds.
+            FsiSession.shutdown();
 
         return result.Success ? 0 : 1;
     }

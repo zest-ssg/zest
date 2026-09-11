@@ -78,10 +78,13 @@ public class DevServer : HttpServer
 
     public override void Shutdown()
     {
-        Cts?.Cancel();
-        Listener?.Stop();
+        // Base cancels the listener and waits for in-flight requests.
+        base.Shutdown();
         _wsServer.Stop();
         _fileWatcher?.Dispose();
+        // Kill the long-running FSI child so it cannot keep the terminal
+        // open after the serve process exits.
+        Zest.Engine.Scripting.FsiSession.shutdown();
 
         lock (_sseLock)
         {
@@ -92,7 +95,7 @@ public class DevServer : HttpServer
             _sseClients.Clear();
         }
 
-        LogWriter.Info($"Total requests: {TotalRequests}, rebuilds: {_rebuildCount}");
+        LogWriter.Info($"Rebuilds: {_rebuildCount}");
     }
 
     private void StartFileWatcher()
@@ -220,14 +223,20 @@ public class DevServer : HttpServer
 
     private void BroadcastSse(string jsonData)
     {
+        // Snapshot under the lock, write outside it — a stalled SSE client
+        // must never block the rebuild loop.
+        Stream[] snapshot;
         lock (_sseLock)
         {
             if (_sseClients.Count == 0) return;
+            snapshot = _sseClients.ToArray();
+        }
 
-            var payload = Encoding.UTF8.GetBytes($"data: {jsonData}\n\n");
+        var payload = Encoding.UTF8.GetBytes($"data: {jsonData}\n\n");
+        _ = Task.Run(() =>
+        {
             var dead = new List<Stream>();
-
-            foreach (var s in _sseClients)
+            foreach (var s in snapshot)
             {
                 try
                 {
@@ -237,7 +246,13 @@ public class DevServer : HttpServer
                 catch { dead.Add(s); }
             }
 
-            foreach (var s in dead) _sseClients.Remove(s);
-        }
+            if (dead.Count > 0)
+            {
+                lock (_sseLock)
+                {
+                    foreach (var s in dead) _sseClients.Remove(s);
+                }
+            }
+        });
     }
 }

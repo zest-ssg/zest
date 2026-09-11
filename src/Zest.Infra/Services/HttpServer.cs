@@ -30,6 +30,14 @@ public abstract class HttpServer : IDisposable
     protected long CacheHits => Interlocked.Read(ref _cacheHits);
     protected long TotalBytesServed => Interlocked.Read(ref _totalBytesServed);
 
+    // Live-reload snippet — identical for every page, so it is built once.
+    private string? _liveReloadScript;
+    private readonly object _liveReloadLock = new();
+
+    // In-flight request tasks, tracked so Shutdown can wait for them.
+    private readonly HashSet<Task> _inflightTasks = new();
+    private readonly object _inflightLock = new();
+
     /// <summary>Directories whose contents should NOT trigger rebuilds.</summary>
     protected HashSet<string>? IgnoredDirNames { get; set; }
 
@@ -138,6 +146,16 @@ public abstract class HttpServer : IDisposable
     {
         Cts?.Cancel();
         Listener?.Stop();
+
+        // Give in-flight requests a moment to finish cleanly. SSE/keep-alive
+        // loops exit on their own once the CTS is cancelled above.
+        Task[] pending;
+        lock (_inflightLock) pending = _inflightTasks.ToArray();
+        if (pending.Length > 0)
+        {
+            try { Task.WaitAll(pending, TimeSpan.FromSeconds(5)); } catch { }
+        }
+
         LogWriter.Info($"Total requests: {TotalRequests}, cache hits: {CacheHits}, bytes served: {TotalBytesServed:N0}");
     }
 
@@ -156,11 +174,34 @@ public abstract class HttpServer : IDisposable
             try
             {
                 var ctx = await Listener.GetContextAsync().WaitAsync(ct);
-                _ = Task.Run(() => HandleRequest(ctx), CancellationToken.None);
+                // Track the request so Shutdown can wait for it instead of
+                // abandoning a response mid-write.
+                var task = Task.Run(() => HandleRequest(ctx), CancellationToken.None);
+                TrackRequest(task);
             }
             catch (OperationCanceledException) { break; }
             catch (HttpListenerException) { break; }
             catch (ObjectDisposedException) { break; }
+        }
+    }
+
+    /// <summary>Remember a fire-and-forget request task; remove it when done.</summary>
+    private void TrackRequest(Task task)
+    {
+        lock (_inflightLock) _inflightTasks.Add(task);
+        _ = task.ContinueWith(t =>
+        {
+            lock (_inflightLock) _inflightTasks.Remove(t);
+        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+    }
+
+    /// <summary>Live-reload snippet, built once per server lifetime.</summary>
+    private string? GetCachedLiveReloadScript()
+    {
+        lock (_liveReloadLock)
+        {
+            _liveReloadScript ??= GetLiveReloadScript();
+            return _liveReloadScript;
         }
     }
 
@@ -341,14 +382,14 @@ public abstract class HttpServer : IDisposable
             return;
         }
 
-        var script = GetLiveReloadScript();
+        var script = GetCachedLiveReloadScript();
         var compressionMethod = GetCompressionMethod(
             request.Headers["Accept-Encoding"], response.ContentType, fileInfo.Length);
 
         // HTML with live-reload injection
         if (ext == FileExtensions.Html && script != null)
         {
-            var html = await File.ReadAllTextAsync(filePath);
+            var html = await ReadAllTextWithDeleteShareAsync(filePath);
             html = html.Replace("</body>", script + "\n</body>");
             if (!html.Contains("</body>"))
                 html += script;
@@ -359,19 +400,38 @@ public abstract class HttpServer : IDisposable
         else if (compressionMethod != null)
         {
             // Read and compress text-based files
-            var bytes = await File.ReadAllBytesAsync(filePath);
+            var bytes = await ReadAllBytesWithDeleteShareAsync(filePath);
             await WriteCompressedOrRaw(response, bytes, compressionMethod);
         }
         else
         {
-            // Stream binary files directly — no intermediate buffer
+            // Stream binary files directly — no intermediate buffer. FileShare.Delete
+            // lets the build's atomic rename swap the file while we hold the old
+            // handle, so the server and the build never fight over the same inode.
             response.ContentLength64 = fileInfo.Length;
-            await using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, useAsync: true);
+            await using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 65536, useAsync: true);
             await fs.CopyToAsync(response.OutputStream);
             Interlocked.Add(ref _totalBytesServed, fileInfo.Length);
         }
 
         await response.OutputStream.FlushAsync();
+    }
+
+    /// <summary>Read all text with FileShare.Delete so concurrent atomic renames succeed.</summary>
+    private static async Task<string> ReadAllTextWithDeleteShareAsync(string filePath)
+    {
+        await using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 65536, useAsync: true);
+        using var reader = new StreamReader(fs, Encoding.UTF8);
+        return await reader.ReadToEndAsync();
+    }
+
+    /// <summary>Read all bytes with FileShare.Delete so concurrent atomic renames succeed.</summary>
+    private static async Task<byte[]> ReadAllBytesWithDeleteShareAsync(string filePath)
+    {
+        await using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 65536, useAsync: true);
+        using var ms = new MemoryStream();
+        await fs.CopyToAsync(ms);
+        return ms.ToArray();
     }
 
     /// <summary>

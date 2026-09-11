@@ -99,27 +99,39 @@ module PaginationGenerator =
                 templateBody
         | None -> templateBody
 
-    /// Wrap inner HTML with the site layout, mirroring the content pipeline's
-    /// write path so generated pages match hand-authored ones.
-    let private wrapAndWrite (page: ContentPage) (layoutName: string)
-                             (config: SiteConfig) (outputDir: string)
-                             (layouts: Map<string, string * string>)
-                             (includes: IDictionary<string, string>)
-                             (globalData: IDictionary<string, obj>) : unit =
-        try
-            let replacements = BuildLayout.buildReplacements page config globalData
-            let finalHtml = BuildLayout.applyLayout layoutName page.Content layouts
-                                replacements includes page config globalData
-            let formatted =
-                if config.EnableHtmlFormatting then HtmlFormatter.formatDefault finalHtml
-                else finalHtml
-            let outPath = Path.Combine(outputDir, page.OutputPath)
-            let dir = Path.GetDirectoryName outPath
-            if dir <> null then Directory.CreateDirectory(dir) |> ignore
-            File.WriteAllText(outPath, formatted, System.Text.Encoding.UTF8)
-        with ex ->
-            // A single failing page must not abort the whole build.
-            eprintfn "[Zest] Pagination page '%s' failed: %s" page.Url ex.Message
+    /// Apply the layout chain to all generated pages in ONE batched FSI pass
+    /// and write the results. Pagination pages share the same F# layout, so
+    /// entering FSI per page wasted a full evaluation round each; batching cuts
+    /// that to one FSI run per layout-chain level. Formatting and writes run in
+    /// parallel since each page is independent.
+    let private batchRenderAndWrite (pages: ContentPage list)
+                                    (config: SiteConfig) (outputDir: string)
+                                    (layouts: Map<string, string * string>)
+                                    (includes: IDictionary<string, string>)
+                                    (globalData: IDictionary<string, obj>) : unit =
+        if pages.IsEmpty then ()
+        else
+            let tasks =
+                pages |> List.map (fun p -> p, (p.Layout |> Option.defaultValue config.DefaultLayout))
+            let batchedHtml =
+                LayoutEngine.applyLayoutsBatched tasks layouts includes config globalData
+            System.Threading.Tasks.Parallel.ForEach(pages, fun (page: ContentPage) ->
+                try
+                    let finalHtml =
+                        match batchedHtml.TryFind page.SourcePath with
+                        | Some html -> html
+                        | None -> page.Content
+                    let formatted =
+                        if config.EnableHtmlFormatting then HtmlFormatter.formatDefault finalHtml
+                        else finalHtml
+                    let outPath = Path.Combine(outputDir, page.OutputPath)
+                    let dir = Path.GetDirectoryName outPath
+                    if dir <> null then Directory.CreateDirectory(dir) |> ignore
+                    // Atomic replace keeps the preview server's open read handles valid.
+                    AtomicFile.write outPath (System.Text.Encoding.UTF8.GetBytes formatted)
+                with ex ->
+                    // A single failing page must not abort the whole build.
+                    eprintfn "[Zest] Pagination page '%s' failed: %s" page.Url ex.Message) |> ignore
 
     /// Snapshot a sorted collection window into the shape templates expect:
     /// a shallow array of page dicts (url/title/date/tags/description/...).
@@ -133,14 +145,15 @@ module PaginationGenerator =
 
     /// Generate all pagination pages for a single opt-in index file.
     /// The index URL (/posts/) renders the first window; subsequent windows
-    /// live at /posts/page/N/.
+    /// live at /posts/page/N/. Returns the generated pages; the caller batches
+    /// the layout pass and writes them.
     let private generateCollection (filePath: string) (text: string)
                                    (collection: string) (perPage: int)
                                    (config: SiteConfig) (outputDir: string)
                                    (layouts: Map<string, string * string>)
                                    (includes: IDictionary<string, string>)
                                    (globalData: IDictionary<string, obj>)
-                                   : int =
+                                   : ContentPage list =
         let meta, _ = MetaParser.parse (Path.GetExtension filePath) text
         let templateBody = stripFrontMatter text
         let layoutName = meta.Layout |> Option.defaultValue config.DefaultLayout
@@ -166,7 +179,7 @@ module PaginationGenerator =
         let pageDir = Path.Combine(outputDir, baseRel, "page")
         if Directory.Exists pageDir then Directory.Delete(pageDir, recursive = true)
 
-        let mutable generated = 0
+        let result = ResizeArray<ContentPage>()
         for pageIndex in 1 .. totalPages do
             let skipCount = (pageIndex - 1) * perPage
             let items = windowItems collectionPages skipCount perPage
@@ -206,9 +219,8 @@ module PaginationGenerator =
                             Slug = if pageIndex = 1 then collection else sprintf "%s-%d" collection pageIndex
                             Data = dict [ "description", box (sprintf "%s — page %d of %d" collection pageIndex totalPages) ]
                             SourcePath = sprintf "<pagination:%s:%d>" collection pageIndex }
-            wrapAndWrite page layoutName config outputDir layouts includes globalData
-            generated <- generated + 1
-        generated
+            result.Add(page)
+        Seq.toList result
 
     /// <summary>
     /// Generate paginated listing pages for every content file that declares
@@ -220,6 +232,7 @@ module PaginationGenerator =
                  (globalData: IDictionary<string, obj>) : int =
         let perPageDefault = Operators.max 1 config.PaginationPerPage
         let mutable generated = 0
+        let generatedPages = ResizeArray<ContentPage>()
         if Directory.Exists contentDir then
             for filePath in Directory.EnumerateFiles(contentDir, "*.*", SearchOption.AllDirectories) do
                 let ext = Path.GetExtension(filePath).ToLowerInvariant()
@@ -239,8 +252,11 @@ module PaginationGenerator =
                                 if String.IsNullOrEmpty d then "" else d.Replace('\\', '/')
                             let collection, perPage = parseDirective m.Groups.[1].Value dirFallback perPageDefault
                             if collection.Length > 0 then
-                                generated <- generated + generateCollection filePath text collection perPage
-                                    config outputDir layouts includes globalData
+                                let pages = generateCollection filePath text collection perPage
+                                                config outputDir layouts includes globalData
+                                generatedPages.AddRange(pages)
+                                generated <- generated + pages.Length
                     with ex ->
                         eprintfn "[Zest] Pagination scan failed for '%s': %s" filePath ex.Message
+        batchRenderAndWrite (Seq.toList generatedPages) config outputDir layouts includes globalData
         generated

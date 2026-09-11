@@ -44,6 +44,11 @@ module ContentPipeline =
         let errors = ConcurrentBag<string>()
         let mutable processed = 0
         let mutable cached    = 0
+        let phaseSw = System.Diagnostics.Stopwatch.StartNew()
+        let markPhase (name: string) =
+            phaseSw.Stop()
+            eprintfn "[Zest][timing] %s: %d ms" name phaseSw.ElapsedMilliseconds
+            phaseSw.Restart()
 
         let allFiles =
             if not (Directory.Exists contentDir) then
@@ -112,13 +117,15 @@ module ContentPipeline =
                             let ctx = TemplateManager.buildNestedContext pairs
                             match engine.Render content ctx with
                             | Ok rendered ->
-                                File.WriteAllText(destPath, rendered, System.Text.Encoding.UTF8)
+                                // Atomic replace so the preview server's open
+                                // read handle is never invalidated mid-stream.
+                                AtomicFile.write destPath (System.Text.Encoding.UTF8.GetBytes rendered)
                             | Error _ ->
-                                File.WriteAllText(destPath, content, System.Text.Encoding.UTF8)
+                                AtomicFile.write destPath (System.Text.Encoding.UTF8.GetBytes content)
                         | None ->
-                            File.WriteAllText(destPath, content, System.Text.Encoding.UTF8)
+                            AtomicFile.write destPath (System.Text.Encoding.UTF8.GetBytes content)
                     else
-                        File.WriteAllText(destPath, content, System.Text.Encoding.UTF8)
+                        AtomicFile.write destPath (System.Text.Encoding.UTF8.GetBytes content)
                     Interlocked.Increment(&processed) |> ignore
                     progress.IncProcessed()) |> ignore
 
@@ -159,6 +166,7 @@ module ContentPipeline =
         PageQuery.setAllPages metaPages
         PageQuery.setDraftPages (draftPages |> Seq.toList)
         ScriptRunner.resetSession ()
+        markPhase "metadata-pass"
 
         // Exclude pagination templates from normal evaluation/writing — the
         // PaginationGenerator owns their output paths.
@@ -273,13 +281,20 @@ module ContentPipeline =
                 progress.IncErrors()
 
         Parallel.ForEach(fsxFiles, fun f -> processFsxFile f) |> ignore
+        markPhase "evaluate"
 
-        // Write output — parallelized with sequential-scan file writes.
-        // FileOptions.SequentialScan hints the OS page cache for large files.
+        // Write output — lock-safe atomic writes that never conflict with the
+        // preview server's open read handles. Layout chains are applied to all
+        // rebuild pages in ONE batched pass (FSI per chain level) instead of
+        // re-entering FSI per page, which was the dominant build cost.
         let mutable localProcessed = 0
         let mutable localCached    = 0
         progress.Phase <- BuildPhase.Writing
-        Parallel.ForEach(evalResults, fun r ->
+
+        // Partition results first: failures surface as errors; pages that the
+        // incremental cache still considers fresh are counted and skipped.
+        let rebuildPages = ResizeArray<ContentPage>()
+        for r in evalResults do
             match r with
             | Error e -> errors.Add(e); progress.IncErrors()
             | Ok page ->
@@ -287,31 +302,59 @@ module ContentPipeline =
                 if config.EnableIncrementalBuild && not (BuildCache.needsRebuildWithDeps page.SourcePath outPath) then
                     Interlocked.Increment(&localCached) |> ignore
                 else
-                    let replacements = BuildLayout.buildReplacements page config safeData
-                    let layoutName   = page.Layout |> Option.defaultValue config.DefaultLayout
-                    let finalHtml    = BuildLayout.applyLayout layoutName page.Content layouts replacements safeIncludes page config safeData
-                    let formattedHtml =
-                        if config.EnableHtmlFormatting then
-                            HtmlFormatter.formatDefault finalHtml
-                        else
-                            finalHtml
+                    rebuildPages.Add(page)
+
+        // One batched layout pass over every page that needs a rebuild.
+        let layoutSw = System.Diagnostics.Stopwatch.StartNew()
+        let batchedHtml =
+            if rebuildPages.Count = 0 then Map.empty
+            else
+                let tasks =
+                    rebuildPages
+                    |> Seq.map (fun p -> p, (p.Layout |> Option.defaultValue config.DefaultLayout))
+                    |> Seq.toList
+                LayoutEngine.applyLayoutsBatched tasks layouts safeIncludes config safeData
+        layoutSw.Stop()
+        eprintfn "[Zest][timing] content-batchlayout: %d ms (%d pages)" layoutSw.ElapsedMilliseconds rebuildPages.Count
+
+        // Write each result in parallel. The content hash for the cache comes
+        // from the first-pass file cache, so no second ReadAllText is needed.
+        let writeSw = System.Diagnostics.Stopwatch.StartNew()
+        Parallel.ForEach(rebuildPages, fun page ->
+            try
+                let outPath = Path.Combine(outputDir, page.OutputPath)
+                let dir = Path.GetDirectoryName outPath
+                if dir <> null then Directory.CreateDirectory dir |> ignore
+                let layoutName = page.Layout |> Option.defaultValue config.DefaultLayout
+                match batchedHtml.TryFind page.SourcePath with
+                | Some finalHtml ->
                     // Record page→layout dependency so future layout changes
                     // trigger a rebuild of only the affected pages.
                     match layouts.TryFind layoutName with
-                    | Some (layoutPath, _) ->
-                        BuildCache.recordDependency page.SourcePath layoutPath
+                    | Some (layoutPath, _) -> BuildCache.recordDependency page.SourcePath layoutPath
                     | None -> ()
-                    let dir = Path.GetDirectoryName(outPath)
-                    if dir <> null then Directory.CreateDirectory(dir) |> ignore
-                    // Use FileStream with SequentialScan for better large-file throughput.
-                    let bytes = System.Text.Encoding.UTF8.GetBytes(formattedHtml)
-                    use fs = new FileStream(outPath, FileMode.Create, FileAccess.Write,
-                                            FileShare.None, 4096, FileOptions.SequentialScan)
-                    fs.Write(bytes, 0, bytes.Length)
-                    BuildCache.updateCache page.SourcePath formattedHtml
-                    Interlocked.Increment(&localProcessed) |> ignore) |> ignore
+                    let formattedHtml =
+                        if config.EnableHtmlFormatting then HtmlFormatter.formatDefault finalHtml
+                        else finalHtml
+                    AtomicFile.write outPath (System.Text.Encoding.UTF8.GetBytes formattedHtml)
+                    let srcText = fileContentCache.GetOrAdd(page.SourcePath, fun _ -> File.ReadAllText page.SourcePath)
+                    BuildCache.updateCacheWithHash page.SourcePath formattedHtml srcText
+                    Interlocked.Increment(&localProcessed) |> ignore
+                | None ->
+                    // No layout result (missing top layout) — write the raw content.
+                    AtomicFile.write outPath (System.Text.Encoding.UTF8.GetBytes page.Content)
+                    let srcText = fileContentCache.GetOrAdd(page.SourcePath, fun _ -> File.ReadAllText page.SourcePath)
+                    BuildCache.updateCacheWithHash page.SourcePath page.Content srcText
+                    Interlocked.Increment(&localProcessed) |> ignore
+            with ex ->
+                // A single page must never abort the whole build.
+                errors.Add(sprintf "Failed to write '%s': %s" page.SourcePath ex.Message)
+                progress.IncErrors()) |> ignore
+        writeSw.Stop()
+        eprintfn "[Zest][timing] content-formatwrite: %d ms" writeSw.ElapsedMilliseconds
         processed <- processed + localProcessed
         cached    <- cached + localCached
+        markPhase "write"
 
         // Collect any errors from the error bag
         for e in errors do

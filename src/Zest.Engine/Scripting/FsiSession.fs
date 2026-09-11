@@ -44,8 +44,17 @@ module FsiSession =
         stdinWriter <- None
 
     /// Best-effort session shutdown (also wired to ProcessExit).
+    /// When a script evaluation is in flight the session lock is held, so the
+    /// process is killed directly rather than waiting — shutdown must never
+    /// block on a 60s evaluation timeout.
     let shutdown () =
-        lock sync (fun () -> kill ())
+        if Monitor.TryEnter(sync, 500) then
+            try kill () finally Monitor.Exit sync
+        else
+            match proc with
+            | Some p ->
+                try if not p.HasExited then p.Kill (entireProcessTree = true) with _ -> ()
+            | None -> ()
 
     let private startSession () : bool =
         try

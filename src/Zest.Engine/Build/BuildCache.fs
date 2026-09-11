@@ -22,9 +22,38 @@ open System.Security.Cryptography
 module BuildCache =
 
     // ── Cache format ──
-    let private CACHE_FORMAT_VERSION = 2
+    let private CACHE_FORMAT_VERSION = 3
     let private cacheFilePath (outputDir: string) = Path.Combine(outputDir, ".zest-cache.log")
     let private depsFilePath  (outputDir: string) = Path.Combine(outputDir, ".zest-deps.log")
+
+    /// Extract a `<key>=<value>` token from a cache header line. Header
+    /// tokens are separated by `" | "` and every value is space-free, so
+    /// splitting on spaces and matching the `key=` prefix is unambiguous —
+    /// even though the engine signature itself contains an inner `|`.
+    let private headerToken (header: string) (key: string) : string option =
+        if String.IsNullOrEmpty header then None
+        else
+            header.Split(' ')
+            |> Array.tryPick (fun token ->
+                let marker = key + "="
+                if token.StartsWith(marker, StringComparison.Ordinal) then
+                    Some (token.Substring(marker.Length))
+                else None)
+
+    /// Compute a stable content signature over every layout and include so
+    /// any template change — editing, adding, or deleting a file — produces a
+    /// different signature and invalidates the page cache. Keys are sorted so
+    /// the signature is deterministic regardless of Map/dictionary order.
+    let internal computeTemplateSignature
+        (layouts: Map<string, string * string>)
+        (includes: IDictionary<string, string>) : string =
+        use sha = SHA256.Create()
+        let sb = System.Text.StringBuilder()
+        for (name, (_, text)) in layouts |> Map.toSeq |> Seq.sortBy fst do
+            sb.Append(name).Append('\t').AppendLine(text) |> ignore
+        for kv in includes |> Seq.sortBy (fun kv -> kv.Key) do
+            sb.Append(kv.Key).Append('\t').AppendLine(kv.Value) |> ignore
+        Convert.ToHexString(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(sb.ToString())))
 
     [<Struct>]
     type internal CacheEntry = {
@@ -110,10 +139,23 @@ module BuildCache =
                 let set = srcDependencies.GetOrAdd(srcPath, fun _ -> HashSet<string>())
                 lock set (fun () -> set.Add(kv.Key) |> ignore)
 
-    /// Load the persistent cache. If the engine signature has changed (engine
-    /// upgrade/recompile) or the cache format is incompatible, the cache is
-    /// ignored and a full rebuild is triggered.
-    let internal loadCache (outputDir: string) =
+    /// Clear all cached entries, dependency graphs, and forward graph. Defined
+    /// before loadCache because a signature mismatch during load must be able
+    /// to discard a stale cache immediately.
+    let clearCache () =
+        buildCache.Clear()
+        dependencyGraph.Clear()
+        srcDependencies.Clear()
+        cacheDirty := true
+        depsDirty := true
+
+    /// Load the persistent cache. If the engine signature or the template
+    /// signature has changed, the cache is ignored and a full rebuild is
+    /// triggered. The template signature is a content hash over every layout
+    /// and include, so editing, adding, or deleting a template invalidates the
+    /// page cache while an unchanged template set still lets unchanged pages
+    /// be reused for fast incremental builds.
+    let internal loadCache (outputDir: string) (templateSig: string) =
         // Clean up legacy cache files from older Zest versions
         // (.json from v0, .toml from transitional naming, and bare files).
         for oldSuffix in [ ".json"; ".toml"; "" ] do
@@ -125,26 +167,40 @@ module BuildCache =
         if not (buildCache.IsEmpty) then ()
         else
             let currentSig = engineSignature ()
-
-            // ── Load page cache ──
             let path = cacheFilePath outputDir
-            if File.Exists path then
-                try
-                    use reader = new StreamReader(path, Text.Encoding.UTF8)
-                    let headerLine = reader.ReadLine()
-                    let mutable sigMatched = true
-                    if headerLine <> null && headerLine.StartsWith("#") then
-                        if headerLine.Contains("engine=") then
-                            let startIdx = headerLine.IndexOf("engine=") + 7
-                            let endIdx = headerLine.IndexOf(' ', startIdx)
-                            let cachedSig =
-                                if endIdx > startIdx then headerLine.[startIdx..endIdx-1]
-                                else headerLine.[startIdx..]
-                            if cachedSig <> currentSig then
-                                sigMatched <- false
-                                eprintfn "[Zest] Engine changed since last build — forcing full rebuild."
-                    if not sigMatched then ()
-                    else
+
+            // Read the header once and validate both signatures before
+            // touching the cache body. A header without a `tpl=` token came
+            // from a build before template tracking existed, so it is treated
+            // as invalid to force one clean full rebuild.
+            let header =
+                if File.Exists path then
+                    try
+                        use reader = new StreamReader(path, System.Text.Encoding.UTF8)
+                        reader.ReadLine()
+                    with _ -> null
+                else null
+            let engineOk =
+                match headerToken header "engine" with
+                | Some sig' -> sig' = currentSig
+                | None -> true
+            let templateOk =
+                match headerToken header "tpl" with
+                | Some sig' -> sig' = templateSig
+                | None -> false
+
+            if not engineOk || not templateOk then
+                if not engineOk then
+                    eprintfn "[Zest] Engine changed since last build — forcing full rebuild."
+                else
+                    eprintfn "[Zest] Template files changed since last build — forcing full rebuild."
+                clearCache ()
+            else
+                // ── Load page cache ──
+                if File.Exists path then
+                    try
+                        use reader = new StreamReader(path, System.Text.Encoding.UTF8)
+                        reader.ReadLine() |> ignore   // header already validated
                         let mutable line = reader.ReadLine()
                         while line <> null do
                             if not (line.StartsWith("#")) then
@@ -160,47 +216,37 @@ module BuildCache =
                                                   ContentHash = ch }
                                     | _ -> ()
                             line <- reader.ReadLine()
-                with ex ->
-                    eprintfn "[Zest] WARN: Failed to load cache: %s" ex.Message
+                    with ex ->
+                        eprintfn "[Zest] WARN: Failed to load cache: %s" ex.Message
 
-            // ── Load dependency graph ──
-            let depsPath = depsFilePath outputDir
-            if File.Exists depsPath then
-                try
-                    use reader = new StreamReader(depsPath, Text.Encoding.UTF8)
-                    let headerLine = reader.ReadLine()
-                    let mutable sigMatched = true
-                    if headerLine <> null && headerLine.StartsWith("#") && headerLine.Contains("engine=") then
-                        let startIdx = headerLine.IndexOf("engine=") + 7
-                        let endIdx = headerLine.IndexOf(' ', startIdx)
-                        let cachedSig =
-                            if endIdx > startIdx then headerLine.[startIdx..endIdx-1]
-                            else headerLine.[startIdx..]
-                        if cachedSig <> currentSig then sigMatched <- false
-                    if sigMatched then
+                // ── Load dependency graph ──
+                let depsPath = depsFilePath outputDir
+                if File.Exists depsPath then
+                    try
+                        use reader = new StreamReader(depsPath, System.Text.Encoding.UTF8)
+                        reader.ReadLine() |> ignore   // header shares engine/tpl sig with the cache file
                         let mutable line = reader.ReadLine()
                         while line <> null do
                             if not (line.StartsWith("#")) then
                                 let parts = line.Split([|'\t'|], 2)
                                 if parts.Length = 2 then
                                     let pages = parts.[1].Split(',') |> Array.filter (fun s -> s <> "")
-                                    let set = HashSet<string>(pages)
-                                    dependencyGraph.[parts.[0]] <- set
+                                    dependencyGraph.[parts.[0]] <- HashSet<string>(pages)
                             line <- reader.ReadLine()
-                    rebuildForwardGraph ()
-                with ex ->
-                    eprintfn "[Zest] WARN: Failed to load dep graph: %s" ex.Message
+                        rebuildForwardGraph ()
+                    with ex ->
+                        eprintfn "[Zest] WARN: Failed to load dep graph: %s" ex.Message
 
-            // Record the engine signature at load time so DevServer can
-            // detect mid-serve engine upgrades on subsequent rebuilds.
-            lock sigLock (fun () ->
-                if lastWrittenSig = "" then
-                    lastWrittenSig <- currentSig)
+                // Record the engine signature at load time so DevServer can
+                // detect mid-serve engine upgrades on subsequent rebuilds.
+                lock sigLock (fun () ->
+                    if lastWrittenSig = "" then
+                        lastWrittenSig <- currentSig)
 
     /// Save the persistent cache (atomic write, stale entries pruned).
-    let internal saveCache (outputDir: string) =
+    let internal saveCache (outputDir: string) (templateSig: string) =
         let engSig = engineSignature ()
-        let header = sprintf "# zest-cache v%d | engine=%s" CACHE_FORMAT_VERSION engSig
+        let header = sprintf "# zest-cache v%d | engine=%s | tpl=%s" CACHE_FORMAT_VERSION engSig templateSig
         lock sigLock (fun () -> lastWrittenSig <- engSig)
 
         if !cacheDirty then
@@ -302,14 +348,6 @@ module BuildCache =
         cacheDirty := true
 
     // ── Cache management ──
-
-    /// Clear all cached entries, dependency graphs, and forward graph.
-    let clearCache () =
-        buildCache.Clear()
-        dependencyGraph.Clear()
-        srcDependencies.Clear()
-        cacheDirty := true
-        depsDirty := true
 
     /// Clear on-disk cache files for a given output directory.
     /// Called by `zest clean --cache`.

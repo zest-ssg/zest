@@ -40,17 +40,21 @@ module ScriptEvaluator =
             | None -> meta
 
     // ── Nunjucks context caching (built once per build, shared across all pages) ──
+    // Keyed by reference equality: the dictionary is mutated before evaluation
+    // begins and never again, so a changed reference always means new content.
     let mutable private cachedNunjucksSiteContext : (string * obj)[] option = None
-    let mutable private cachedNunjucksGlobalDataHash = 0
+    let mutable private cachedNunjucksGlobalDataRef : IDictionary<string, obj> = null
+    let mutable private cachedNunjucksConfigRef : SiteConfig = Unchecked.defaultof<SiteConfig>
 
     let internal resetNunjucksCache () =
         cachedNunjucksSiteContext <- None
-        cachedNunjucksGlobalDataHash <- 0
+        cachedNunjucksGlobalDataRef <- null
+        cachedNunjucksConfigRef <- Unchecked.defaultof<SiteConfig>
 
     let private getNunjucksSiteContext (config: SiteConfig) (globalData: IDictionary<string, obj>) =
-        let hash = globalData.GetHashCode() ^^^ config.GetHashCode()
         match cachedNunjucksSiteContext with
-        | Some ctx when cachedNunjucksGlobalDataHash = hash -> ctx
+        | Some ctx when Object.ReferenceEquals(cachedNunjucksGlobalDataRef, globalData)
+                       && Object.ReferenceEquals(cachedNunjucksConfigRef, config) -> ctx
         | _ ->
             let pairs = ResizeArray<string * obj>()
             pairs.Add("site.title",       box config.Title)
@@ -63,7 +67,8 @@ module ScriptEvaluator =
                 pairs.Add("site." + kv.Key, kv.Value)
             let result = pairs |> Seq.toArray
             cachedNunjucksSiteContext <- Some result
-            cachedNunjucksGlobalDataHash <- hash
+            cachedNunjucksGlobalDataRef <- globalData
+            cachedNunjucksConfigRef <- config
             result
 
     // ── Filter registry caching (track registered engines) ─────────

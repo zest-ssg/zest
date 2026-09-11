@@ -76,14 +76,20 @@ public class SocketHub : IDisposable
 
     private void BroadcastJson(string json)
     {
+        // Snapshot the client list under the lock, then write outside it so a
+        // slow client's blocking Write can never stall the rebuild loop.
+        TcpClient[] snapshot;
         lock (_wsLock)
         {
             if (_wsClients.Count == 0) return;
+            snapshot = _wsClients.ToArray();
+        }
 
-            var frame = EncodeWebSocketFrame(json);
+        var frame = EncodeWebSocketFrame(json);
+        _ = Task.Run(() =>
+        {
             var dead = new List<TcpClient>();
-
-            foreach (var c in _wsClients)
+            foreach (var c in snapshot)
             {
                 try
                 {
@@ -93,11 +99,17 @@ public class SocketHub : IDisposable
                 catch { dead.Add(c); }
             }
 
-            foreach (var c in dead) _wsClients.Remove(c);
+            if (dead.Count > 0)
+            {
+                lock (_wsLock)
+                {
+                    foreach (var c in dead) _wsClients.Remove(c);
+                }
+            }
 
-            if (_wsClients.Count > 0 || dead.Count > 0)
-                LogWriter.VerboseLog($"Broadcast to {_wsClients.Count} clients ({dead.Count} dead): {json}");
-        }
+            if (snapshot.Length > 0 || dead.Count > 0)
+                LogWriter.VerboseLog($"Broadcast to {snapshot.Length} clients ({dead.Count} dead): {json}");
+        });
     }
 
     private async Task AcceptClients(CancellationToken ct)
@@ -236,12 +248,17 @@ public class SocketHub : IDisposable
 #pragma warning restore CA5350
     }
 
+    private string? _cachedLiveReloadScript;
+
     /// <summary>
     /// Generate the live-reload client script for injection into HTML pages.
     /// Supports full-page reload and CSS-only style injection.
     /// Falls back to SSE if WebSocket connection fails within 2 seconds.
+    /// The script is identical for every page, so it is built once and cached.
     /// </summary>
-    public string GetLiveReloadScript() => $@"
+    public string GetLiveReloadScript() => _cachedLiveReloadScript ??= BuildLiveReloadScript();
+
+    private string BuildLiveReloadScript() => $@"
 <script>
 (function(){{
     var port = {_port};
