@@ -11,9 +11,9 @@ open System.Security.Cryptography
 /// or a template they depend on actually changed are rebuilt.
 ///
 /// Cache files (written to the output directory):
-///   .zest-cache.log     — per-page timestamp, output path, and content hash
-///   .zest-deps.log      — dependency graph (layout/include → dependent pages)
-///   .zest-templates.log — content hash of every layout/include
+///   .zest-cache.log — per-page timestamp, output path, and content hash
+///   .zest-deps.log  — dependency graph (layout/include → dependent pages)
+///                     followed by the content hash of every layout/include
 ///
 /// Timestamps are captured at millisecond precision and serve only as a fast
 /// hint; the per-file content hash is the source of truth. The hash catches an
@@ -30,10 +30,14 @@ open System.Security.Cryptography
 module BuildCache =
 
     // ── Cache format ──
-    let private CACHE_FORMAT_VERSION = 2
+    let private CACHE_FORMAT_VERSION = 5
     let private cacheFilePath (outputDir: string) = Path.Combine(outputDir, ".zest-cache.log")
     let private depsFilePath  (outputDir: string) = Path.Combine(outputDir, ".zest-deps.log")
-    let private templatesFilePath (outputDir: string) = Path.Combine(outputDir, ".zest-templates.log")
+
+    // Section markers inside .zest-deps.log. The template index shares the file
+    // with the dependency graph to keep the output directory uncluttered.
+    let private templatesSection = "# templates"
+    let private depsSection = "# deps"
 
     /// Extract a `<key>=<value>` token from a cache header line. Header
     /// tokens are separated by `" | "` and every value is space-free, so
@@ -275,42 +279,39 @@ module BuildCache =
             with ex ->
                 eprintfn "[Zest] WARN: Failed to load cache: %s" ex.Message
 
-    let private loadDependencyGraph (outputDir: string) =
+    /// Load the dependency file, reading both the template index and the
+    /// dependency graph from their sections. Returns false when the template
+    /// section is absent, which callers treat as "template changes cannot be
+    /// detected".
+    let private loadDependencyFile (outputDir: string) : bool =
         let depsPath = depsFilePath outputDir
-        if File.Exists depsPath then
+        if not (File.Exists depsPath) then false
+        else
             try
                 use reader = new StreamReader(depsPath, Text.Encoding.UTF8)
                 reader.ReadLine() |> ignore   // header shares engine/ver sig with the cache file
+                let mutable templatesFound = false
+                let mutable inTemplates = false
                 let mutable line = reader.ReadLine()
                 while line <> null do
-                    if not (line.StartsWith("#")) then
+                    if line = templatesSection then
+                        templatesFound <- true
+                        inTemplates <- true
+                    elif line = depsSection then
+                        inTemplates <- false
+                    elif not (line.StartsWith("#")) then
                         let parts = line.Split([|'\t'|], 2)
                         if parts.Length = 2 then
-                            let pages = parts.[1].Split(',') |> Array.filter (fun s -> s <> "")
-                            dependencyGraph.[parts.[0]] <- HashSet<string>(pages)
+                            if inTemplates then
+                                templateHashes.[parts.[0]] <- parts.[1]
+                            else
+                                let pages = parts.[1].Split(',') |> Array.filter (fun s -> s <> "")
+                                dependencyGraph.[parts.[0]] <- HashSet<string>(pages)
                     line <- reader.ReadLine()
                 rebuildForwardGraph ()
+                templatesFound
             with ex ->
-                eprintfn "[Zest] WARN: Failed to load dep graph: %s" ex.Message
-
-    /// Load the persisted template index. Returns false when the file is
-    /// absent, which callers treat as "template changes cannot be detected".
-    let private loadTemplateHashes (outputDir: string) : bool =
-        let path = templatesFilePath outputDir
-        if not (File.Exists path) then false
-        else
-            try
-                use reader = new StreamReader(path, Text.Encoding.UTF8)
-                reader.ReadLine() |> ignore
-                let mutable line = reader.ReadLine()
-                while line <> null do
-                    if not (line.StartsWith("#")) then
-                        let parts = line.Split([|'\t'|], 2)
-                        if parts.Length = 2 then templateHashes.[parts.[0]] <- parts.[1]
-                    line <- reader.ReadLine()
-                true
-            with ex ->
-                eprintfn "[Zest] WARN: Failed to load template index: %s" ex.Message
+                eprintfn "[Zest] WARN: Failed to load dependency graph: %s" ex.Message
                 false
 
     /// Load the persistent cache and reconcile the template set. The engine
@@ -321,7 +322,7 @@ module BuildCache =
         // Clean up legacy cache files from older Zest versions
         // (.json from v0, .toml from transitional naming, and bare files).
         for oldSuffix in [ ".json"; ".toml"; "" ] do
-            for baseName in [ ".zest-cache"; ".zest-deps"; ".zest-templates" ] do
+            for baseName in [ ".zest-cache"; ".zest-deps" ] do
                 let oldPath = Path.Combine(outputDir, baseName + oldSuffix)
                 try if File.Exists(oldPath) then File.Delete(oldPath)
                 with _ -> ()
@@ -355,8 +356,7 @@ module BuildCache =
                     clearCache ()
                 else
                     loadPageCache outputDir
-                    loadDependencyGraph outputDir
-                    let templatesLoaded = loadTemplateHashes outputDir
+                    let templatesLoaded = loadDependencyFile outputDir
                     if not templatesLoaded && not buildCache.IsEmpty then
                         // Without the template index, a template edit could go
                         // unnoticed. Rebuild everything rather than serve a
@@ -390,20 +390,18 @@ module BuildCache =
                         writer.WriteLine(kv.Value.ContentHash))
             cacheDirty := false
 
-        if !depsDirty then
+        if !depsDirty || !templatesDirty then
             atomicWrite (depsFilePath outputDir) (fun writer ->
                 writer.WriteLine(header)
+                writer.WriteLine(templatesSection)
+                for kv in templateHashes do
+                    writer.Write(kv.Key); writer.Write('\t')
+                    writer.WriteLine(kv.Value)
+                writer.WriteLine(depsSection)
                 for kv in dependencyGraph do
                     writer.Write(kv.Key); writer.Write('\t')
                     writer.WriteLine(String.concat "," kv.Value))
             depsDirty := false
-
-        if !templatesDirty then
-            atomicWrite (templatesFilePath outputDir) (fun writer ->
-                writer.WriteLine(header)
-                for kv in templateHashes do
-                    writer.Write(kv.Key); writer.Write('\t')
-                    writer.WriteLine(kv.Value))
             templatesDirty := false
 
     // ── Rebuild checks ──
@@ -450,7 +448,7 @@ module BuildCache =
     /// Called by `zest clean --cache`.
     let clearDiskCache (outputDir: string) =
         clearCache ()
-        let files = [ cacheFilePath outputDir; depsFilePath outputDir; templatesFilePath outputDir ]
+        let files = [ cacheFilePath outputDir; depsFilePath outputDir ]
         for f in files do
             try if File.Exists(f) then File.Delete(f)
             with ex -> eprintfn "[Zest] WARN: Could not delete %s: %s" f ex.Message
