@@ -334,7 +334,14 @@ module ScriptEvaluator =
                             SourcePath   = filePath
                             Url          = url
                             OutputPath   = outputPath
-                            Layout       = Some (meta.Layout |> Option.defaultValue config.DefaultLayout)
+                            // A `layout = "none"` directive opts out of the
+                            // layout chain for self-contained pages (feeds,
+                            // standalone scripts). The pipeline writes the
+                            // raw rendered content when Layout is None.
+                            Layout       =
+                                match meta.Layout with
+                                | Some l when l.Equals("none", StringComparison.OrdinalIgnoreCase) -> None
+                                | other -> Some (other |> Option.defaultValue config.DefaultLayout)
                             Title        = meta.Title |> Option.defaultValue rawSlug
                             Content      = htmlContent
                             Data         = mergedData
