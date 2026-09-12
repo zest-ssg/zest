@@ -1,44 +1,13 @@
 # ─── Zest CLI Metadata ────────────────────────────────
-# This file defines the CLI branding, version, and help text.
+# This file defines the CLI branding, version, and help footer.
 # Embedded as a manifest resource (LogicalName="zest.toml")
 # and read by Zest.App.CommandLine.HelpRenderer at startup.
 # During local development, HelpRenderer falls back to this file on disk.
 
 [meta]
-version    = "0.7.3"
+version    = "0.8.0"
 header     = "Zest v{0} — Easy Static-site Toolkit"
 ecosystem  = "Ecosystem: .zest.fsx + .zcss"
-
-[usage]
-general    = "Usage: zest <command> [options]"
-
-[commands]
-build      = "  build                       Build static site to _site/"
-serve      = "  serve                       Build + start dev server (live reload)"
-preview    = "  preview                     Preview built _site/ directory"
-init       = "  init                        Scaffold new project from template"
-version    = "  --version, -v               Show version info"
-help       = "  --help,    -h               Show this help"
-
-[options]
-port       = "  --port, -p PORT             Server port (default: 8080)"
-watch      = "  --watch, -w                 Watch files and auto-rebuild"
-
-[formats]
-items = """
-  .zest.fsx  F# template scripts with HTML DSL & Markdown
-  .njk       Nunjucks-compatible templates
-  .liquid    Liquid templates (Jinja2 family, Nunjucks-compatible)
-  .hbs       Handlebars templates (auto-converted to Nunjucks)
-  .mustache  Mustache templates (auto-converted to Nunjucks)
-  .webc      WebC components (SSR-processed)
-  .haml      HAML templates (auto-converted)
-  .pug       Pug templates (auto-converted)
-  .html      HTML files (Nunjucks-preprocessed when template syntax detected)
-  .zcss       Zest Stylesheet — CSS superset with nesting/vars
-  .toml       Site config & global data (zero-config by default)
-  .js         Client scripts, copied as-is to output
-  .md         Standard Markdown content files"""
 
 [suffix]
 help_message = "Run 'zest <command> --help' for command-specific options."

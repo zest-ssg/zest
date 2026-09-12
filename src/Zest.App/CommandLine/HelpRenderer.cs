@@ -6,8 +6,8 @@ using Tomlyn.Model;
 namespace Zest.App.CommandLine;
 
 /// <summary>
-/// Reads CLI metadata (branding, version, help text) from the bundled
-/// <c>zest.toml</c> resource and provides static access to all sections.
+/// Reads CLI metadata (branding, version, and the help footer) from the
+/// bundled <c>zest.toml</c> resource and provides static access to it.
 ///
 /// <para><b>Resolution order:</b></para>
 /// <list type="number">
@@ -109,17 +109,6 @@ internal static class HelpRenderer
     public static string Version => GetMeta("version");
     public static string Header => GetMeta("header");
     public static string Ecosystem => GetMeta("ecosystem");
-
-    public static string Usage => Get("usage", "general");
-    public static string Commands => Get("commands", "build");
-    public static string CommandsServe => Get("commands", "serve");
-    public static string CommandsPreview => Get("commands", "preview");
-    public static string CommandsInit => Get("commands", "init");
-    public static string CommandsVersion => Get("commands", "version");
-    public static string CommandsHelp => Get("commands", "help");
-    public static string Options => Get("options", "port");
-    public static string OptionsWatch => Get("options", "watch");
-    public static string FileFormats => Get("formats", "items");
     public static string HelpSuffix => Get("suffix", "help_message");
 
     // ── Helpers ────────────────────────────────────────────

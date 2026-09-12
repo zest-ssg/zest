@@ -1,5 +1,3 @@
-# Zest SSG
-
 <p align="center">
   <img src="zest.png" alt="Zest" width="128" height="128">
 </p>

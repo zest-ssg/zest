@@ -159,7 +159,19 @@ public static class LogWriter
     // ── Color helpers ──────────────────────────────────────
 
     private const string _indent = "  ";
-    private static readonly string _separator = new('─', 52);
+
+    /// <summary>
+    /// Write an accent-colored section label on its own line. The label
+    /// carries no decorative rule, so compact banners and help output
+    /// never overflow the terminal width on narrow windows.
+    /// </summary>
+    public static void WriteSection(string title)
+    {
+        Console.WriteLine();
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine($"{_indent}{title}");
+        Console.ResetColor();
+    }
 
     /// <summary>Write a success message (green text).</summary>
     public static void WriteSuccess(string message)
@@ -209,15 +221,6 @@ public static class LogWriter
         Console.ResetColor();
     }
 
-    /// <summary>Write a section header with underline separator.</summary>
-    public static void WriteSection(string title)
-    {
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine();
-        Console.WriteLine($"{_indent}── {title} ─{_separator}");
-        Console.ResetColor();
-    }
-
     /// <summary>Write a label-value pair with aligned columns.</summary>
     public static void WriteField(string label, string value, int labelWidth = 8)
     {
@@ -232,31 +235,18 @@ public static class LogWriter
         Console.ResetColor();
     }
 
-    /// <summary>Write a compact header footer line using accent color.</summary>
-    public static void WriteRule()
-    {
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine($"{_indent}{new string('─', 52)}");
-        Console.ResetColor();
-    }
-
-    /// <summary>Print a banner with server info in a clean aligned format.</summary>
+    /// <summary>
+    /// Print a banner with server info in a clean aligned format. The title
+    /// is shown as a compact section label; fields follow as aligned pairs.
+    /// </summary>
     public static void Banner(string title, string url, params (string label, string value)[] info)
     {
-        var titlePrefix = $"── {title} ";
-        var fillLen = _separator.Length - titlePrefix.Length;
-        if (fillLen < 0) fillLen = 0;
-
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine($"{_indent}{titlePrefix}{new string('─', fillLen)}");
-        Console.ResetColor();
-        Console.WriteLine();
+        WriteSection(title);
         WriteField("URL", url);
         foreach (var (label, value) in info)
         {
             WriteField(label, value);
         }
-        WriteRule();
         Console.WriteLine();
     }
 
