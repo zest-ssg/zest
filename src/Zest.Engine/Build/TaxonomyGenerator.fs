@@ -48,8 +48,8 @@ module TaxonomyGenerator =
 <div class="terms terms-index">
   <h2>{{ taxonomy.plural | capitalize }}</h2>
   <ul class="terms-tags">
-    {% for t in tags %}
-    <li class="term-tag"><a href="/{{ taxonomy.plural }}/{{ t }}/">#{{ t }}</a></li>
+    {% for t in terms %}
+    <li class="term-tag"><a href="/{{ taxonomy.plural }}/{{ t.slug }}/">#{{ t.name }}</a></li>
     {% endfor %}
   </ul>
 </div>
@@ -166,6 +166,41 @@ module TaxonomyGenerator =
                     // A single failing term must not abort the whole build.
                     eprintfn "[Zest] Taxonomy page '%s' failed: %s" page.Url ex.Message) |> ignore
 
+    /// Read the term-to-slug alias table for one taxonomy kind from global
+    /// data (`site.params.taxonomy.<kind>`). Terms without an alias fall back
+    /// to ASCII slugification so Chinese names never appear in URLs.
+    let private aliasMapFor (globalData: IDictionary<string, obj>) (kind: string) : Map<string, string> =
+        match globalData.TryGetValue "params.taxonomy" with
+        | true, (:? IDictionary<string, obj> as tax) ->
+            match tax.TryGetValue kind with
+            | true, (:? IDictionary<string, obj> as table) ->
+                table |> Seq.map (fun kv -> kv.Key, string kv.Value) |> Map.ofSeq
+            | _ -> Map.empty
+        | _ -> Map.empty
+
+    /// ASCII fallback for terms without a configured alias.
+    let private fallbackSlug (term: string) : string =
+        let slug =
+            Regex.Replace(term.ToLowerInvariant(), @"\s+", "-")
+            |> fun s -> Regex.Replace(s, "[^a-z0-9-]", "")
+            |> fun s -> s.Trim('-')
+        if slug.Length = 0 then "untitled" else slug
+
+    /// Resolve a taxonomy term to its URL slug via the alias table.
+    let private termSlug (aliases: Map<string, string>) (term: string) : string =
+        match Map.tryFind term aliases with
+        | Some s when s.Length > 0 -> s
+        | _ -> fallbackSlug term
+
+    /// Pages and terms belonging to one taxonomy. Categories live in the
+    /// independent Categories field; tags remain in Tags.
+    let private taxonomyMembers (tax: TaxonomyConfig) (pages: ContentPage list)
+                               : ContentPage list * string list =
+        if tax.Name = "category" then
+            pages, PageQuery.getAllCategories ()
+        else
+            pages, PageQuery.getAllTags ()
+
     /// True when a real content page already owns this output path or URL.
     /// Checking the in-memory page list (not the file system) is what lets
     /// generated archive pages be rewritten on every build while still letting
@@ -175,20 +210,27 @@ module TaxonomyGenerator =
         |> List.exists (fun p -> p.OutputPath = outRel || p.Url = url)
 
     /// Generate a listing page for one taxonomy term.
-    let private generateTerm (tax: TaxonomyConfig) (term: string) (pages: ContentPage list)
+    let private generateTerm (tax: TaxonomyConfig) (aliases: Map<string, string>)
+                             (term: string) (pages: ContentPage list)
                              (config: SiteConfig)
                              (layouts: Map<string, string * string>)
                              (includes: IDictionary<string, string>)
                              (globalData: IDictionary<string, obj>) : ContentPage option =
-        let url = sprintf "/%s/%s/" tax.Plural term
-        let outRel = Path.Combine(tax.Plural, term, "index.html").Replace('\\', '/')
+        let slug = termSlug aliases term
+        let url = sprintf "/%s/%s/" tax.Plural slug
+        let outRel = Path.Combine(tax.Plural, slug, "index.html").Replace('\\', '/')
         if urlOccupiedByPage pages outRel url then
             // Content file already produced this URL — keep it.
             None
         else
+            let belongs (p: ContentPage) =
+                if tax.Name = "category" then
+                    p.Categories |> List.exists (fun t -> t.Equals(term, StringComparison.OrdinalIgnoreCase))
+                else
+                    p.Tags |> List.exists (fun t -> t.Equals(term, StringComparison.OrdinalIgnoreCase))
             let termPages =
                 pages
-                |> List.filter (fun p -> p.Tags |> List.exists (fun t -> t.Equals(term, StringComparison.OrdinalIgnoreCase)))
+                |> List.filter belongs
                 |> List.sortByDescending (fun p -> p.Date |> Option.defaultValue DateTime.MinValue)
                 |> List.map PageQuery.pageToNunjucksDict
                 |> Array.ofList
@@ -196,27 +238,32 @@ module TaxonomyGenerator =
                 "name", box tax.Name
                 "plural", box tax.Plural
                 "term", box term
+                "slug", box slug
             ]
             let extras = [
                 "term", box term
+                "term_slug", box slug
                 "term_pages", box termPages
                 "taxonomy", box taxDict
             ]
             let ctx = buildContext config globalData extras
             let body = resolveTemplate layouts [ tax.Name; "taxonomy" ] defaultTermTemplate
             let inner = renderFragment body ctx
+            let titlePrefix = if tax.Name = "category" then "Posts in " else "Posts tagged "
             Some { ContentPage.empty with
                     Url = url
                     OutputPath = outRel
                     Layout = Some "base"
-                    Title = sprintf "Posts tagged %s" term
+                    Title = sprintf "%s%s" titlePrefix term
                     Content = inner
-                    Slug = term
-                    Data = dict [ "description", box (sprintf "Posts tagged %s" term) ]
+                    Slug = slug
+                    Tags = [ term ]
+                    Data = dict [ "description", box (sprintf "%s%s" titlePrefix term) ]
                     SourcePath = sprintf "<taxonomy:%s:%s>" tax.Name term }
 
     /// Generate the terms index page for a taxonomy.
-    let private generateIndex (tax: TaxonomyConfig) (pages: ContentPage list)
+    let private generateIndex (tax: TaxonomyConfig) (aliases: Map<string, string>)
+                              (terms: string list) (pages: ContentPage list)
                               (config: SiteConfig)
                               (layouts: Map<string, string * string>)
                               (includes: IDictionary<string, string>)
@@ -225,11 +272,22 @@ module TaxonomyGenerator =
         let url = sprintf "/%s/" tax.Plural
         if urlOccupiedByPage pages outRel url then None
         else
+            let termEntries =
+                terms
+                |> List.map (fun term ->
+                    let d = Dictionary<string, obj>()
+                    d.["name"] <- box term
+                    d.["slug"] <- box (termSlug aliases term)
+                    d :> IDictionary<string, obj>)
+                |> Array.ofList
             let taxDict = dict [
                 "name", box tax.Name
                 "plural", box tax.Plural
             ]
-            let extras = [ "taxonomy", box taxDict ]
+            let extras = [
+                "taxonomy", box taxDict
+                "terms", box termEntries
+            ]
             let ctx = buildContext config globalData extras
             let body = resolveTemplate layouts [ tax.Plural; "terms" ] defaultIndexTemplate
             let inner = renderFragment body ctx
@@ -245,8 +303,9 @@ module TaxonomyGenerator =
 
     /// <summary>
     /// Generate taxonomy archive pages for every term discovered across pages.
-    /// Currently handles the <c>tag</c> taxonomy (terms from page frontmatter
-    /// <c>@tags</c>). Other taxonomies are skipped — extensible per-taxonomy.
+    /// Handles the built-in <c>tag</c> and <c>category</c> taxonomies. Term
+    /// URLs use the configured alias slugs from <c>site.params.taxonomy</c>
+    /// and fall back to ASCII slugification for unlisted terms.
     /// </summary>
     let generate (config: SiteConfig) (outputDir: string)
                  (layouts: Map<string, string * string>)
@@ -258,18 +317,18 @@ module TaxonomyGenerator =
         let pages = PageQuery.getPages()
         let generatedPages = ResizeArray<ContentPage>()
         for tax in config.Taxonomies do
-            // Terms are only extractable for the tag taxonomy today; pages
-            // carry tags via ContentPage.Tags, which PageQuery.getAllTags uses.
-            if tax.Name = "tag" then
-                let terms = PageQuery.getAllTags()
-                for term in terms do
-                    match generateTerm tax term pages config layouts includes globalData with
-                    | Some page ->
-                        generatedPages.Add(page); generated <- generated + 1
-                    | None -> ()
-                match generateIndex tax pages config layouts includes globalData with
+            let members, terms = taxonomyMembers tax pages
+            let aliases =
+                if tax.Name = "category" then aliasMapFor globalData "categories"
+                else aliasMapFor globalData "tags"
+            for term in terms do
+                match generateTerm tax aliases term members config layouts includes globalData with
                 | Some page ->
                     generatedPages.Add(page); generated <- generated + 1
                 | None -> ()
+            match generateIndex tax aliases terms members config layouts includes globalData with
+            | Some page ->
+                generatedPages.Add(page); generated <- generated + 1
+            | None -> ()
         batchRenderAndWrite (Seq.toList generatedPages) config outputDir layouts includes globalData
         generated

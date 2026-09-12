@@ -38,6 +38,55 @@ module FilterRegistry =
     /// extension filters are not registered on engine instances.
     let setStrictMode (enabled: bool) = strictMode := enabled
 
+    /// Strip HTML tags plus fenced and inline code blocks. Both the word-count
+    /// and reading-time filters count prose only, so code samples never inflate
+    /// either statistic.
+    let private stripProse (text: string) : string =
+        Regex(@"<pre[^>]*>[\s\S]*?<\/pre>").Replace(text, "")
+        |> fun s -> Regex(@"<code[^>]*>[\s\S]*?<\/code>").Replace(s, "")
+        |> fun s -> Regex(@"<[^>]+>").Replace(s, " ")
+        |> fun s -> s.Trim()
+
+    /// Count CJK ideographs plus Latin/digit word groups in HTML prose.
+    /// Each Hanzi counts as one word; English words are whitespace-free
+    /// letter/digit runs, matching the site's 11ty implementation.
+    let private countWords (text: string) : int =
+        let stripped = stripProse text
+        let cjkChars = Regex(@"[一-鿿㐀-䶿]").Matches(stripped).Count
+        let latinWords = Regex(@"[a-zA-Z0-9]+").Matches(stripped).Count
+        cjkChars + latinWords
+
+    /// Read the taxonomy term-to-slug alias map injected by BuildData. The
+    /// map lives at global key `params.taxonomy`; missing or malformed data
+    /// degrades to no aliases rather than failing the render.
+    let private lookupTaxonomyAlias (kind: string) (term: string) : string option =
+        let data = !PageQuery.globalDataRef
+        match data.TryGetValue "params.taxonomy" with
+        | true, (:? IDictionary<string, obj> as tax) ->
+            match tax.TryGetValue kind with
+            | true, (:? IDictionary<string, obj> as table) ->
+                match table.TryGetValue term with
+                | true, (:? string as slug) when slug.Length > 0 -> Some slug
+                | _ -> None
+            | _ -> None
+        | _ -> None
+
+    /// Apply the configured taxonomy alias and fall back to an ASCII slug.
+    /// Mirrors the site's 11ty slugify: whitespace to hyphens, every other
+    /// non-alphanumeric character dropped, empty result becomes `untitled`.
+    let private taxonomySlugify (term: string) : string =
+        match lookupTaxonomyAlias "categories" term with
+        | Some slug -> slug
+        | None ->
+            match lookupTaxonomyAlias "tags" term with
+            | Some slug -> slug
+            | None ->
+                let slug =
+                    Regex.Replace(term.ToLowerInvariant(), @"\s+", "-")
+                    |> fun s -> Regex.Replace(s, "[^a-z0-9-]", "")
+                    |> fun s -> s.Trim('-')
+                if slug.Length = 0 then "untitled" else slug
+
     /// Apply a filter pipeline spec (e.g. "upper | trim") to a value by
     /// rendering a minimal template through the engine. This avoids needing
     /// a public ApplyFilter method on ITemplateEngine and works for any
@@ -177,15 +226,116 @@ module FilterRegistry =
             if isNull value then box 1
             else
                 let text = value.ToString()
-                let stripped =
-                    Regex(@"<pre[^>]*>[\s\S]*?<\/pre>").Replace(text, "")
-                    |> fun s -> Regex(@"<code[^>]*>[\s\S]*?<\/code>").Replace(s, "")
-                    |> fun s -> Regex(@"<[^>]+>").Replace(s, " ")
-                    |> fun s -> s.Trim()
-                let chineseChars = Regex(@"[\u4e00-\u9fff\u3400-\u4dbf]").Matches(stripped).Count
+                let stripped = stripProse text
+                let chineseChars = Regex(@"[一-鿿㐀-䶿]").Matches(stripped).Count
                 let englishWords = Regex(@"[a-zA-Z0-9]+").Matches(stripped).Count
                 let minutes = Math.Max(1, Math.Ceiling(float chineseChars / 350. + float englishWords / 220.) |> int)
                 box minutes)
+
+        // ── wordCount: count CJK chars plus English words ──────
+        // Usage: {{ post.templateContent | wordCount }}
+        engine.RegisterFilter "wordCount" (fun value _args ->
+            if isNull value then box 0
+            else box (countWords (value.ToString())))
+
+        // ── year: current calendar year for copyright lines ────
+        engine.RegisterFilter "year" (fun _value _args -> box DateTime.Now.Year)
+
+        // ── limit: keep the first N items of an array ──────────
+        // Usage: {{ posts | limit(5) }}
+        engine.RegisterFilter "limit" (fun value args ->
+            let n = if args.Length > 0 then (try int args.[0] with _ -> 0) else 0
+            match value with
+            | :? System.Collections.IEnumerable as ie when not (value :? string) ->
+                ie |> Seq.cast<obj> |> Seq.truncate n |> Array.ofSeq |> box
+            | _ -> value)
+
+        // ── relatedPosts: related entries excluding the current one ──
+        // The collection is already sorted newest-first; the site only needs
+        // "other recent posts", so relevance is the collection order.
+        // Usage: {{ collections.posts | relatedPosts(page.url, 3) }}
+        engine.RegisterFilter "relatedPosts" (fun value args ->
+            let currentUrl = if args.Length > 0 then args.[0] else ""
+            let maxCount = if args.Length > 1 then (try int args.[1] with _ -> 3) else 3
+            match value with
+            | :? System.Collections.IEnumerable as ie ->
+                ie |> Seq.cast<obj>
+                |> Seq.filter (fun item ->
+                    match item with
+                    | :? IDictionary<string, obj> as d ->
+                        match d.TryGetValue "url" with
+                        | true, (:? string as u) -> u <> currentUrl
+                        | _ -> true
+                    | _ -> true)
+                |> Seq.truncate maxCount
+                |> Array.ofSeq |> box
+            | _ -> box Array.empty<obj>)
+
+        // ── groupByYear: group page dicts by publication year, newest first ──
+        // Returns an array of { year, posts } dictionaries so Nunjucks can
+        // iterate `{% for group in posts | groupByYear %}` without object keys.
+        engine.RegisterFilter "groupByYear" (fun value _args ->
+            let pageYear (d: IDictionary<string, obj>) : int =
+                match d.TryGetValue "date" with
+                | true, (:? string as ds) when ds.Length >= 4 ->
+                    match Int32.TryParse ds.[0..3] with true, y -> y | _ -> 0
+                | _ -> 0
+            match value with
+            | :? System.Collections.IEnumerable as ie ->
+                ie |> Seq.cast<obj>
+                |> Seq.choose (fun item ->
+                    match item with
+                    | :? IDictionary<string, obj> as d -> Some d
+                    | _ -> None)
+                |> Seq.groupBy pageYear
+                |> Seq.sortByDescending fst
+                |> Seq.map (fun (year, posts) ->
+                    let group = Dictionary<string, obj>()
+                    group.["year"] <- box year
+                    group.["posts"] <- box (posts |> Array.ofSeq |> Array.map (fun d -> d :> obj))
+                    group :> obj)
+                |> Array.ofSeq |> box
+            | _ -> box Array.empty<obj>)
+
+        // ── Date aliases expected by the migrated 11ty templates ──
+        // readableDate normalises front-matter date strings to yyyy-MM-dd.
+        engine.RegisterFilter "readableDate" (fun value _args ->
+            let text = if isNull value then "" else value.ToString()
+            match DateTime.TryParse(text, Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.None) with
+            | true, d -> box (d.ToString("yyyy-MM-dd"))
+            | false, _ -> box text)
+        // dateToRfc3339 emits a UTC timestamp for RSS and JSON-LD.
+        engine.RegisterFilter "dateToRfc3339" (fun value _args ->
+            let text = if isNull value then "" else value.ToString()
+            match DateTime.TryParse(text, Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.None) with
+            | true, d -> box (d.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"))
+            | false, _ -> box text)
+        // archiveDate renders the month-day-year label used by the archive page.
+        engine.RegisterFilter "archiveDate" (fun value _args ->
+            let text = if isNull value then "" else value.ToString()
+            match DateTime.TryParse(text, Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.None) with
+            | true, d -> box (d.ToString("MMM dd, yyyy", Globalization.CultureInfo.InvariantCulture))
+            | false, _ -> box text)
+
+        // ── slugify: taxonomy-alias-aware ASCII slug ───────────
+        engine.RegisterFilter "slugify" (fun value _args ->
+            if isNull value then box "untitled"
+            else box (taxonomySlugify (value.ToString())))
+
+        // ── stripHtml: strip HTML and common Markdown, keep plain text ──
+        // Used by the search index and excerpts; keeps link text but drops URLs.
+        engine.RegisterFilter "stripHtml" (fun value _args ->
+            if isNull value then box ""
+            else
+                value.ToString()
+                |> fun s -> Regex(@"<[^>]+>").Replace(s, " ")
+                |> fun s -> Regex(@"```[\s\S]*?```").Replace(s, " ")
+                |> fun s -> Regex(@"`[^`]*`").Replace(s, " ")
+                |> fun s -> Regex(@"!\[[^\]]*\]\([^)]*\)").Replace(s, " ")
+                |> fun s -> Regex.Replace(s, @"\[([^\]]*)\]\([^)]*\)", "$1")
+                |> fun s -> Regex(@"[#>*_~]").Replace(s, " ")
+                |> fun s -> Regex(@"\s+").Replace(s, " ").Trim()
+                |> box)
 
         // ── t: i18n translation key lookup ─────────────────────
         // Usage: {{ 'nav.home' | t }} or {{ 'nav.home' | t('zh') }}
@@ -245,8 +395,17 @@ module FilterRegistry =
 
         // ── searchIndex: generate JSON search index for static search ──
         // Usage: {{ pages | searchIndex | dump }}
-        // Output: JSON array of { url, title, tags, description, date }
+        // Output: JSON array of { url, title, tags, categories, description,
+        // excerpt, content, date }. Content and excerpt are stripped to plain
+        // text so the client-side Fuse index matches prose, not markup.
         engine.RegisterFilter "searchIndex" (fun value _args ->
+            let escapeJson (s: string) = s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", " ").Replace("\r", " ")
+            let stringField (d: IDictionary<string, obj>) key =
+                match d.TryGetValue key with true, (:? string as s) -> s | _ -> ""
+            let arrayField (d: IDictionary<string, obj>) key =
+                match d.TryGetValue key with
+                | true, (:? (string[]) as xs) -> String.Join(",", xs)
+                | _ -> ""
             let pages =
                 match value with
                 | :? System.Collections.IEnumerable as ie ->
@@ -257,19 +416,22 @@ module FilterRegistry =
                 |> Array.choose (fun p ->
                     match p with
                     | :? IDictionary<string, obj> as d ->
-                        let url = match d.TryGetValue "url" with true, (:? string as u) -> u | _ -> ""
-                        let title = match d.TryGetValue "title" with true, (:? string as t) -> t | _ -> ""
-                        let tags = match d.TryGetValue "tags" with true, (:? (string[]) as ts) -> String.Join(",", ts) | _ -> ""
-                        let desc = match d.TryGetValue "description" with true, (:? string as ds) -> ds | _ -> ""
-                        let date = match d.TryGetValue "date" with true, (:? string as dt) -> dt | _ -> ""
+                        let url = stringField d "url"
                         if String.IsNullOrEmpty url then None
                         else
-                            Some (sprintf """{"url":"%s","title":"%s","tags":"%s","description":"%s","date":"%s"}"""
-                                    (url.Replace("\"", "\\\""))
-                                    (title.Replace("\"", "\\\""))
-                                    (tags.Replace("\"", "\\\""))
-                                    (desc.Replace("\"", "\\\""))
-                                    (date.Replace("\"", "\\\"")))
+                            let title = stringField d "title"
+                            let tags = arrayField d "tags"
+                            let categories = arrayField d "categories"
+                            let description = stringField d "description"
+                            let date = stringField d "date"
+                            let excerpt = stringField d "excerpt"
+                            let content =
+                                stringField d "content"
+                                |> fun s -> Regex(@"<[^>]+>").Replace(s, " ")
+                                |> fun s -> Regex(@"\s+").Replace(s, " ").Trim()
+                            Some (sprintf """{"url":"%s","title":"%s","tags":"%s","categories":"%s","description":"%s","excerpt":"%s","content":"%s","date":"%s"}"""
+                                    (escapeJson url) (escapeJson title) (escapeJson tags) (escapeJson categories)
+                                    (escapeJson description) (escapeJson excerpt) (escapeJson content) (escapeJson date))
                     | _ -> None)
             box (sprintf "[%s]" (String.Join(",", index))))
 

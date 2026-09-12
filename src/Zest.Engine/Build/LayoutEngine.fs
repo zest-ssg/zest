@@ -250,6 +250,13 @@ module LayoutEngine =
                 pairs.Add("page.tags", box (tagsStr.Split(',') |> Array.map (fun t -> t.Trim())))
             | _ -> pairs.Add("page.tags", box [||])
 
+            // Categories and updated date carry native values for the same
+            // reason as tags: layouts iterate categories and format updated.
+            pairs.Add("page.categories", box (page.Categories |> Array.ofList))
+            pairs.Add("page.updated",
+                box (page.Updated |> Option.map (fun d -> d.ToString("yyyy-MM-dd")) |> Option.defaultValue ""))
+            pairs.Add("page.categories_csv", box (String.Join(", ", page.Categories)))
+
             // Use HashSet for O(1) lookup when adding includes — avoid O(n*m) Seq.exists
             let addedKeys = HashSet<string>(pairs |> Seq.map fst)
             for kv in includes do

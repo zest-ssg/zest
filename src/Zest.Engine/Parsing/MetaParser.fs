@@ -61,7 +61,7 @@ module MetaParser =
             match DateTime.TryParse v with
             | true, dt -> { m with Updated = Some dt }
             | _ -> m
-        | "tags" | "tag" | "categories" ->
+        | "tags" | "tag" ->
             // Split on commas, semicolons OR whitespace so all of these work:
             // `@tags hugo, terminal` / `@tags hugo terminal` /
             // `@tags ["hugo", "terminal"].
@@ -71,6 +71,15 @@ module MetaParser =
                 |> Array.filter (fun t -> t.Length > 0)
                 |> Array.toList
             { m with Tags = m.Tags @ tags }
+        | "categories" | "category" ->
+            // Categories use the same loose list syntax as tags but stay in a
+            // separate field; they must never feed tag archives.
+            let categories =
+                tagSplitPat.Split(v.Trim('[', ']'))
+                |> Array.map (fun t -> t.Trim().Trim('"', '\''))
+                |> Array.filter (fun t -> t.Length > 0)
+                |> Array.toList
+            { m with Categories = m.Categories @ categories }
         | "draft" ->
             let isDraft =
                 match v.ToLowerInvariant() with
@@ -170,16 +179,20 @@ module MetaParser =
             | _ -> ()
         | _ -> ()
 
-        match tryGetAny ["tags"; "tag"; "categories"] with
-        | Some v ->
-            match v with
+        let parseTermList (value: obj) =
+            match value with
             | :? TomlArray as arr ->
-                let tags = arr |> Seq.map (fun x -> x.ToString()) |> Seq.toList
-                m <- { m with Tags = m.Tags @ tags }
+                arr |> Seq.map (fun x -> x.ToString()) |> Seq.toList
             | :? string as s ->
-                let tags = s.Split(',') |> Array.map (fun t -> t.Trim().Trim('"', '\'')) |> Array.filter (fun t -> t <> "") |> Array.toList
-                m <- { m with Tags = m.Tags @ tags }
-            | _ -> ()
+                s.Split(',') |> Array.map (fun t -> t.Trim().Trim('"', '\'')) |> Array.filter (fun t -> t <> "") |> Array.toList
+            | _ -> []
+
+        match tryGetAny ["tags"; "tag"] with
+        | Some v -> m <- { m with Tags = m.Tags @ parseTermList v }
+        | _ -> ()
+
+        match tryGetAny ["categories"; "category"] with
+        | Some v -> m <- { m with Categories = m.Categories @ parseTermList v }
         | _ -> ()
 
         match table.TryGetValue("draft") with

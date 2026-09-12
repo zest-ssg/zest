@@ -178,21 +178,33 @@ module PaginationGenerator =
 
         // All pages in the collection, newest first. The index page itself is
         // excluded because it is the template, not a list item.
+        // An empty collection name paginates the site root: every dated page
+        // (posts across directories) forms the window, matching the 11ty home
+        // page which lists posts globally.
+        let isRoot = collection.Trim('/').Length = 0
         let collectionPages =
-            PageQuery.getPagesByCollection collection
-            |> List.filter (fun p -> not (p.Url.Trim('/').Equals(collection, StringComparison.OrdinalIgnoreCase)))
-            |> List.sortByDescending (fun p -> p.Date |> Option.defaultValue DateTime.MinValue)
+            if isRoot then
+                PageQuery.getPages()
+                |> List.filter (fun p -> p.Date.IsSome)
+                |> List.sortByDescending (fun p -> p.Date |> Option.defaultValue DateTime.MinValue)
+            else
+                PageQuery.getPagesByCollection collection
+                |> List.filter (fun p -> not (p.Url.Trim('/').Equals(collection, StringComparison.OrdinalIgnoreCase)))
+                |> List.sortByDescending (fun p -> p.Date |> Option.defaultValue DateTime.MinValue)
 
         let totalItems = collectionPages.Length
         // `max` is shadowed by HtmlAttributes.max (the HTML attribute builder),
         // so qualify the numeric maximum explicitly.
         let totalPages = Operators.max 1 (int (ceil (float totalItems / float perPage)))
-        let baseUrl = "/" + collection.Trim('/') + "/"
+        // Root pagination emits `/` and `/page/N/`; collection pagination
+        // emits `/<collection>/` and `/<collection>/page/N/`.
+        let baseUrl = if isRoot then "/" else "/" + collection.Trim('/') + "/"
         let baseRel = collection.Trim('/')
 
         // Clear the per-page directory before regenerating: incremental builds
         // never delete outputs, so a shrunken page count would otherwise leave
-        // orphaned /posts/page/N/ files from an earlier build.
+        // orphaned page/N/ files from an earlier build. Root pages live directly
+        // under <output>/page/; collection pages under <output>/<collection>/page/.
         let pageDir = Path.Combine(outputDir, baseRel, "page")
         if Directory.Exists pageDir then Directory.Delete(pageDir, recursive = true)
 
@@ -203,7 +215,8 @@ module PaginationGenerator =
             let url, outputPath =
                 if pageIndex = 1 then
                     baseUrl,
-                    Path.Combine(baseRel, "index.html").Replace('\\', '/')
+                    if isRoot then "index.html"
+                    else Path.Combine(baseRel, "index.html").Replace('\\', '/')
                 else
                     sprintf "%spage/%d/" baseUrl pageIndex,
                     Path.Combine(baseRel, "page", string pageIndex, "index.html").Replace('\\', '/')
@@ -227,15 +240,16 @@ module PaginationGenerator =
                 d :> IDictionary<string, obj>
             let ctx = buildContext config globalData pagination collection
             let inner = renderFragment templateBody ctx
+            let slugName = if isRoot then "home" else collection
             let page = { ContentPage.empty with
                             Url = url
                             OutputPath = outputPath
                             Layout = meta.Layout
                             Title = title
                             Content = inner
-                            Slug = if pageIndex = 1 then collection else sprintf "%s-%d" collection pageIndex
+                            Slug = if pageIndex = 1 then slugName else sprintf "%s-%d" slugName pageIndex
                             Data = dict [ "description", box (sprintf "%s — page %d of %d" collection pageIndex totalPages) ]
-                            SourcePath = sprintf "<pagination:%s:%d>" collection pageIndex }
+                            SourcePath = sprintf "<pagination:%s:%d>" slugName pageIndex }
             result.Add(page)
         Seq.toList result
 
@@ -268,11 +282,15 @@ module PaginationGenerator =
                                 let d = Path.GetDirectoryName(relPath)
                                 if String.IsNullOrEmpty d then "" else d.Replace('\\', '/')
                             let collection, perPage = parseDirective m.Groups.[1].Value dirFallback perPageDefault
-                            if collection.Length > 0 then
-                                let pages = generateCollection filePath text collection perPage
-                                                config outputDir layouts includes globalData
-                                generatedPages.AddRange(pages)
-                                generated <- generated + pages.Length
+                            // A root index file (content/index.njk) without an
+                            // explicit collection paginates the site root; the
+                            // directive may also name a collection explicitly.
+                            let effectiveCollection =
+                                if dirFallback.Length = 0 && collection = dirFallback then "" else collection
+                            let pages = generateCollection filePath text effectiveCollection perPage
+                                            config outputDir layouts includes globalData
+                            generatedPages.AddRange(pages)
+                            generated <- generated + pages.Length
                     with ex ->
                         eprintfn "[Zest] Pagination scan failed for '%s': %s" filePath ex.Message
         batchRenderAndWrite (Seq.toList generatedPages) config outputDir layouts includes globalData

@@ -118,6 +118,10 @@ module ScriptEvaluator =
             // ── page.* ──────────────────────────────────────────
             pairs.Add("page.title", box (meta.Title |> Option.defaultValue slug))
             meta.Description |> Option.iter (fun v -> pairs.Add("page.description", box v))
+            if not meta.Tags.IsEmpty then pairs.Add("page.tags", box (meta.Tags |> Array.ofList))
+            if not meta.Categories.IsEmpty then pairs.Add("page.categories", box (meta.Categories |> Array.ofList))
+            meta.Author |> Option.iter (fun v -> pairs.Add("page.author", box v))
+            meta.Updated |> Option.iter (fun v -> pairs.Add("page.updated", box (v.ToString("yyyy-MM-dd"))))
             for kv in meta.Extra do
                 pairs.Add("page." + kv.Key, box kv.Value)
             // ── Zest collection data ────────────────────────────
@@ -188,11 +192,21 @@ module ScriptEvaluator =
             if fn.EndsWith(".zest") then fn.[..fn.Length - 6] else fn
         relPath, rawSlug
 
+    /// Copy front-matter-derived fields into the page data dictionary so
+    /// Nunjucks templates can address `page.tags`, `page.categories`,
+    /// `page.author`, and `page.updated` with native array/string values.
+    let applyMetaFields (d: IDictionary<string, obj>) (meta: ContentMeta) =
+        if not meta.Tags.IsEmpty then d.["tags"] <- box (meta.Tags |> Array.ofList)
+        if not meta.Categories.IsEmpty then d.["categories"] <- box (meta.Categories |> Array.ofList)
+        meta.Author |> Option.iter (fun v -> d.["author"] <- box v)
+        meta.Updated |> Option.iter (fun v -> d.["updated"] <- box (v.ToString("yyyy-MM-dd")))
+        meta.Description |> Option.iter (fun v -> d.["description"] <- box v)
+
     let private buildPageData (globalData: IDictionary<string, obj>) (meta: ContentMeta) =
         let d = Dictionary<string, obj>()
         for kv in globalData do d.[kv.Key] <- kv.Value
         for kv in meta.Extra   do d.[kv.Key] <- box kv.Value
-        meta.Description |> Option.iter (fun v -> d.["description"] <- box v)
+        applyMetaFields d meta
         d :> IDictionary<string, obj>
 
     /// Fast metadata extraction with pre-loaded text — avoids double File.ReadAllText.
@@ -217,7 +231,7 @@ module ScriptEvaluator =
                 | Some p when p.Length > 0 -> PermalinkRouter.computePermalink p
                 | _ -> PermalinkRouter.defaultRoute relPath slug
             let d = Dictionary<string, obj>()
-            meta.Description |> Option.iter (fun v -> d.["description"] <- box v)
+            applyMetaFields d meta
             for kv in meta.Extra do d.[kv.Key] <- box kv.Value
             Some { ContentPage.empty with
                     SourcePath = filePath
@@ -226,7 +240,9 @@ module ScriptEvaluator =
                     Title      = title
                     Slug       = slug
                     Tags       = meta.Tags
+                    Categories = meta.Categories
                     Date       = meta.Date
+                    Updated    = meta.Updated
                     Draft      = meta.Draft
                     Data       = d :> IDictionary<string, obj> }
         with ex ->
@@ -258,10 +274,7 @@ module ScriptEvaluator =
             let meta, _ = MetaParser.parse ext text
             let meta = applyPageDefaults config filePath meta
             let slug = PermalinkRouter.slugify rawSlug
-            let mergedData = Dictionary<string, obj>()
-            for kv in globalData do mergedData.[kv.Key] <- kv.Value
-            for kv in meta.Extra do mergedData.[kv.Key] <- box kv.Value
-            meta.Description |> Option.iter (fun v -> mergedData.["description"] <- box v)
+            let mergedData = buildPageData globalData meta
             let url, outputPath =
                 match meta.Permalink with
                 | Some p when p.Length > 0 -> PermalinkRouter.computePermalink p
@@ -276,7 +289,9 @@ module ScriptEvaluator =
                     Data = mergedData
                     Permalink = meta.Permalink
                     Tags = meta.Tags
+                    Categories = meta.Categories
                     Date = meta.Date
+                    Updated = meta.Updated
                     Draft = meta.Draft
                     Slug = slug }
         with ex ->
@@ -307,10 +322,7 @@ module ScriptEvaluator =
 
                 match ScriptRunner.evaluatePageScript text with
                 | Ok htmlContent ->
-                    let mergedData = Dictionary<string, obj>()
-                    for kv in globalData         do mergedData.[kv.Key] <- kv.Value
-                    for kv in meta.Extra         do mergedData.[kv.Key] <- box kv.Value
-                    meta.Description |> Option.iter (fun v -> mergedData.["description"] <- box v)
+                    let mergedData = buildPageData globalData meta
 
                     let finalPermalink = meta.Permalink
                     let url, outputPath =
@@ -328,7 +340,9 @@ module ScriptEvaluator =
                             Data         = mergedData
                             Permalink    = finalPermalink
                             Tags         = meta.Tags
+                            Categories   = meta.Categories
                             Date         = meta.Date
+                            Updated      = meta.Updated
                             Draft        = meta.Draft
                             Slug         = slug }
                 | Error evalErr ->
@@ -361,7 +375,9 @@ module ScriptEvaluator =
                             Data         = buildPageData globalData meta
                             Permalink    = meta.Permalink
                             Tags         = meta.Tags
+                            Categories   = meta.Categories
                             Date         = meta.Date
+                            Updated      = meta.Updated
                             Draft        = meta.Draft
                             Slug         = slug }
 
@@ -397,7 +413,9 @@ module ScriptEvaluator =
                         Data         = buildPageData globalData meta
                         Permalink    = meta.Permalink
                         Tags         = meta.Tags
+                        Categories   = meta.Categories
                         Date         = meta.Date
+                        Updated      = meta.Updated
                         Draft        = meta.Draft
                         Slug         = slug }
 

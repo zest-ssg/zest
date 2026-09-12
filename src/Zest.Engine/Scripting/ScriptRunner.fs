@@ -57,10 +57,12 @@ module ScriptRunner =
     let private writeContextFile (path: string) =
         let pageToObj (p: ContentPage) =
             let date = p.Date |> Option.map (fun d -> d.ToString("yyyy-MM-dd")) |> Option.defaultValue ""
+            let updated = p.Updated |> Option.map (fun d -> d.ToString("yyyy-MM-dd")) |> Option.defaultValue ""
             let desc = match p.Data.TryGetValue("description") with true, v -> v.ToString() | _ -> ""
             let dataStr key =
                 match p.Data.TryGetValue(key) with true, v -> v.ToString() | _ -> ""
-            {| url=p.Url; title=p.Title; date=date; slug=p.Slug; description=desc; tags=p.Tags
+            {| url=p.Url; title=p.Title; date=date; updated=updated; slug=p.Slug; description=desc; tags=p.Tags
+               categories=p.Categories
                author=dataStr "author"; category=dataStr "category" |}
         let siteData =
             let nodeDict = System.Collections.Generic.Dictionary<string, System.Text.Json.Nodes.JsonNode>()
@@ -279,9 +281,19 @@ module ScriptRunner =
             if page.Tags.IsEmpty then "([||] : string array)"
             else sprintf "[|%s|]" tagsArr
 
+        let catArr =
+            page.Categories
+            |> Seq.map (fun t -> "\"" + esc t + "\"")
+            |> String.concat "; "
+        let catExpr =
+            if page.Categories.IsEmpty then "([||] : string array)"
+            else sprintf "[|%s|]" catArr
+
+        let updated = page.Updated |> Option.map (fun d -> d.ToString("yyyy-MM-dd")) |> Option.defaultValue ""
+
         sprintf "let content = \"%s\"\n" (esc content)
-        + sprintf "let page = {| title = \"%s\"; url = \"%s\"; date = \"%s\"; slug = \"%s\"; description = \"%s\"; author = \"%s\"; category = \"%s\"; tags = %s |}\n"
-            (esc page.Title) (esc page.Url) (esc date) (esc page.Slug) (esc desc) (esc (dataStr "author")) (esc (dataStr "category")) tagsExpr
+        + sprintf "let page = {| title = \"%s\"; url = \"%s\"; date = \"%s\"; updated = \"%s\"; slug = \"%s\"; description = \"%s\"; author = \"%s\"; category = \"%s\"; tags = %s; categories = %s |}\n"
+            (esc page.Title) (esc page.Url) (esc date) (esc updated) (esc page.Slug) (esc desc) (esc (dataStr "author")) (esc (dataStr "category")) tagsExpr catExpr
         + sprintf "let site = {| title = \"%s\"; description = \"%s\"; author = \"%s\"; language = \"%s\"; social_github = \"%s\"; social_twitter = \"%s\" |}\n"
             (esc config.Title) (esc config.Description) (esc config.Author) (esc config.Language) (esc github) (esc twitter)
 

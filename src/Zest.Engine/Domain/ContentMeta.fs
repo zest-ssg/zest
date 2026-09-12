@@ -16,6 +16,9 @@ type ContentMeta = {
     Permalink:   string option
     /// Content tags for classification and filtering
     Tags:        string list
+    /// Content categories — kept separate from tags so templates and
+    /// taxonomy generators can address the two classifications independently.
+    Categories:  string list
     /// Publication date
     Date:        DateTime option
     /// SEO / social description
@@ -42,6 +45,7 @@ module ContentMeta =
         Title       = None
         Permalink   = None
         Tags        = []
+        Categories  = []
         Date        = None
         Description = None
         Draft       = false

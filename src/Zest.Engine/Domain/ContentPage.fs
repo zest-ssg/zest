@@ -33,8 +33,14 @@ type ContentPage = {
     /// Tags for collection classification
     Tags: string list
 
+    /// Categories — a coarser, separate classification from Tags.
+    Categories: string list
+
     /// Publish date
     Date: System.DateTime option
+
+    /// Last modification date from the "updated" front matter key.
+    Updated: System.DateTime option
 
     /// Draft status — when true, the page is excluded from production builds
     Draft: bool
@@ -60,7 +66,9 @@ module ContentPage =
           Data = dict []
           Permalink = None
           Tags = []
+          Categories = []
           Date = None
+          Updated = None
           Draft = false
           Slug = ""
           SourcePath = "" }
