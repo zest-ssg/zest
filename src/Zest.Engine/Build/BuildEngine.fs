@@ -10,6 +10,7 @@ open System.Threading.Tasks
 open Zest.Engine.Scripting
 open Zest.Engine.Build
 open Zest.Engine.Html
+open Zest.Engine.Template
 open PathResolver
 open BuildCache
 open BuildData
@@ -63,6 +64,16 @@ module BuildEngine =
             let layoutsDir = resolvePath root config.LayoutsDir
             let dataDir    = resolvePath root config.DataDir
             let includesDir = resolvePath root config.IncludesDir
+
+            // Native Nunjucks `{% include %}` uses bare filenames; register
+            // both project and theme include directories on the loader so
+            // "head.njk" resolves without leaking absolute paths in templates.
+            TemplateManager.clearTemplateSearchDirs ()
+            TemplateManager.addTemplateSearchDir includesDir
+            match ThemeResolver.resolve root config.Theme with
+            | Some td ->
+                TemplateManager.addTemplateSearchDir (Path.Combine(td, "_includes"))
+            | None -> ()
 
             // ── Resolve theme directory (if configured) ────
             let themeDir = ThemeResolver.resolve root config.Theme

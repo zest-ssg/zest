@@ -38,11 +38,44 @@ module TemplateManager =
         Filters = []
     }
 
+    /// Additional directories searched by the Nunjucks file loader after the
+    /// working directory, most importantly the project's includes directory.
+    /// The native `{% include %}` / `{% extends %}` tags resolve bare names
+    /// ("head.njk") against these paths so templates do not need relative
+    /// paths that leak the on-disk layout.
+    let private templateSearchDirs = ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+
+    /// Register a directory for bare-name template resolution. No-op when the
+    /// directory does not exist.
+    let addTemplateSearchDir (dir: string) =
+        if not (String.IsNullOrWhiteSpace dir) && Directory.Exists dir then
+            templateSearchDirs.[Path.GetFullPath dir] <- dir
+
+    /// Drop every registered search directory. Called between sites/builds.
+    let clearTemplateSearchDirs () = templateSearchDirs.Clear()
+
     /// Build an engine instance for the given engine type name.
     let private createEngineInstance (engineType: string) (config: TemplateConfig) : ITemplateEngine option =
         match engineType with
         | "nunjucks" | "njk" ->
             let engine = NunjucksEngine()
+            // Resolve includes/extends against registered directories (e.g.
+            // _includes) before falling back to the working-directory path
+            // produced by TemplateUtils.resolveWithinRoot.
+            engine.SetLoadFile(fun path ->
+                let loaded =
+                    seq {
+                        yield path
+                        let fileName = Path.GetFileName path
+                        for dir in templateSearchDirs.Values do
+                            yield Path.Combine(dir, fileName)
+                    }
+                    |> Seq.tryFind File.Exists
+                match loaded with
+                | Some f ->
+                    try Ok(File.ReadAllText f)
+                    with ex -> Error ex.Message
+                | None -> Error(sprintf "Template not found: %s" path))
             for (fnName, fn) in config.Filters do
                 (engine :> ITemplateEngine).RegisterFilter fnName fn
             Some (engine :> ITemplateEngine)
