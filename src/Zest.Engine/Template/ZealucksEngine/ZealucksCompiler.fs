@@ -3,15 +3,15 @@ namespace Zest.Engine.Template
 open System
 open System.Text
 
-// NunjucksCompiler.fs
+// ZealucksCompiler.fs
 //
-// Compiles Nunjucks expression text into a small tree (CExpr) so a template
+// Compiles Zealucks expression text into a small tree (CExpr) so a template
 // loop does not re-parse the same expression on every iteration.
 //
 // Invariant: the compiler mirrors the evaluator's precedence exactly
 // (pipe → or → and → not → compare → additive → multiplicative → atom).
 
-module internal NunjucksCompiler =
+module internal ZealucksCompiler =
 
     /// Scan for the rightmost top-level occurrence of any operator in `ops`.
     /// `ops` must be ordered longest-first so multi-char ops win. Word
@@ -105,7 +105,7 @@ module internal NunjucksCompiler =
     /// leftmost top-level `if` and its matching `else`. Returns None when no
     /// complete conditional is present, so the text falls through to ordinary
     /// expression parsing. Leftmost-splitting makes the conditional
-    /// right-associative, matching Jinja/Nunjucks.
+    /// right-associative, matching Jinja/Zealucks.
     let private splitInlineIf (text: string) : (string * string * string) option =
         let n = text.Length
         let isWordAt (k: int) (w: string) =
@@ -244,7 +244,7 @@ module internal NunjucksCompiler =
             CBin(op, compileMul (text.[..i-1]), compileUnary (text.[i+op.Length..]))
         | _ -> compileUnary text
 
-    /// Unary numeric sign (`-5`, `+3`, `-x`). Nunjucks has no separate unary
+    /// Unary numeric sign (`-5`, `+3`, `-x`). Zealucks has no separate unary
     /// operator level, so the sign binds tighter than `*` and `/` but looser
     /// than atoms; the prefix marker keeps `-x` distinct from binary `a - x`.
     and compileUnary (text: string) : CExpr =

@@ -37,7 +37,7 @@
 
 - **F# everywhere.** Pages can be written as ordinary F# programs using a type-safe HTML DSL — loops, conditionals, functions, and data, with no template-language workarounds. Markdown remains available whenever prose is preferable to code.
 
-- **No lock-in.** The engine is template-engine agnostic. Nunjucks is the default, with a compatibility layer for 11ty-style languages (Liquid, HAML, Pug) and a standalone engine for native Handlebars/Mustache (`.hbs`, `.mustache`). Output is plain, static HTML that can be hosted anywhere.
+- **No lock-in.** Zest ships exactly one template language — **Zealucks** (`.zlk`), which is syntax-compatible with Nunjucks — and one script layer, `.zest.fsx`. Output is plain, static HTML that can be hosted anywhere.
 
 - **Quiet by default.** The bundled starter theme ships with no animation, no shadows, and no hover theatrics — typography and whitespace carry the page.
 
@@ -57,7 +57,7 @@
 
 - **ZCSS** — A CSS superset with nesting, F#-style `let` bindings, math expressions, color functions, and mixins — compiled to standard CSS.
 
-- **11ty-compatible templates** — Full support for Nunjucks (`.njk`), Liquid (`.liquid`), Handlebars (`.hbs`), Mustache (`.mustache`), HAML (`.haml`), and Pug (`.pug`). Nunjucks, Liquid, HAML, and Pug are auto-converted to the Nunjucks engine for filters, macros, template inheritance, and Zest API integration. `.hbs` and `.mustache` run on a dedicated Mustache/Handlebars engine that preserves their native syntax.
+- **Zealucks templates** — `.zlk` files support the full Nunjucks-compatible feature set: variables, filters, `{% if %}` / `{% for %}`, template inheritance with `{% extends %}` / `{% block %}`, `{% include %}`, and macros, plus the Zest API (`site`, `page`, `pages`, `tags`, `collections`).
 
 - **`_init.zest.fsx`** — An optional initialization script (run before each build) for injecting dynamic data, loading JSON/TOML, and reading environment variables.
 
@@ -197,7 +197,19 @@ Templates read it as `{{ site.socials }}`.
 
 ## Templates
 
-Layouts and partials are plain HTML processed by a template engine. Nunjucks is the default. Other 11ty-compatible languages are auto-converted to Nunjucks internally — except `.hbs` and `.mustache`, which run on a standalone Mustache/Handlebars engine, since the Nunjucks converter cannot fully express their syntax.
+Zest has exactly two authoring formats:
+
+| Format       | Purpose                                                             |
+|--------------|---------------------------------------------------------------------|
+| `.zlk`       | **Zealucks** templates — Nunjucks-compatible syntax for markup.      |
+| `.zest.fsx`  | F# scripts — data loading, logic, and complex computation.           |
+
+Zealucks is Zest's own brand for its Nunjucks-compatible engine. It speaks the
+same syntax — variables, filters, `if` / `for`, inheritance, `block`, `include`,
+and macros — so existing Nunjucks templates work unchanged.
+
+Layouts and partials are `.zlk` files (plain HTML works too: `.html` files are
+run through Zealucks when they contain `{{ }}` / `{% %}` syntax).
 
 ```html
 <!DOCTYPE html>
@@ -208,18 +220,28 @@ Layouts and partials are plain HTML processed by a template engine. Nunjucks is 
   <link rel="stylesheet" href="/assets/css/main.css">
 </head>
 <body>
-  {{ include header.html }}
+  {{ include header.zlk }}
   <main>
     {{ content | safe }}
   </main>
-  {{ include footer.html }}
+  {{ include footer.zlk }}
 </body>
 </html>
 ```
 
-Supported Nunjucks constructs include `{{ include }}`, `{{ content }}`, `{% if %}` / `{% for %}`, `{% assign %}`, filters (`| t`, `| date`, `| readingTime`), and i18n strings from `_locales/*.toml`.
+Supported Zealucks constructs include `{{ include }}`, `{{ content }}`, `{% if %}` / `{% for %}`, `{% assign %}`, filters (`| t`, `| date`, `| readingTime`), and i18n strings from `_locales/*.toml`.
 
-> **Note:** The `template_engine` field in `_config.toml` is declarative only — it documents which engine the templates were written for. Layout routing is decided by file extension, so a project may freely mix Nunjucks, Handlebars, Liquid, and other templates.
+### Migrating from `.njk`
+
+Zealucks is a rename, not a rewrite. If your site used `.njk` templates:
+
+1. Rename every template file: `layout.njk` → `layout.zlk`.
+2. Update any `{% include %}` / `{% extends %}` / `{{ include }}` references
+   that spell out the old extension.
+3. Remove the `template_engine` key (and the `[template] engine` key) from
+   `_config.toml`; there is no engine selection any more.
+
+Template syntax needs no changes.
 
 ---
 
@@ -227,13 +249,12 @@ Supported Nunjucks constructs include `{{ include }}`, `{{ content }}`, `{% if %
 
 ```
 .
-├── zest.toml              # CLI configuration
 ├── _config.toml           # site metadata and build options
 ├── _init.zest.fsx         # pre-build script (global data, hooks)
 ├── _data/                 # global data (nav.toml, …)
 ├── _themes/<name>/        # self-contained themes
 │   ├── _theme.toml        # theme manifest
-│   ├── _layouts/          # template layouts (.njk / .liquid / .hbs / …)
+│   ├── _layouts/          # template layouts (.zlk)
 │   ├── _includes/         # partials
 │   ├── _locales/          # i18n string tables
 │   └── assets/            # styles (ZCSS), images, fonts
@@ -263,6 +284,17 @@ Supported Nunjucks constructs include `{{ include }}`, `{{ content }}`, `{% if %
 | **Zest.Engine**| F#       | Build pipeline: content, layouts, ZCSS, data, feeds.                          |
 | **Zest.Dsl**   | F#       | Type-safe HTML DSL for `.zest.fsx` pages.                                     |
 | **Zest.Infra** | C#       | Configuration loading, file watching, logging, hashing, shared infrastructure.|
+| **Zest.Core**  | F#       | Primitives shared by the engine and the DSL: slugs, prose metrics, dates.     |
+
+### Repository Layout
+
+| Path             | Purpose                                                                 |
+|------------------|-------------------------------------------------------------------------|
+| `.config/zest/`  | CLI configuration, split by concern: `meta.toml` (identity, branding) and `help.toml` (help copy). Embedded into the tool as manifest resources. |
+| `.claude/`       | Claude Code settings and permissions. The engineering contract itself lives in `CLAUDE.md` at the root. |
+| `.devcontainer/` | Reproducible development container: `devcontainer.json` plus a .NET SDK `Dockerfile`. |
+| `.husky/`        | Git hooks (`pre-commit`, `commit-msg`) and installers that set `core.hooksPath`. |
+| `libs/`          | Dependency-free shared libraries that are not part of the shipped tool projects. Currently `Zest.Core`. |
 
 ---
 
@@ -273,12 +305,7 @@ Supported Nunjucks constructs include `{{ include }}`, `{{ content }}`, `{% if %
 | Extension   | Purpose                                                      | Processing                                          |
 |-------------|--------------------------------------------------------------|-----------------------------------------------------|
 | `.zest.fsx` | F# script templates (F# + Markdown + HTML DSL)               | Compiled via `dotnet fsi`                           |
-| `.njk`      | Nunjucks templates (filters, macros, inheritance, Zest API)  | Rendered via NunjucksEngine                         |
-| `.liquid`   | Liquid templates (Jinja2 family, auto-converted)             | Converted → NunjucksEngine                          |
-| `.hbs`      | Handlebars templates (native Mustache/Handlebars)            | HbsEngine — standalone, no conversion               |
-| `.mustache` | Mustache templates (native Mustache/Handlebars)              | HbsEngine — standalone, no conversion               |
-| `.haml`     | HAML templates (auto-converted to HTML → Nunjucks)           | HamlConverter → NunjucksEngine                      |
-| `.pug`      | Pug templates (auto-converted to HTML → Nunjucks)            | PugConverter → NunjucksEngine                       |
+| `.zlk`      | Zealucks templates (filters, macros, inheritance, Zest API)  | Rendered via ZealucksEngine                         |
 | `.zcss`     | ZCSS stylesheets (CSS superset)                              | Compiled to `.css`                                  |
 | `.md`       | Standard Markdown                                            | Rendered to HTML                                    |
 | `.toml`     | Configuration and data (no YAML)                             | Parsed at build time                                |
@@ -300,18 +327,26 @@ Supported Nunjucks constructs include `{{ include }}`, `{{ content }}`, `{% if %
 | Conditionals         | `@if`, `@else`                                                            |
 | Built-in modules     | `@use "zest:utilities"`, `@use "zest:palette"`, etc.                      |
 
-### Template Language Annotation
+### Layout Routing
 
-The `template_engine` (top-level) or `[template] engine` field in `_config.toml` is a **pure annotation** describing the site's primary template language. It does not affect the build; layout routing is decided by file extension only.
+There is no "template engine" setting. Zest always renders with Zealucks, so
+routing depends only on the file extension:
 
-| Config value | Labels (primary template language)          |
-|--------------|---------------------------------------------|
-| `native`     | `.zest.fsx` — F# script templates           |
-| `nunjucks`   | Nunjucks — `.njk` / `.html` layouts         |
-| `liquid`     | Liquid — `.liquid` layouts                  |
-| *(any value)*| Pure label; no effect on the build          |
+| Layout extension | Handling                                                    |
+|------------------|-------------------------------------------------------------|
+| `.zest.fsx`, `.fsx` | Evaluated as F# scripts by `dotnet fsi`.                 |
+| `.zlk`           | Rendered by Zealucks.                                        |
+| `.html`, `.htm`  | Copied verbatim; run through Zealucks when `{{ }}` / `{% %}` syntax is present. |
 
-Layouts are routed by file extension: `.hbs` and `.mustache` are rendered by the standalone HbsEngine; all other non-`.zest.fsx` extensions (`.html`, `.njk`, `.liquid`, `.haml`, `.pug`) go through the Nunjucks compatibility layer; and `.zest.fsx` layouts are always evaluated as F# scripts.
+### Zealucks Compatibility Mode
+
+`[template.zealucks] compatibility` in `_config.toml` controls how strictly
+Zealucks mirrors Nunjucks:
+
+| Value     | Meaning                                                        |
+|-----------|----------------------------------------------------------------|
+| `zest`    | Default. Zest extension filters (`pages_by_tag`, `recent`, `by_collection`, `search`) are available. |
+| `strict`  | Only the Nunjucks-compatible filter set is registered.          |
 
 ### HTML DSL Reference
 

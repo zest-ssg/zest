@@ -382,9 +382,7 @@ module MetaParser =
         | Some (meta, body) when meta <> ContentMeta.empty -> (meta, body)
         | _ ->
             match ext with
-            | FileExtensions.Nunjucks | FileExtensions.Liquid | FileExtensions.Handlebars
-            | FileExtensions.Mustache | FileExtensions.Haml | FileExtensions.Pug
-            | FileExtensions.WebC ->
+            | FileExtensions.Zealucks | FileExtensions.WebC ->
                 parseHtmlCommentsWithLines lines
             | _ ->
                 let meta = parseFsxCommentsWithLines lines

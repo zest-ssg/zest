@@ -1,0 +1,23 @@
+{
+  "name": "Zest SSG",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
+  "postCreateCommand": "git config core.hooksPath .husky && dotnet restore zest.sln",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csdevkit",
+        "ms-dotnettools.csharp",
+        "ionide.ionide-fsharp"
+      ],
+      "settings": {
+        "dotnet.defaultSolution": "zest.sln",
+        "files.eol": "\n",
+        "editor.formatOnSave": true
+      }
+    }
+  },
+  "remoteUser": "root"
+}

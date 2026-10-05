@@ -39,22 +39,22 @@ module ScriptEvaluator =
                 m
             | None -> meta
 
-    // ── Nunjucks context caching (built once per build, shared across all pages) ──
+    // ── Zealucks context caching (built once per build, shared across all pages) ──
     // Keyed by reference equality: the dictionary is mutated before evaluation
     // begins and never again, so a changed reference always means new content.
-    let mutable private cachedNunjucksSiteContext : (string * obj)[] option = None
-    let mutable private cachedNunjucksGlobalDataRef : IDictionary<string, obj> = null
-    let mutable private cachedNunjucksConfigRef : SiteConfig = Unchecked.defaultof<SiteConfig>
+    let mutable private cachedZealucksSiteContext : (string * obj)[] option = None
+    let mutable private cachedZealucksGlobalDataRef : IDictionary<string, obj> = null
+    let mutable private cachedZealucksConfigRef : SiteConfig = Unchecked.defaultof<SiteConfig>
 
-    let internal resetNunjucksCache () =
-        cachedNunjucksSiteContext <- None
-        cachedNunjucksGlobalDataRef <- null
-        cachedNunjucksConfigRef <- Unchecked.defaultof<SiteConfig>
+    let internal resetZealucksCache () =
+        cachedZealucksSiteContext <- None
+        cachedZealucksGlobalDataRef <- null
+        cachedZealucksConfigRef <- Unchecked.defaultof<SiteConfig>
 
-    let private getNunjucksSiteContext (config: SiteConfig) (globalData: IDictionary<string, obj>) =
-        match cachedNunjucksSiteContext with
-        | Some ctx when Object.ReferenceEquals(cachedNunjucksGlobalDataRef, globalData)
-                       && Object.ReferenceEquals(cachedNunjucksConfigRef, config) -> ctx
+    let private getZealucksSiteContext (config: SiteConfig) (globalData: IDictionary<string, obj>) =
+        match cachedZealucksSiteContext with
+        | Some ctx when Object.ReferenceEquals(cachedZealucksGlobalDataRef, globalData)
+                       && Object.ReferenceEquals(cachedZealucksConfigRef, config) -> ctx
         | _ ->
             let pairs = ResizeArray<string * obj>()
             pairs.Add("site.title",       box config.Title)
@@ -66,9 +66,9 @@ module ScriptEvaluator =
             for kv in globalData do
                 pairs.Add("site." + kv.Key, kv.Value)
             let result = pairs |> Seq.toArray
-            cachedNunjucksSiteContext <- Some result
-            cachedNunjucksGlobalDataRef <- globalData
-            cachedNunjucksConfigRef <- config
+            cachedZealucksSiteContext <- Some result
+            cachedZealucksGlobalDataRef <- globalData
+            cachedZealucksConfigRef <- config
             result
 
     // ── Filter registry caching (track registered engines) ─────────
@@ -96,9 +96,9 @@ module ScriptEvaluator =
                 |> Array.skipWhile String.IsNullOrWhiteSpace
             MarkdownEngine.toHtml (String.concat "\n" lines)
 
-    /// Render .njk / .liquid / .hbs / .mustache / .webc / .haml / .pug content
-    /// pages using the Nunjucks engine (with pre-conversion as needed).
-    let private renderNunjucksContent
+    /// Render .zlk (and WebC) content pages with the Zealucks engine,
+    /// pre-processing WebC components into Zealucks syntax first.
+    let private renderZealucksContent
         (bodyText: string)
         (config: SiteConfig)
         (globalData: IDictionary<string, obj>)
@@ -107,13 +107,9 @@ module ScriptEvaluator =
         (filePath: string)
         (ext: string)
         : string =
-        // ── .hbs / .mustache → standalone Hbs engine (native Mustache/Handlebars
-        //    semantics: {{{ }}}, sections, ../, @index, partials, {{#if}} …),
-        //    no Nunjucks conversion. Other formats are pre-processed and rendered
-        //    with the Nunjucks engine.
         let buildPairs () =
             let pairs = ResizeArray<string * obj>()
-            let siteCtx = getNunjucksSiteContext config globalData
+            let siteCtx = getZealucksSiteContext config globalData
             pairs.AddRange(siteCtx)
             // ── page.* ──────────────────────────────────────────
             pairs.Add("page.title", box (meta.Title |> Option.defaultValue slug))
@@ -125,60 +121,27 @@ module ScriptEvaluator =
             for kv in meta.Extra do
                 pairs.Add("page." + kv.Key, box kv.Value)
             // ── Zest collection data ────────────────────────────
-            pairs.Add("pages", box (PageQuery.getPagesForNunjucks () |> Array.map box))
-            pairs.Add("tags", box (PageQuery.getTagsForNunjucks ()))
-            pairs.Add("collections", box (PageQuery.getCollectionsForNunjucks ()))
+            pairs.Add("pages", box (PageQuery.getPagesForZealucks () |> Array.map box))
+            pairs.Add("tags", box (PageQuery.getTagsForZealucks ()))
+            pairs.Add("collections", box (PageQuery.getCollectionsForZealucks ()))
             TemplateManager.buildNestedContext pairs
-        match ext.ToLowerInvariant() with
-        | FileExtensions.Handlebars | FileExtensions.Mustache ->
-            match TemplateManager.getOrCreateEngine "hbs" {
-                Engine = "hbs"
-                EnableCache = true
-                Extension = ext
-                Filters = []
-            } with
-            | Some engine ->
-                let ctx = buildPairs ()
-                match engine.Render bodyText ctx with
-                | Ok html -> html
-                | Error err ->
-                    eprintfn "[Zest] Hbs error in content '%s': %O" filePath err
-                    bodyText
-            | None -> bodyText
-        | _ ->
-            // Pre-process format-specific syntax before Nunjucks
-            let templateText =
-                match ext.ToLowerInvariant() with
-                | FileExtensions.Liquid ->
-                    // Liquid → Nunjucks (assign/capture/case/unless/filter args…),
-                    // then rendered by the Nunjucks engine. `| safe` is appended
-                    // by the converter to preserve Liquid's no-autoescape output.
-                    LiquidConverter.convert bodyText
-                | FileExtensions.WebC       ->
-                    // WebC SSR: strip script/webc:setup, normalize template tags
-                    let step1 = Regex.Replace(bodyText, @"<script[^>]*webc:setup[^>]*>.*?</script>", "", RegexOptions.Singleline)
-                    let step2 = Regex.Replace(step1, @"<template[^>]*webc:nocss[^>]*>", "<!-- webc:nocss -->")
-                    step2.Replace("</template>", "<!-- /webc -->")
-                | FileExtensions.Haml       -> HamlConverter.convert bodyText
-                | FileExtensions.Pug        -> PugConverter.convert bodyText
-                | _                         -> bodyText
-            match TemplateManager.getOrCreateEngine "nunjucks" {
-                Engine = "nunjucks"
-                EnableCache = true
-                Extension = FileExtensions.Nunjucks
-                Filters = []
-            } with
-            | Some engine ->
-                ensureFiltersRegistered engine
-
-                let ctx = buildPairs ()
-                match engine.Render templateText ctx with
-                | Ok html -> html
-                | Error err ->
-                    eprintfn "[Zest] Nunjucks error in content '%s': %O" filePath err
-                    templateText
-            | None ->
-                templateText
+        // WebC SSR reduces a component to Zealucks syntax; every other
+        // Zealucks-family extension renders as authored.
+        let templateText =
+            match ext.ToLowerInvariant() with
+            | FileExtensions.WebC ->
+                let step1 = Regex.Replace(bodyText, @"<script[^>]*webc:setup[^>]*>.*?</script>", "", RegexOptions.Singleline)
+                let step2 = Regex.Replace(step1, @"<template[^>]*webc:nocss[^>]*>", "<!-- webc:nocss -->")
+                step2.Replace("</template>", "<!-- /webc -->")
+            | _ -> bodyText
+        let engine = TemplateManager.getEngine ()
+        ensureFiltersRegistered engine
+        let ctx = buildPairs ()
+        match engine.Render templateText ctx with
+        | Ok html -> html
+        | Error err ->
+            eprintfn "[Zest] Zealucks error in content '%s': %O" filePath err
+            templateText
 
     let private resolveContentDir (config: SiteConfig) =
         Path.GetFullPath(
@@ -193,7 +156,7 @@ module ScriptEvaluator =
         relPath, rawSlug
 
     /// Copy front-matter-derived fields into the page data dictionary so
-    /// Nunjucks templates can address `page.tags`, `page.categories`,
+    /// Zealucks templates can address `page.tags`, `page.categories`,
     /// `page.author`, and `page.updated` with native array/string values.
     let applyMetaFields (d: IDictionary<string, obj>) (meta: ContentMeta) =
         if not meta.Tags.IsEmpty then d.["tags"] <- box (meta.Tags |> Array.ofList)
@@ -369,7 +332,7 @@ module ScriptEvaluator =
 
                     let contentHtml =
                         match ext with
-                        | FileExtensions.Nunjucks | FileExtensions.Liquid | FileExtensions.Handlebars | FileExtensions.Mustache | FileExtensions.WebC | FileExtensions.Haml | FileExtensions.Pug -> renderNunjucksContent bodyText config globalData meta slug filePath ext
+                        | FileExtensions.Zealucks | FileExtensions.WebC -> renderZealucksContent bodyText config globalData meta slug filePath ext
                         | _       -> renderContent ext bodyText text
 
                     Ok { ContentPage.empty with
@@ -406,7 +369,7 @@ module ScriptEvaluator =
 
                 let contentHtml =
                     match ext with
-                    | FileExtensions.Nunjucks | FileExtensions.Liquid | FileExtensions.Handlebars | FileExtensions.Mustache | FileExtensions.WebC | FileExtensions.Haml | FileExtensions.Pug -> renderNunjucksContent bodyText config globalData meta slug filePath ext
+                    | FileExtensions.Zealucks | FileExtensions.WebC -> renderZealucksContent bodyText config globalData meta slug filePath ext
                     | _       -> renderContent ext bodyText text
 
                 Ok { ContentPage.empty with

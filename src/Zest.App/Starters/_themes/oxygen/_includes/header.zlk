@@ -1,3 +1,1 @@
-<header class="site-header">
-  <a class="site-header__title" href="/" rel="home">{{ site.title }}</a>
-</header>
+<header class="site-header">  <a class="site-header__title" href="/" rel="home">{{ site.title }}</a></header>

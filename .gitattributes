@@ -1,0 +1,6 @@
+# Git hooks are POSIX sh scripts. A CRLF line ending makes the shebang
+# unrecognisable to bash, so these files are always checked out with LF —
+# including on Windows, where core.autocrlf would otherwise convert them.
+/.husky/pre-commit text eol=lf
+/.husky/commit-msg text eol=lf
+/.husky/install.sh text eol=lf

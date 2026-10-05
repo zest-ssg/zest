@@ -20,6 +20,9 @@ obj/
 *.swp
 *.swo
 
+# Claude Code per-developer overrides (shared config is committed)
+.claude/settings.local.json
+
 # OS
 .DS_Store
 Thumbs.db
@@ -28,7 +31,6 @@ Thumbs.db
 docs/
 site/
 themes/
-tests/
 
 # NuGet packages
 packages/

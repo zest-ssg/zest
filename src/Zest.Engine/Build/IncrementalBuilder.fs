@@ -26,8 +26,7 @@ module IncrementalBuilder =
         | Other
 
     /// Extensions treated as layout files even outside _layouts/.
-    /// Subset of Nunjucks-family traditionally used for layouts.
-    let private layoutExts = [FileExtensions.Nunjucks; FileExtensions.Liquid]
+    let private layoutExts = [FileExtensions.Zealucks]
 
     /// Case-insensitive "ends with any" check for a path against an extension list.
     let private endsWithAny (path: string) (exts: string list) =

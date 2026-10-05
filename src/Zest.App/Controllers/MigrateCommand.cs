@@ -215,11 +215,9 @@ public static class MigrateCommand
             data_dir = "./_data"
             assets_dir = "./assets"
             default_layout = "default"
-            template_engine = "native"
 
-            [template]
-            engine = "native"
-            nunjucks.compatibility = "zest"{compatBlock}
+            [template.zealucks]
+            compatibility = "zest"{compatBlock}
             """;
     }
 

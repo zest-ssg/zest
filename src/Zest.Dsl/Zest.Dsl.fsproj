@@ -44,6 +44,12 @@
     <PackageReference Include="Tomlyn" Version="0.17.0" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Shared primitives (slugs, prose metrics, date formatting) that the
+         engine also uses. Zest.Core has no dependencies of its own, so it
+         adds nothing to the FSI isolation copy beyond one assembly. -->
+    <ProjectReference Include="..\..\libs\Zest.Core\Zest.Core.fsproj" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- Needed so the DSL can expose a native `md` helper that renders
          Markdown to HTML (Zest.Engine.Html.MarkdownEngine.toHtml). The FSI
          isolation copies only Zest.Dsl.dll, so Zest.Engine.dll resolves from

@@ -1,0 +1,18 @@
+#!/bin/sh
+#
+# pre-commit — compile gate.
+#
+# Runs `dotnet build` so a commit cannot carry code that does not compile.
+# Deliberately the fast gate only: `dotnet test` is left to CI and to the
+# developer, because a full test pass on every commit is too slow to keep
+# honest (people start using --no-verify).
+#
+# Skip with `git commit --no-verify` when you know what you are doing.
+
+set -e
+
+echo "[husky] pre-commit: dotnet build"
+
+dotnet build zest.sln -v q --nologo
+
+echo "[husky] build OK"

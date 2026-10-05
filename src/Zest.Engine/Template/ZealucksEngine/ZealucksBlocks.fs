@@ -1,10 +1,10 @@
 namespace Zest.Engine.Template
 
 open System.Collections.Generic
-open NunjucksTypes
-open NunjucksCompiler
+open ZealucksTypes
+open ZealucksCompiler
 
-// NunjucksBlocks.fs
+// ZealucksBlocks.fs
 //
 // Analyses token arrays for template inheritance: collecting top-level
 // `{% block %}` and `{% macro %}` definitions and locating the matching end
@@ -13,7 +13,7 @@ open NunjucksCompiler
 // Invariant: findMatchingEnd is array-indexed (O(1) per element) so scanning
 // a template stays linear in its token count.
 
-module internal NunjucksBlocks =
+module internal ZealucksBlocks =
 
     // ── Block collector (for extends/block inheritance) ──
     /// Collect all top-level `{% block NAME %}...{% endblock %}` blocks

@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="{{ site.language | default('en') }}">
+<head>
+  {{ include head.zlk }}
+</head>
+<body>
+  <div class="page">
+    {{ include header.zlk }}
+    <main class="page__main">
+      <article class="paper">
+        <header class="paper__head">
+          <h1 class="paper__title">{{ page.title }}</h1>
+          {% if site.author %}<p class="paper__author">{{ site.author }}</p>{% endif %}
+          {% if page.date %}<p class="paper__date">{{ page.date | date('%B %e, %Y') }}</p>{% endif %}
+        </header>
+        <div class="paper__body">
+          {{ content | safe }}
+        </div>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

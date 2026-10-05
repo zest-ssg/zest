@@ -48,13 +48,18 @@
     <ProjectReference Include="..\Zest.Dsl\Zest.Dsl.fsproj" />
   </ItemGroup>
 
-  <!-- zest.toml holds CLI branding/help text. Embed it as a resource so
-       the tool works immediately after `dotnet tool install` without
-       needing to locate the file on disk. HelpRenderer falls back to
-       the file-system path during local development. -->
+  <!-- CLI branding and help text live in .config/zest/, split by concern:
+       meta.toml (name, version, tagline) and help.toml (help copy). Both are
+       embedded as resources so the tool works immediately after
+       `dotnet tool install` without needing to locate them on disk.
+       HelpRenderer merges them and falls back to the files on disk during
+       local development. -->
   <ItemGroup>
-    <EmbeddedResource Include="..\..\zest.toml">
-      <LogicalName>zest.toml</LogicalName>
+    <EmbeddedResource Include="..\..\.config\zest\meta.toml">
+      <LogicalName>zest.meta.toml</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\.config\zest\help.toml">
+      <LogicalName>zest.help.toml</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 
@@ -75,9 +80,9 @@
     <EmbeddedResource Include="Starters\content\atom.zest.fsx" LogicalName="Zest.App.Starters.content\atom.zest.fsx" />
     <EmbeddedResource Include="Starters\content\sitemap.zest.fsx" LogicalName="Zest.App.Starters.content\sitemap.zest.fsx" />
     <EmbeddedResource Include="Starters\_themes\oxygen\_theme.toml" LogicalName="Zest.App.Starters._themes\oxygen\_theme.toml" />
-    <EmbeddedResource Include="Starters\_themes\oxygen\_includes\head.html" LogicalName="Zest.App.Starters._themes\oxygen\_includes\head.html" />
-    <EmbeddedResource Include="Starters\_themes\oxygen\_includes\header.html" LogicalName="Zest.App.Starters._themes\oxygen\_includes\header.html" />
-    <EmbeddedResource Include="Starters\_themes\oxygen\_layouts\post.html" LogicalName="Zest.App.Starters._themes\oxygen\_layouts\post.html" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_includes\head.zlk" LogicalName="Zest.App.Starters._themes\oxygen\_includes\head.zlk" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_includes\header.zlk" LogicalName="Zest.App.Starters._themes\oxygen\_includes\header.zlk" />
+    <EmbeddedResource Include="Starters\_themes\oxygen\_layouts\post.zlk" LogicalName="Zest.App.Starters._themes\oxygen\_layouts\post.zlk" />
     <EmbeddedResource Include="Starters\_themes\oxygen\assets\css\main.zcss" LogicalName="Zest.App.Starters._themes\oxygen\assets\css\main.zcss" />
   </ItemGroup>
 

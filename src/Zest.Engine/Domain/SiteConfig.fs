@@ -84,8 +84,6 @@ type SiteConfig = {
     // Author / social (surfaced from _data but can be inlined in _config)
     Author: string
     Language: string
-    /// Template engine: "native" (default, {{ }} placeholders) or "nunjucks" (Nunjucks-compatible)
-    TemplateEngine: string
     // ── Compatibility flags (enable SSG-specific behaviors) ──
     /// Enable Jekyll-compatible behavior (permalink style, default layout, etc.)
     CompatJekyll: bool
@@ -95,9 +93,10 @@ type SiteConfig = {
     CompatHugo: bool
     /// Enable 11ty-compatible behavior (collections API shape, etc.).
     CompatEleventy: bool
-    // ── Nunjucks compatibility mode ──
-    /// "strict" = match official Nunjucks exactly; "zest" = Zest extensions enabled.
-    NunjucksCompatibility: string
+    // ── Zealucks compatibility mode ──
+    /// "strict" = match Nunjucks exactly; "zest" = Zest extensions enabled.
+    /// Zest renders with Zealucks either way; only the filter set differs.
+    ZealucksCompatibility: string
     // ── Theme ──
     /// Theme configuration from the [theme] table.
     Theme: ThemeConfig
@@ -170,17 +169,14 @@ module SiteConfigDefaults =
           Menus = dict []
           Author = ""
           Language = "en"
-          // Pure annotation for the primary template language (native → .zest.fsx,
-          // nunjucks → .njk, liquid → .liquid, ...). No effect on build routing —
-          // layouts are routed by file extension in LayoutEngine.
-          TemplateEngine = "native"
           // Compat flags default off — users opt in via [compat] table.
           CompatJekyll = false
           CompatHexo = false
           CompatHugo = false
           CompatEleventy = false
-          // "zest" mode enables Zest's extended filters/macros on top of Nunjucks.
-          NunjucksCompatibility = "zest"
+          // "zest" mode enables Zest's extended filters/macros on top of the
+          // Nunjucks-compatible core.
+          ZealucksCompatibility = "zest"
           // Theme defaults to empty — no theme loaded unless explicitly configured.
           Theme = { Name = ""; Source = "local"; Git = ""; Branch = "main"; Tag = ""; Url = ""; Path = "" }
           // Include / exclude — empty by default

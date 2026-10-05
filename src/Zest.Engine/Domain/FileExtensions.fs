@@ -7,7 +7,7 @@ namespace Zest.Engine
 // the Zest build pipeline. Replaces scattered hardcoded strings
 // across TemplateCompat, LayoutEngine, ScriptEvaluator, etc.
 //
-// Usage: reference these constants instead of literal ".njk" /
+// Usage: reference these constants instead of literal ".zlk" /
 // ".zcss" / etc. to keep extension handling consistent and
 // discoverable. F# [<Literal>] values are usable in pattern matches.
 // ============================================================
@@ -33,7 +33,7 @@ module FileExtensions =
     [<Literal>]
     let MarkdownLong = ".markdown"
 
-    /// Plain HTML (Nunjucks-preprocessed when template syntax detected).
+    /// Plain HTML (Zealucks-preprocessed when template syntax detected).
     [<Literal>]
     let Html = ".html"
 
@@ -41,33 +41,14 @@ module FileExtensions =
     [<Literal>]
     let HtmlLong = ".htm"
 
-    /// Nunjucks template.
+    /// Zealucks template. Zealucks is Zest's Zealucks-compatible template
+    /// language; `.zlk` is its file extension (Ze-llucks).
     [<Literal>]
-    let Nunjucks = ".njk"
+    let Zealucks = ".zlk"
 
-    /// Liquid template (Jinja2 family).
-    [<Literal>]
-    let Liquid = ".liquid"
-
-    /// Handlebars template (rendered by HbsEngine).
-    [<Literal>]
-    let Handlebars = ".hbs"
-
-    /// Mustache template (rendered by HbsEngine).
-    [<Literal>]
-    let Mustache = ".mustache"
-
-    /// WebC component (SSR-processed).
+    /// WebC component (SSR-processed, then rendered by the Zealucks engine).
     [<Literal>]
     let WebC = ".webc"
-
-    /// HAML template (auto-converted).
-    [<Literal>]
-    let Haml = ".haml"
-
-    /// Pug template (auto-converted).
-    [<Literal>]
-    let Pug = ".pug"
 
     // ── Style extensions ───────────────────────────────────
 
@@ -121,26 +102,26 @@ module FileExtensions =
 
     // ── Aggregate sets ─────────────────────────────────────
 
-    /// All Nunjucks-family template extensions (rendered via the Nunjucks
-    /// engine, with optional syntax conversion). Used by ScriptEvaluator,
+    /// All Zealucks-family template extensions (rendered by the Zealucks
+    /// engine, with optional pre-processing). Used by ScriptEvaluator,
     /// MetaParser, ContentPipeline, LayoutEngine.
-    let NunjucksFamily =
-        [ Nunjucks; Liquid; Handlebars; Mustache; WebC; Haml; Pug ]
+    let ZealucksFamily =
+        [ Zealucks; WebC ]
 
     /// All content extensions processed by the build pipeline.
-    /// Includes native F# scripts, Markdown, HTML, and Nunjucks-family templates.
+    /// Includes native F# scripts, Markdown, HTML, and Zealucks-family templates.
     let Content =
         [ ZestScript; FSharpScript; Markdown; MarkdownLong; Html ]
-        @ NunjucksFamily
+        @ ZealucksFamily
 
     /// All asset extensions (copied or lightly processed, not rendered as pages).
     let Assets =
         [ Zcss; Css; JavaScript; Png; Jpg; Jpeg; Svg; Gif; Webp ]
 
-    /// <summary>Check if a path has one of the Nunjucks-family extensions.</summary>
+    /// <summary>Check if a path has one of the Zealucks-family extensions.</summary>
     /// <param name="path">File path to check (case-insensitive).</param>
-    let isNunjucksFamily (path: string) =
-        NunjucksFamily
+    let isZealucksFamily (path: string) =
+        ZealucksFamily
         |> List.exists (fun ext -> path.EndsWith(ext, System.StringComparison.OrdinalIgnoreCase))
 
     /// <summary>Check if a path is a content/template file.</summary>

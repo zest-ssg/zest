@@ -78,8 +78,8 @@ public static class ScaffoldCommand
             title = "My Zest Site"
             url = "https://example.com"
 
-            [template]
-            engine = "nunjucks"
+            [template.zealucks]
+            compatibility = "zest"
 
             [build]
             output = "_site"

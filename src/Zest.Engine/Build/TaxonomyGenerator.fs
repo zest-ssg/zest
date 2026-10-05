@@ -1,7 +1,7 @@
 // TaxonomyGenerator.fs
 //
 // Auto-generates taxonomy archive pages (e.g. /tags/ and /tags/<term>/) so
-// that adding a tag to a post is enough — no need to hand-author a .njk file
+// that adding a tag to a post is enough — no need to hand-author a .zlk file
 // per tag. Runs after the content pipeline so PageQuery already knows every
 // page and tag.
 //
@@ -26,7 +26,7 @@ open Zest.Engine.Html
 module TaxonomyGenerator =
 
     /// Built-in fallback for a single term listing, used when the theme does
-    /// not ship `_layouts/<singular>.njk`. Keeps the generator useful standalone.
+    /// not ship `_layouts/<singular>.zlk`. Keeps the generator useful standalone.
     let private defaultTermTemplate = """
 <div class="posts tag-posts">
   <h2>{{ term }}</h2>
@@ -43,7 +43,7 @@ module TaxonomyGenerator =
 """
 
     /// Built-in fallback for the terms index, used when the theme does not
-    /// ship `_layouts/<plural>.njk`.
+    /// ship `_layouts/<plural>.zlk`.
     let private defaultIndexTemplate = """
 <div class="terms terms-index">
   <h2>{{ taxonomy.plural | capitalize }}</h2>
@@ -77,7 +77,7 @@ module TaxonomyGenerator =
         match tryFind keys with Some b -> stripFrontMatter b | None -> fallback
 
     /// Build the standard render-context pairs: site.* (mirroring
-    /// ScriptEvaluator.getNunjucksSiteContext) plus the taxonomy extras.
+    /// ScriptEvaluator.getZealucksSiteContext) plus the taxonomy extras.
     let private buildContext (config: SiteConfig)
                              (globalData: IDictionary<string, obj>)
                              (extras: (string * obj) list)
@@ -94,26 +94,22 @@ module TaxonomyGenerator =
         for kv in globalData do
             pairs.Add("site." + kv.Key, kv.Value)
         // Collection data shared with all templates.
-        pairs.Add("pages", box (PageQuery.getPagesForNunjucks () |> Array.map box))
-        pairs.Add("tags", box (PageQuery.getTagsForNunjucks ()))
-        pairs.Add("collections", box (PageQuery.getCollectionsForNunjucks ()))
+        pairs.Add("pages", box (PageQuery.getPagesForZealucks () |> Array.map box))
+        pairs.Add("tags", box (PageQuery.getTagsForZealucks ()))
+        pairs.Add("collections", box (PageQuery.getCollectionsForZealucks ()))
         for (k, v) in extras do pairs.Add(k, v)
         TemplateManager.buildNestedContext pairs
 
-    /// Render a fragment template to inner HTML via the Nunjucks engine.
+    /// Render a fragment template to inner HTML via the Zealucks engine.
     let private renderFragment (templateBody: string)
                                (ctx: IDictionary<string, obj>) : string =
-        match TemplateManager.getOrCreateEngine "nunjucks"
-                  { Engine = "nunjucks"; EnableCache = true
-                    Extension = FileExtensions.Nunjucks; Filters = [] } with
-        | Some engine ->
-            FilterRegistry.registerAllFilters engine |> ignore
-            match engine.Render templateBody ctx with
-            | Ok html -> html
-            | Error err ->
-                eprintfn "[Zest] Taxonomy template error: %O" err
-                templateBody
-        | None -> templateBody
+        let engine = TemplateManager.getEngine ()
+        FilterRegistry.registerAllFilters engine |> ignore
+        match engine.Render templateBody ctx with
+        | Ok html -> html
+        | Error err ->
+            eprintfn "[Zest] Taxonomy template error: %O" err
+            templateBody
 
     /// Apply the layout chain to all generated pages in ONE batched FSI pass
     /// and write the results. Rendering layout per page entered FSI ~25 times
@@ -232,7 +228,7 @@ module TaxonomyGenerator =
                 pages
                 |> List.filter belongs
                 |> List.sortByDescending (fun p -> p.Date |> Option.defaultValue DateTime.MinValue)
-                |> List.map PageQuery.pageToNunjucksDict
+                |> List.map PageQuery.pageToZealucksDict
                 |> Array.ofList
             let taxDict = dict [
                 "name", box tax.Name

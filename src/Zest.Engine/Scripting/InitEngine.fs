@@ -12,7 +12,7 @@ open System.Text.Json
 // ============================================================
 // _init.zest.fsx runs as a `dotnet fsi` subprocess. It can:
 //   - addGlobal "key" value            → inject data into globalData
-//   - addFilter "name" "spec"          → register a Nunjucks filter pipeline
+//   - addFilter "name" "spec"          → register a Zealucks filter pipeline
 //   - addGlobalFunction "name" value   → provide a global value to templates
 //   - registerMigration "note"         → log a custom migration note
 //   - loadJson "path"                  → parse JSON file to dictionary
@@ -32,7 +32,7 @@ type InitResult = {
     /// Additional global data to merge into the build context.
     GlobalData: IDictionary<string, obj>
     /// Custom template filters declared via `addFilter name spec`.
-    /// The spec is a Nunjucks filter-pipeline string (e.g. "upper | trim")
+    /// The spec is a Zealucks filter-pipeline string (e.g. "upper | trim")
     /// applied to the filter's input value.
     Filters: IDictionary<string, string>
     /// Global template functions declared via `addGlobalFunction name value`.
@@ -85,7 +85,7 @@ module InitEngine =
         sb.AppendLine("""let addGlobal (key: string) (value: obj) = __initGlobals.[key] <- value""") |> ignore
         // addFilter — register a custom template filter by pipeline spec.
         // Since F# functions can't cross the process boundary, the spec is a
-        // Nunjucks filter-pipeline string (e.g. "upper | trim") that the
+        // Zealucks filter-pipeline string (e.g. "upper | trim") that the
         // engine applies to the filter's input value.
         sb.AppendLine("""let addFilter (name: string) (spec: string) = __initGlobals.["__filter:" + name] <- box spec""") |> ignore
         // addGlobalFunction — provide a global value to templates. Stored

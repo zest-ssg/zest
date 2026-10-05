@@ -14,13 +14,13 @@ module BuildData =
     let private globalDataCache = ConcurrentDictionary<string, struct(DateTime * IDictionary<string, obj>)>()
 
     /// Recursively convert Tomlyn container objects to plain .NET types so they
-    /// are directly iterable/traversable in Nunjucks and F# scripts. In Tomlyn
+    /// are directly iterable/traversable in Zealucks and F# scripts. In Tomlyn
     /// 0.17 scalars are already native (`string`/`int64`/`double`/`bool`), so
     /// only `TomlTable`/`TomlArray`/`TomlTableArray` need unwrapping.
     let rec private tomlToNative (v: obj) : obj =
         match v with
         | :? TomlTable as t ->
-            // Preserve nested structure as a mutable IDictionary so Nunjucks
+            // Preserve nested structure as a mutable IDictionary so Zealucks
             // dotted access (`site.nav.items`) and `{% for %}` iteration work.
             let d = Dictionary<string, obj>()
             for kv in t do d.[kv.Key] <- tomlToNative kv.Value
@@ -34,7 +34,7 @@ module BuildData =
         | _ -> v  // native scalar (string/int64/double/bool/…): leave untouched
 
     /// Convert a JSON document into plain .NET types (Dictionary/array/scalar).
-    /// JsonElement values cannot be traversed by the Nunjucks renderer, so every
+    /// JsonElement values cannot be traversed by the Zealucks renderer, so every
     /// node must be unwrapped the same way TOML containers are.
     let rec private jsonToNative (el: JsonElement) : obj =
         match el.ValueKind with

@@ -92,6 +92,11 @@ module ScriptRunner =
         let engineDllPath = Path.Combine(Path.GetDirectoryName(dllPath), "Zest.Engine.dll")
         if File.Exists(engineDllPath) then
             sb.AppendLine("#r @\"" + engineDllPath + "\"") |> ignore
+        // Zest.Dsl reaches Zest.Core for slug/date/text helpers, and FSI does
+        // not probe sibling directories, so name the assembly explicitly.
+        let coreDllPath = Path.Combine(Path.GetDirectoryName(dllPath), "Zest.Core.dll")
+        if File.Exists(coreDllPath) then
+            sb.AppendLine("#r @\"" + coreDllPath + "\"") |> ignore
         sb.AppendLine("open System") |> ignore
         sb.AppendLine("open System.Text.RegularExpressions") |> ignore
         sb.AppendLine("open System.Collections.Generic") |> ignore
@@ -232,6 +237,10 @@ module ScriptRunner =
         let dllPath = ScriptDiscovery.getIsolatedDslDll ()
         let sb = Text.StringBuilder(1024)
         sb.AppendLine("#r @\"" + dllPath + "\"") |> ignore
+        // Zest.Core backs the DSL's slug/date/text helpers; FSI needs it named.
+        let coreDllPath = Path.Combine(Path.GetDirectoryName(dllPath), "Zest.Core.dll")
+        if File.Exists(coreDllPath) then
+            sb.AppendLine("#r @\"" + coreDllPath + "\"") |> ignore
         sb.AppendLine("open System") |> ignore
         sb.AppendLine("open System.Text.RegularExpressions") |> ignore
         sb.AppendLine("open System.Collections.Generic") |> ignore

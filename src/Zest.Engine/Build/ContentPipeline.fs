@@ -17,11 +17,10 @@ open Zest.Engine.Scripting
 module ContentPipeline =
 
     /// Extensions processed by the content pipeline.
-    /// Excludes .html — HTML is handled separately (native-mode Nunjucks preprocessing).
+    /// Excludes .html — HTML is handled separately (native-mode Zealucks preprocessing).
     let private processableExts =
-        [ FileExtensions.ZestScript; FileExtensions.Nunjucks; FileExtensions.Liquid
-          FileExtensions.Handlebars; FileExtensions.Mustache; FileExtensions.WebC
-          FileExtensions.Haml; FileExtensions.Pug; FileExtensions.FSharpScript
+        [ FileExtensions.ZestScript; FileExtensions.Zealucks; FileExtensions.WebC
+          FileExtensions.FSharpScript
           FileExtensions.Markdown; FileExtensions.MarkdownLong ]
 
     /// Process all content files: discover, evaluate, and write output.
@@ -60,16 +59,15 @@ module ContentPipeline =
 
         progress.TotalFiles <- allFiles.Length
 
-        // ── .html files: native-mode Nunjucks preprocessing ──
-        // In native mode, HTML files are routed through the Nunjucks compat
+        // ── .html files: native-mode Zealucks preprocessing ──
+        // In native mode, HTML files are routed through the Zealucks compat
         // layer so `{{ }}` / `{% %}` syntax resolves against the full page +
-        // site context (like .njk content). Plain HTML without template
+        // site context (like .zlk content). Plain HTML without template
         // syntax is copied verbatim.
         if Directory.Exists contentDir then
             let htmlFiles = Directory.GetFiles(contentDir, "*.html", SearchOption.AllDirectories)
                             |> Array.filter (fun f -> not (PathResolver.isExcludedWithConfig contentDir config f))
             if htmlFiles.Length > 0 then
-                let engineCfg = { Engine = "nunjucks"; EnableCache = true; Extension = FileExtensions.Nunjucks; Filters = [] }
                 // Snapshot globalData for thread-safe iteration inside Parallel.ForEach.
                 // Dictionary<K,V>.GetEnumerator is not safe for concurrent enumeration
                 // (can corrupt internal state even for read-only access across threads).
@@ -81,43 +79,40 @@ module ContentPipeline =
                     if destDir <> null then Directory.CreateDirectory(destDir) |> ignore
                     let content = File.ReadAllText(htmlFile)
                     if content.Contains("{{") || content.Contains("{%") then
-                        match TemplateManager.getOrCreateEngine "nunjucks" engineCfg with
-                        | Some engine ->
-                            // Build the full page + site context so HTML can
-                            // reference {{ page.title }}, {{ site.* }}, pages, etc.
-                            let pairs = ResizeArray<string * obj>()
-                            for (key, value) in gdSnapshot do pairs.Add(key, value)
-                            pairs.Add("site.title", box config.Title)
-                            pairs.Add("site.description", box config.Description)
-                            pairs.Add("site.base_url", box config.BaseUrl)
-                            pairs.Add("site.author", box config.Author)
-                            pairs.Add("site.language", box config.Language)
-                            // Extract page meta (title/slug from frontmatter if present)
-                            try
-                                let meta = ScriptEvaluator.extractMetaWithText htmlFile config content
-                                match meta with
-                                | Some m ->
-                                    let title =
-                                        if String.IsNullOrEmpty m.Title then Path.GetFileNameWithoutExtension htmlFile
-                                        else m.Title
-                                    pairs.Add("page.title", box title)
-                                    // Surface the page's Data dictionary (which holds
-                                    // description + all frontmatter extras) as page.* keys.
-                                    for kv in m.Data do pairs.Add("page." + kv.Key, box kv.Value)
-                                | None -> ()
-                            with _ -> ()
-                            pairs.Add("pages", box (PageQuery.getPagesForNunjucks () |> Array.map box))
-                            pairs.Add("tags", box (PageQuery.getTagsForNunjucks ()))
-                            pairs.Add("collections", box (PageQuery.getCollectionsForNunjucks ()))
-                            let ctx = TemplateManager.buildNestedContext pairs
-                            match engine.Render content ctx with
-                            | Ok rendered ->
-                                // Atomic replace so the preview server's open
-                                // read handle is never invalidated mid-stream.
-                                AtomicFile.write destPath (System.Text.Encoding.UTF8.GetBytes rendered)
-                            | Error _ ->
-                                AtomicFile.write destPath (System.Text.Encoding.UTF8.GetBytes content)
-                        | None ->
+                        let engine = TemplateManager.getEngine ()
+                        // Build the full page + site context so HTML can
+                        // reference {{ page.title }}, {{ site.* }}, pages, etc.
+                        let pairs = ResizeArray<string * obj>()
+                        for (key, value) in gdSnapshot do pairs.Add(key, value)
+                        pairs.Add("site.title", box config.Title)
+                        pairs.Add("site.description", box config.Description)
+                        pairs.Add("site.base_url", box config.BaseUrl)
+                        pairs.Add("site.author", box config.Author)
+                        pairs.Add("site.language", box config.Language)
+                        // Extract page meta (title/slug from frontmatter if present)
+                        try
+                            let meta = ScriptEvaluator.extractMetaWithText htmlFile config content
+                            match meta with
+                            | Some m ->
+                                let title =
+                                    if String.IsNullOrEmpty m.Title then Path.GetFileNameWithoutExtension htmlFile
+                                    else m.Title
+                                pairs.Add("page.title", box title)
+                                // Surface the page's Data dictionary (which holds
+                                // description + all frontmatter extras) as page.* keys.
+                                for kv in m.Data do pairs.Add("page." + kv.Key, box kv.Value)
+                            | None -> ()
+                        with _ -> ()
+                        pairs.Add("pages", box (PageQuery.getPagesForZealucks () |> Array.map box))
+                        pairs.Add("tags", box (PageQuery.getTagsForZealucks ()))
+                        pairs.Add("collections", box (PageQuery.getCollectionsForZealucks ()))
+                        let ctx = TemplateManager.buildNestedContext pairs
+                        match engine.Render content ctx with
+                        | Ok rendered ->
+                            // Atomic replace so the preview server's open
+                            // read handle is never invalidated mid-stream.
+                            AtomicFile.write destPath (System.Text.Encoding.UTF8.GetBytes rendered)
+                        | Error _ ->
                             AtomicFile.write destPath (System.Text.Encoding.UTF8.GetBytes content)
                     else
                         AtomicFile.write destPath (System.Text.Encoding.UTF8.GetBytes content)

@@ -112,7 +112,6 @@ public static class ConfigLoader
             var logLevel             = FromSiteStr("log_level", TomlReader.GetString(model, "log_level", config.LogLevel));
             var logToFile            = FromSiteBool("log_to_file", TomlReader.GetBool  (model, "log_to_file", config.LogToFile));
             var logTimestamps        = FromSiteBool("log_timestamps", TomlReader.GetBool  (model, "log_timestamps", config.LogTimestamps));
-            var templateEngine       = TomlReader.GetString(model, "template_engine", config.TemplateEngine);
 
             // ── Parse [compat] table: SSG-specific behavior flags ──
             // Example:
@@ -131,26 +130,21 @@ public static class ConfigLoader
                 compatEleventy = TomlReader.GetBool(compatTbl, "eleventy", compatEleventy);
             }
 
-            // ── Parse [template] table: engine + nunjucks compatibility mode ──
-            // Example:
+            // ── Parse [template] table: Zealucks compatibility mode ──
+            // Zest ships one template engine (Zealucks), so the only knob left
+            // is how strictly it mirrors Nunjucks. Example:
             //   [template]
-            //   engine = "native"
-            //   [template.nunjucks]
+            //   [template.zealucks]
             //   compatibility = "zest"   # "strict" | "zest"
-            //
-            // [template].engine overrides the top-level `template_engine` key
-            // when present, so users can group template config in one table.
-            var nunjucksCompat = config.NunjucksCompatibility;
+            var zealucksCompat = config.ZealucksCompatibility;
             if (model.TryGetValue("template", out var tplObj) && tplObj is Tomlyn.Model.TomlTable tplTbl)
             {
-                var tplEngine = TomlReader.GetString(tplTbl, "engine", templateEngine);
-                if (!string.IsNullOrEmpty(tplEngine)) templateEngine = tplEngine;
-                // Flat form: template.nunjucks_compatibility = "zest"
-                nunjucksCompat = TomlReader.GetString(tplTbl, "nunjucks_compatibility", nunjucksCompat);
-                // Nested form: [template.nunjucks] compatibility = "zest"
-                if (tplTbl.TryGetValue("nunjucks", out var njObj) && njObj is Tomlyn.Model.TomlTable njTbl)
+                // Flat form: template.zealucks_compatibility = "zest"
+                zealucksCompat = TomlReader.GetString(tplTbl, "zealucks_compatibility", zealucksCompat);
+                // Nested form: [template.zealucks] compatibility = "zest"
+                if (tplTbl.TryGetValue("zealucks", out var zlObj) && zlObj is Tomlyn.Model.TomlTable zlTbl)
                 {
-                    nunjucksCompat = TomlReader.GetString(njTbl, "compatibility", nunjucksCompat);
+                    zealucksCompat = TomlReader.GetString(zlTbl, "compatibility", zealucksCompat);
                 }
             }
 
@@ -231,7 +225,7 @@ public static class ConfigLoader
             //   label = "GitHub"; url = "..."
             // Exposed to templates as `site.params.*` (see BuildEngine injection).
             // Nested tables become nested dictionaries; arrays stay arrays so
-            // Nunjucks can iterate them directly.
+            // Zealucks can iterate them directly.
             var paramsDict = new Dictionary<string, object>();
             if (model.TryGetValue("params", out var paramsObj) && paramsObj is TomlTable paramsTbl)
             {
@@ -323,12 +317,11 @@ public static class ConfigLoader
                 logLevel: logLevel,
                 logToFile: logToFile,
                 logTimestamps: logTimestamps,
-                templateEngine: templateEngine,
                 compatJekyll: compatJekyll,
                 compatHexo: compatHexo,
                 compatHugo: compatHugo,
                 compatEleventy: compatEleventy,
-                nunjucksCompatibility: nunjucksCompat,
+                zealucksCompatibility: zealucksCompat,
                 theme: themeConfig,
                 include: includeList,
                 exclude: excludeList,
@@ -348,7 +341,7 @@ public static class ConfigLoader
 
     /// <summary>
     /// Recursively convert Tomlyn container values to plain .NET types so the
-    /// <c>[params]</c> table is directly iterable in Nunjucks and F# scripts.
+    /// <c>[params]</c> table is directly iterable in Zealucks and F# scripts.
     /// Mirrors <c>BuildData.tomlToNative</c> in the F# engine: TomlTable →
     /// Dictionary, TomlArray / TomlTableArray → array; scalars pass through.
     /// </summary>

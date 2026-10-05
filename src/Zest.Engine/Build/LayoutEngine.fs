@@ -15,8 +15,7 @@ module LayoutEngine =
 
     let private allowedLayoutExts =
         set [ FileExtensions.Html; FileExtensions.HtmlLong
-              FileExtensions.Nunjucks; FileExtensions.Liquid
-              FileExtensions.Handlebars; FileExtensions.Mustache
+              FileExtensions.Zealucks
               FileExtensions.ZestScript; FileExtensions.FSharpScript ]
 
     /// Load every layout in a directory, keyed by its extension-stripped name.
@@ -89,7 +88,7 @@ module LayoutEngine =
 
     // ── Static compiled Regex ──────────────────────────────────────────
     // Include names may contain hyphens (e.g. `page-shell.html`); without the
-    // `-` class the tag falls through to Nunjucks and is misread as an
+    // `-` class the tag falls through to Zealucks and is misread as an
     // arithmetic expression (`include - page - shell`), rendering as 0.
     let private includePattern =
         Regex(@"\{\{\s*include\s+([\w\.\-]+)\s*\}\}", RegexOptions.Compiled)
@@ -203,110 +202,69 @@ module LayoutEngine =
                     | _ -> entry :: acc
         walk name 0 [] |> List.rev
 
-    /// Render one non-F# layout level: `.hbs`/`.mustache` layouts run on the
-    /// standalone Hbs engine (native Mustache/Handlebars semantics); everything
-    /// else runs on the Nunjucks compat layer with legacy placeholder support.
+    /// Render one non-F# layout level with the Zealucks engine, with legacy
+    /// `{{ page.title }}` placeholder support.
     let private renderNonFsx (name: string) (path: string) (layoutText: string)
                              (content: string) (replacements: IDictionary<string, string>)
                              (includes: IDictionary<string, string>)
                              (page: ContentPage) (config: SiteConfig)
                              (globalData: IDictionary<string, obj>) : string =
-        let isHbs =
-            path.EndsWith(FileExtensions.Handlebars, StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith(FileExtensions.Mustache, StringComparison.OrdinalIgnoreCase)
-        let engineName = if isHbs then "hbs" else "nunjucks"
-        let engine = TemplateManager.getOrCreateEngine engineName {
-            Engine = engineName
-            EnableCache = true
-            Extension = if isHbs then FileExtensions.Handlebars else FileExtensions.Nunjucks
-            Filters = []
-        }
-        match engine with
-        | Some e ->
-            // Hbs layouts load `{{> name}}` partials from the includes
-            // dictionary directly (no conversion step).
-            if isHbs then
-                match e with
-                | :? HbsEngine as h ->
-                    h.SetPartialLoader(fun name ->
-                        match includes.TryGetValue name with
-                        | true, src -> Some src
-                        | _ -> None)
-                | _ -> ()
-            let engineKey = e.GetHashCode().ToString()
-            if not isHbs && registeredLayoutEngines.TryAdd(engineKey, true) then
-                FilterRegistry.registerAllFilters e
+        let e = TemplateManager.getEngine ()
+        let engineKey = e.GetHashCode().ToString()
+        if registeredLayoutEngines.TryAdd(engineKey, true) then
+            FilterRegistry.registerAllFilters e
 
-            let pairs = ResizeArray<string * obj>()
-            for kv in replacements do pairs.Add(kv.Key, box kv.Value)
-            pairs.Add("content", box content)
-            pairs.Add("page.content", box content)
-            pairs.Add("page.url", box (replacements.TryGetValue "page.url" |> function true,v -> box v | _ -> box ""))
-            pairs.Add("page.date", box (replacements.TryGetValue "page.date" |> function true,v -> box v | _ -> box ""))
+        let pairs = ResizeArray<string * obj>()
+        for kv in replacements do pairs.Add(kv.Key, box kv.Value)
+        pairs.Add("content", box content)
+        pairs.Add("page.content", box content)
+        pairs.Add("page.url", box (replacements.TryGetValue "page.url" |> function true,v -> box v | _ -> box ""))
+        pairs.Add("page.date", box (replacements.TryGetValue "page.date" |> function true,v -> box v | _ -> box ""))
 
-            // Pass tags as array directly — avoid join/split roundtrip
-            match replacements.TryGetValue "page.tags" with
-            | true, tagsStr when not (String.IsNullOrEmpty tagsStr) ->
-                pairs.Add("page.tags", box (tagsStr.Split(',') |> Array.map (fun t -> t.Trim())))
-            | _ -> pairs.Add("page.tags", box [||])
+        // Pass tags as array directly — avoid join/split roundtrip
+        match replacements.TryGetValue "page.tags" with
+        | true, tagsStr when not (String.IsNullOrEmpty tagsStr) ->
+            pairs.Add("page.tags", box (tagsStr.Split(',') |> Array.map (fun t -> t.Trim())))
+        | _ -> pairs.Add("page.tags", box [||])
 
-            // Categories and updated date carry native values for the same
-            // reason as tags: layouts iterate categories and format updated.
-            pairs.Add("page.categories", box (page.Categories |> Array.ofList))
-            pairs.Add("page.updated",
-                box (page.Updated |> Option.map (fun d -> d.ToString("yyyy-MM-dd")) |> Option.defaultValue ""))
-            pairs.Add("page.categories_csv", box (String.Join(", ", page.Categories)))
+        // Categories and updated date carry native values for the same
+        // reason as tags: layouts iterate categories and format updated.
+        pairs.Add("page.categories", box (page.Categories |> Array.ofList))
+        pairs.Add("page.updated",
+            box (page.Updated |> Option.map (fun d -> d.ToString("yyyy-MM-dd")) |> Option.defaultValue ""))
+        pairs.Add("page.categories_csv", box (String.Join(", ", page.Categories)))
 
-            // Use HashSet for O(1) lookup when adding includes — avoid O(n*m) Seq.exists
-            let addedKeys = HashSet<string>(pairs |> Seq.map fst)
-            for kv in includes do
-                if addedKeys.Add(kv.Key) then
-                    pairs.Add(kv.Key, box kv.Value)
+        // Use HashSet for O(1) lookup when adding includes — avoid O(n*m) Seq.exists
+        let addedKeys = HashSet<string>(pairs |> Seq.map fst)
+        for kv in includes do
+            if addedKeys.Add(kv.Key) then
+                pairs.Add(kv.Key, box kv.Value)
 
-            // Replacements from buildReplacements flatten all globalData
-            // values to strings via ToString(), which destroys nested
-            // structure (arrays / dicts become "System.Object[]"). Re-add
-            // them here as their native objects so Nunjucks can traverse
-            // dotted keys and iterate arrays. Duplicate keys are harmless
-            // because buildNestedContext overwrites with the last value.
-            for kv in globalData do
-                pairs.Add("site." + kv.Key, kv.Value)
-            // Expose raw global data keys (e.g. pjaxScript) for
-            // direct template access without site. prefix.
-            for kv in globalData do
-                pairs.Add(kv.Key, kv.Value)
+        // Replacements from buildReplacements flatten all globalData
+        // values to strings via ToString(), which destroys nested
+        // structure (arrays / dicts become "System.Object[]"). Re-add
+        // them here as their native objects so Zealucks can traverse
+        // dotted keys and iterate arrays. Duplicate keys are harmless
+        // because buildNestedContext overwrites with the last value.
+        for kv in globalData do
+            pairs.Add("site." + kv.Key, kv.Value)
+        // Expose raw global data keys (e.g. pjaxScript) for
+        // direct template access without site. prefix.
+        for kv in globalData do
+            pairs.Add(kv.Key, kv.Value)
 
-            pairs.Add("pages", box (PageQuery.getPagesForNunjucks () |> Array.map box))
-            pairs.Add("tags", box (PageQuery.getTagsForNunjucks ()))
-            pairs.Add("collections", box (PageQuery.getCollectionsForNunjucks ()))
-            let ctx = TemplateManager.buildNestedContext pairs
-            // Process legacy `{{ include name }}` partials BEFORE
-            // handing the merged text to Nunjucks so that includes
-            // work in native (Nunjucks) mode.
-            let layoutText' = applyLayoutCached path layoutText includes
-            // `.liquid` layouts run through the converter to Nunjucks
-            // syntax first (assign/unless/case/filter args), matching
-            // how ScriptEvaluator renders `.liquid` content pages.
-            let renderedText =
-                if path.EndsWith(FileExtensions.Liquid, StringComparison.OrdinalIgnoreCase) then
-                    LiquidConverter.convert layoutText'
-                else layoutText'
-            match e.Render renderedText ctx with
-            | Ok html -> html
-            | Error err ->
-                eprintfn "[Zest] Nunjucks error in layout '%s': %O" name err
-                sprintf "<!-- Template error: %O -->" err
-        | None ->
-            let withIncludes = applyLayoutCached path layoutText includes
-            let ctx = Dictionary<string, string>()
-            for kv in replacements do ctx.[kv.Key] <- kv.Value
-            ctx.["content"]      <- content
-            ctx.["page.content"] <- content
-            placeholderPattern.Replace(withIncludes, fun (m: Match) ->
-                let key = m.Groups.[1].Value.ToLowerInvariant()
-                match ctx.TryGetValue key with
-                | true, v -> v
-                | _ -> m.Value)
+        pairs.Add("pages", box (PageQuery.getPagesForZealucks () |> Array.map box))
+        pairs.Add("tags", box (PageQuery.getTagsForZealucks ()))
+        pairs.Add("collections", box (PageQuery.getCollectionsForZealucks ()))
+        let ctx = TemplateManager.buildNestedContext pairs
+        // Process legacy `{{ include name }}` partials BEFORE
+        // handing the merged text to Zealucks so that includes work.
+        let layoutText' = applyLayoutCached path layoutText includes
+        match e.Render layoutText' ctx with
+        | Ok html -> html
+        | Error err ->
+            eprintfn "[Zest] Zealucks error in layout '%s': %O" name err
+            sprintf "<!-- Template error: %O -->" err
 
     let rec internal applyLayout (name: string) (content: string) (layouts: Map<string, string * string>)
                                 (replacements: IDictionary<string, string>) (includes: IDictionary<string, string>)
@@ -317,11 +275,9 @@ module LayoutEngine =
             // Layouts are routed purely by file extension:
             //   `.zest.fsx`/`.fsx` → F# layout, evaluated by FSI (`content`/`page`/`site`
             //                        are injected as top-level bindings, see ScriptRunner).
-            //   everything else    → Nunjucks compat layer, so `{{ }}` / `{% %}` syntax
+            //   everything else    → Zealucks, so `{{ }}` / `{% %}` syntax
             //                        (incl. legacy `{{ page.title }}` placeholders) works.
-            // The `template_engine` config field is a PURE ANNOTATION for the primary
-            // template language (native → .zest.fsx, nunjucks → .njk, liquid → .liquid, ...)
-            // and does not affect routing.
+            // Routing never consults a config field: the extension alone decides.
             let mutable current = content
             for (lname, lpath, isFsx) in chain do
                 let (_, ltext) = layouts.[lname]

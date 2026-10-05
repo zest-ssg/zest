@@ -7,20 +7,20 @@ open System.IO
 open Zest.Engine
 
 // ============================================================
-// TemplateManager — Unified template engine entry point
+// TemplateManager — Zealucks template engine entry point
 // ============================================================
-// Handles engine selection, template caching, error reporting.
+// Zest ships exactly one template language: Zealucks, the Nunjucks-compatible
+// engine that renders `.zlk` files. Because there is no engine choice left,
+// this module owns a single shared engine instance instead of a registry, plus
+// the bare-name search directories behind {% include %} / {% extends %}.
 // ============================================================
 
-/// Configuration for the template engine.
+/// Configuration for the Zealucks template engine.
 type TemplateConfig = {
-    /// Pure annotation: the site's primary template language
-    /// ("native" → .zest.fsx, "nunjucks", "liquid", ...). Does NOT affect
-    /// routing — layouts are routed by file extension (see LayoutEngine).
-    Engine: string
     /// Whether to cache parsed templates in memory.
     EnableCache: bool
-    /// Template file extension (e.g. ".html", ".njk").
+    /// Template file extension. Always `.zlk`; kept so call sites that
+    /// describe a template source stay self-documenting.
     Extension: string
     /// Optional custom filters to register.
     Filters: (string * FilterFn) list
@@ -28,20 +28,16 @@ type TemplateConfig = {
 
 module TemplateManager =
 
-    let private engines = ConcurrentDictionary<string, ITemplateEngine>()
-    let private cache = ConcurrentDictionary<string, struct(DateTime * string)>()
-
     let private defaultConfig: TemplateConfig = {
-        Engine = "native"
         EnableCache = true
-        Extension = FileExtensions.Html
+        Extension = FileExtensions.Zealucks
         Filters = []
     }
 
-    /// Additional directories searched by the Nunjucks file loader after the
+    /// Additional directories searched by the Zealucks file loader after the
     /// working directory, most importantly the project's includes directory.
-    /// The native `{% include %}` / `{% extends %}` tags resolve bare names
-    /// ("head.njk") against these paths so templates do not need relative
+    /// The `{% include %}` / `{% extends %}` tags resolve bare names
+    /// ("head.zlk") against these paths so templates do not need relative
     /// paths that leak the on-disk layout.
     let private templateSearchDirs = ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase)
 
@@ -54,93 +50,44 @@ module TemplateManager =
     /// Drop every registered search directory. Called between sites/builds.
     let clearTemplateSearchDirs () = templateSearchDirs.Clear()
 
-    /// Build an engine instance for the given engine type name.
-    let private createEngineInstance (engineType: string) (config: TemplateConfig) : ITemplateEngine option =
-        match engineType with
-        | "nunjucks" | "njk" ->
-            let engine = NunjucksEngine()
-            // Resolve includes/extends against registered directories (e.g.
-            // _includes) before falling back to the working-directory path
-            // produced by TemplateUtils.resolveWithinRoot.
-            engine.SetLoadFile(fun path ->
-                let loaded =
-                    seq {
-                        yield path
-                        let fileName = Path.GetFileName path
-                        for dir in templateSearchDirs.Values do
-                            yield Path.Combine(dir, fileName)
-                    }
-                    |> Seq.tryFind File.Exists
-                match loaded with
-                | Some f ->
-                    try Ok(File.ReadAllText f)
-                    with ex -> Error ex.Message
-                | None -> Error(sprintf "Template not found: %s" path))
-            for (fnName, fn) in config.Filters do
-                (engine :> ITemplateEngine).RegisterFilter fnName fn
-            Some (engine :> ITemplateEngine)
-        | "hbs" | "handlebars" | "mustache" ->
-            let engine = HbsEngine()
-            Some (engine :> ITemplateEngine)
-        | _ ->
-            None
+    /// Build the Zealucks engine and wire its file loader to the search
+    /// directories registered above.
+    let private createEngine (config: TemplateConfig) : ITemplateEngine =
+        let engine = ZealucksEngine()
+        // Resolve includes/extends against registered directories (e.g.
+        // _includes) before falling back to the working-directory path
+        // produced by TemplateUtils.resolveWithinRoot.
+        engine.SetLoadFile(fun path ->
+            let loaded =
+                seq {
+                    yield path
+                    let fileName = Path.GetFileName path
+                    for dir in templateSearchDirs.Values do
+                        yield Path.Combine(dir, fileName)
+                }
+                |> Seq.tryFind File.Exists
+            match loaded with
+            | Some f ->
+                try Ok(File.ReadAllText f)
+                with ex -> Error ex.Message
+            | None -> Error(sprintf "Template not found: %s" path))
+        for (fnName, fn) in config.Filters do
+            (engine :> ITemplateEngine).RegisterFilter fnName fn
+        engine :> ITemplateEngine
 
-    /// Initialize a template engine by name.
-    let initEngine (name: string) (config: TemplateConfig) : ITemplateEngine option =
-        match createEngineInstance name config with
-        | Some engine ->
-            engines.[name] <- engine
-            Some engine
-        | None ->
-            None
+    /// The shared Zealucks engine. Construction is deferred because build
+    /// setup registers the search directories after this module is loaded.
+    let private sharedEngine = lazy createEngine defaultConfig
 
-    /// Get a registered engine by name.
-    let getEngine (name: string) : ITemplateEngine option =
-        match engines.TryGetValue name with
-        | true, e -> Some e
-        | _ -> None
+    /// <summary>Get the shared Zealucks engine.</summary>
+    /// <returns>The process-wide engine instance. Callers must not dispose it.</returns>
+    let getEngine () : ITemplateEngine = sharedEngine.Value
 
-    /// Get or create an engine.
-    let getOrCreateEngine (name: string) (config: TemplateConfig) : ITemplateEngine option =
-        match engines.TryGetValue name with
-        | true, e -> Some e
-        | _ ->
-            match createEngineInstance config.Engine config with
-            | Some engine ->
-                engines.[name] <- engine
-                Some engine
-            | None ->
-                None
-
-    /// Render a template with the given engine.
-    let render (engine: string) (templateText: string) (variables: IDictionary<string, obj>) : Result<string, TemplateError> =
-        match engines.TryGetValue engine with
-        | true, e -> e.Render templateText variables
-        | _ -> Error(TemplateError.RuntimeError(sprintf "Engine '%s' not initialized" engine, 0))
-
-    /// Render a template file with caching.
-    let renderFile (engine: string) (filePath: string) (variables: IDictionary<string, obj>) : Result<string, TemplateError> =
-        match engines.TryGetValue engine with
-        | true, e -> e.RenderFile filePath variables
-        | _ -> Error(TemplateError.RuntimeError(sprintf "Engine '%s' not initialized" engine, 0))
-
-    /// Clear all engine caches (and the converter result cache).
-    let clearCaches () =
-        for kv in engines do
-            kv.Value.ClearCache()
-        cache.Clear()
-        TemplateUtils.clearConversionCache ()
-
-    /// Check if an engine is available.
-    let isEngineAvailable (name: string) : bool =
-        engines.ContainsKey name
-
-    /// Get list of available engines.
-    let listEngines () : string list =
-        engines.Keys |> Seq.toList
+    /// Clear every engine-owned cache (parsed templates, tokens, file cache).
+    let clearCaches () = sharedEngine.Value.ClearCache()
 
     /// Convert flat key-value pairs (e.g. "site.title" → "Zest SSG")
-    /// into a nested dictionary for Nunjucks engine resolution.
+    /// into a nested dictionary for Zealucks engine resolution.
     /// "site.title" becomes { "site": { "title": "Zest SSG" } },
     /// while "content" stays as { "content": "..." }.
     let buildNestedContext (pairs: (string * obj) seq) : IDictionary<string, obj> =
@@ -162,8 +109,3 @@ module TemplateManager =
                         current <- sub
                 current.[parts.[parts.Length - 1]] <- value
         root :> IDictionary<string, obj>
-
-    /// Register standard Zest filters on a Nunjucks engine.
-    /// Now a no-op; filter registration is handled by Scripting.FilterRegistry.
-    let registerZestFilters (_engine: ITemplateEngine) (_getPages: unit -> IDictionary<string, obj>[]) =
-        ()

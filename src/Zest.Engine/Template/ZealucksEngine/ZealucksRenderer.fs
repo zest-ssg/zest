@@ -3,13 +3,13 @@ namespace Zest.Engine.Template
 open System
 open System.Collections.Generic
 open System.Text
-open NunjucksTypes
-open NunjucksTokenizer
-open NunjucksEvaluator
-open NunjucksBlocks
-open NunjucksCompiler
+open ZealucksTypes
+open ZealucksTokenizer
+open ZealucksEvaluator
+open ZealucksBlocks
+open ZealucksCompiler
 
-// NunjucksRenderer.fs
+// ZealucksRenderer.fs
 //
 // Walks a Token array and emits rendered HTML. Implements control-flow tags
 // (if/for/set/block/extends/include/macro/call/import/from/filter/with) and
@@ -18,7 +18,7 @@ open NunjucksCompiler
 // Invariant: the recursive core works on a Token[] (O(1) indexing, single
 // conversion per render). The list wrapper keeps the public signature unchanged.
 
-module internal NunjucksRenderer =
+module internal ZealucksRenderer =
 
     // ── RenderEnv ──────────────────────────────────────────
     type RenderEnv = {
@@ -208,7 +208,7 @@ module internal NunjucksRenderer =
                         else
                             match item with
                             // A single loop variable over a dictionary binds the
-                            // key, matching Nunjucks dictionary iteration.
+                            // key, matching Zealucks dictionary iteration.
                             | :? KeyValuePair<string, obj> as kvp -> ctx.[loopVar] <- box kvp.Key
                             | :? System.Collections.DictionaryEntry as de -> ctx.[loopVar] <- de.Key
                             | _ -> ctx.[loopVar] <- item
@@ -485,7 +485,7 @@ module internal NunjucksRenderer =
                 | "now" | "endblock" | "endfor" | "endif" | "endmacro" | "endcall" | "endraw" | "endfilter" | "endwith" ->
                     ()  // closing tags are handled by findMatchingEnd
 
-                | _ -> ()  // unknown tag — silently ignore (Nunjucks behavior)
+                | _ -> ()  // unknown tag — silently ignore (Zealucks behavior)
 
                 idx <- if isBlock && endIdx > idx then endIdx + 1 else idx + 1
 

@@ -5,15 +5,15 @@ open System.Collections.Concurrent
 open System.Collections.Generic
 open System.IO
 
-// NunjucksEntry.fs
+// ZealucksEntry.fs
 //
-// Public Nunjucks engine entry point. Implements ITemplateEngine by delegating
+// Public Zealucks engine entry point. Implements ITemplateEngine by delegating
 // to the tokenizer, evaluator, block collector, and renderer modules.
 //
 // Invariant: the public type name and namespace stay stable so TemplateManager
 // and the build pipeline keep working without changes.
 
-type NunjucksEngine() =
+type ZealucksEngine() =
 
     let templateCache = ConcurrentDictionary<string, struct(DateTime * string)>()
     let mutable loadFileFn: string -> Result<string, string> = fun path ->
@@ -24,13 +24,13 @@ type NunjucksEngine() =
     member _.SetLoadFile(fn: string -> Result<string, string>) = loadFileFn <- fn
 
     interface ITemplateEngine with
-        member _.Name = "nunjucks"
+        member _.Name = "Zealucks"
 
         member _.Render(templateText: string) (variables: IDictionary<string, obj>) : Result<string, TemplateError> =
             let lastLine = ref 0
             try
-                let tokens = NunjucksTokenizer.tokenize templateText
-                let env: NunjucksRenderer.RenderEnv = {
+                let tokens = ZealucksTokenizer.tokenize templateText
+                let env: ZealucksRenderer.RenderEnv = {
                     Variables = variables
                     LoadTemplate = fun (path, depth) ->
                         if depth > 10 then Error("Circular include/extends detected")
@@ -41,7 +41,7 @@ type NunjucksEngine() =
                     ChildBlocks = dict [] :> IDictionary<_, _>
                     BlockStack = []
                     Depth = 0
-                    Macros = Dictionary<string, ((string * string option) list * NunjucksTypes.Token list)>()
+                    Macros = Dictionary<string, ((string * string option) list * ZealucksTypes.Token list)>()
                     Blocks = dict [] :> IDictionary<_, _>
                     CurrentBlock = None
                     CallerBody = None
@@ -49,7 +49,7 @@ type NunjucksEngine() =
                     LastLine = lastLine
                     ControlFlow = ref ""
                 }
-                match NunjucksRenderer.renderTokens tokens env with
+                match ZealucksRenderer.renderTokens tokens env with
                 | Ok s -> Ok s
                 | Error msg -> Error(TemplateError.RuntimeError(msg, !lastLine))
             with ex -> Error(TemplateError.RuntimeError(ex.Message, !lastLine))
@@ -68,10 +68,10 @@ type NunjucksEngine() =
                | ex -> Error(TemplateError.RuntimeError(ex.Message, 0))
 
         member _.RegisterFilter(name: string) (fn: FilterFn) =
-            NunjucksEvaluator.customFilters.[name] <- fn
+            ZealucksEvaluator.customFilters.[name] <- fn
 
         member _.RegisterTag(handler: TagHandler) = ()
 
         member _.ClearCache() =
             templateCache.Clear()
-            NunjucksTokenizer.tokenCache.Clear()
+            ZealucksTokenizer.tokenCache.Clear()

@@ -1,14 +1,14 @@
 namespace Zest.Engine.Template
 
-// NunjucksTypes.fs
+// ZealucksTypes.fs
 //
-// Foundation types shared by every Nunjucks engine module.
+// Foundation types shared by every Zealucks engine module.
 // Token is the tokenizer output consumed by the block collector and renderer;
 // SafeString marks a value that must bypass HTML auto-escaping.
 //
 // Invariant: both types are immutable and carry no render state.
 
-module internal NunjucksTypes =
+module internal ZealucksTypes =
 
     // ── Safe string wrapper (bypasses auto-escaping) ──
     type SafeString(s: string) =

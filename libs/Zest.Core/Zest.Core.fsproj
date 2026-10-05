@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <AssemblyName>Zest.Core</AssemblyName>
+    <RootNamespace>Zest.Core</RootNamespace>
+  </PropertyGroup>
+
+  <!-- F# compiles top-down: a file may only reference symbols declared in
+       earlier files. The modules below are independent, so the order is
+       only a stable convention: slug → text → date. -->
+  <ItemGroup>
+    <Compile Include="SlugFormatter.fs" />
+    <Compile Include="TextMetrics.fs" />
+    <Compile Include="DateFormatter.fs" />
+  </ItemGroup>
+
+</Project>

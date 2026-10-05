@@ -7,19 +7,19 @@ open System.Globalization
 open System.Reflection
 open System.Text
 open System.Text.RegularExpressions
-open NunjucksTypes
-open NunjucksCompiler
+open ZealucksTypes
+open ZealucksCompiler
 
-// NunjucksEvaluator.fs
+// ZealucksEvaluator.fs
 //
-// Evaluates compiled Nunjucks expressions against a render context and
-// implements the standard Nunjucks/Jinja2 filter set. This module owns every
+// Evaluates compiled Zealucks expressions against a render context and
+// implements the standard Zealucks/Jinja2 filter set. This module owns every
 // runtime helper, the custom-filter registry, and the compiled-expression cache.
 //
 // Invariant: evaluation is side-effect free except for loop.changed bookkeeping
 // stored inside the per-iteration loop dictionary.
 
-module internal NunjucksEvaluator =
+module internal ZealucksEvaluator =
 
     // ── Custom filter registry (extensible by Zest engine) ──
     // ConcurrentDictionary: filter registration may race with rendering under
@@ -328,7 +328,7 @@ module internal NunjucksEvaluator =
 
         // Numeric filters
         // `int` parses via `float` first so decimal strings like "1.245"
-        // truncate to 1 instead of failing to 0. Matches Nunjucks `int`
+        // truncate to 1 instead of failing to 0. Matches Zealucks `int`
         // semantics (truncate toward zero).
         | "int" -> box(try int (float s) with _ -> 0)
         | "float" -> box(try float s with _ -> 0.0)

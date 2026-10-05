@@ -6,8 +6,8 @@ open System.IO
 open Zest.Engine
 open Zest.Engine.Parsing
 
-/// Collections API: page queries, global data, and Nunjucks helpers.
-/// Optimized with on-demand caching for Nunjucks data.
+/// Collections API: page queries, global data, and Zealucks helpers.
+/// Optimized with on-demand caching for Zealucks data.
 module PageQuery =
 
     let internal allPagesRef : ContentPage list ref = ref []
@@ -85,7 +85,7 @@ module PageQuery =
             p.Date.Value >= fromDt &&
             p.Date.Value <= toDt)
 
-    // ── Nunjucks data helpers ────────────────────────────────────────────
+    // ── Zealucks data helpers ────────────────────────────────────────────
 
     /// Read a page's rendered body for collection templates.
     ///
@@ -127,7 +127,7 @@ module PageQuery =
     let internal resetBodyCache () =
         lock renderedBodyLock (fun () -> renderedBodyCache.Clear())
 
-    let pageToNunjucksDict (p: ContentPage) : IDictionary<string, obj> =
+    let pageToZealucksDict (p: ContentPage) : IDictionary<string, obj> =
         let d = Dictionary<string, obj>()
         d.["url"]    <- box p.Url
         d.["title"]  <- box p.Title
@@ -152,40 +152,40 @@ module PageQuery =
         d.["templateContent"] <- box body
         d :> IDictionary<string, obj>
 
-    // ── Cached Nunjucks data — computed once per build pass ──────────────
+    // ── Cached Zealucks data — computed once per build pass ──────────────
 
-    let mutable private _cachedPagesForNunjucks : IDictionary<string, obj>[] option = None
-    let mutable private _cachedTagsForNunjucks : string[] option = None
-    let mutable private _cachedCollectionsForNunjucks : IDictionary<string, obj> option = None
+    let mutable private _cachedPagesForZealucks : IDictionary<string, obj>[] option = None
+    let mutable private _cachedTagsForZealucks : string[] option = None
+    let mutable private _cachedCollectionsForZealucks : IDictionary<string, obj> option = None
 
-    /// Reset cached Nunjucks data (call at build start).
-    let internal resetNunjucksCache () =
-        _cachedPagesForNunjucks <- None
-        _cachedTagsForNunjucks <- None
-        _cachedCollectionsForNunjucks <- None
+    /// Reset cached Zealucks data (call at build start).
+    let internal resetZealucksCache () =
+        _cachedPagesForZealucks <- None
+        _cachedTagsForZealucks <- None
+        _cachedCollectionsForZealucks <- None
         resetBodyCache ()
 
-    let getPagesForNunjucks () : IDictionary<string, obj>[] =
-        match _cachedPagesForNunjucks with
+    let getPagesForZealucks () : IDictionary<string, obj>[] =
+        match _cachedPagesForZealucks with
         | Some cached -> cached
         | None ->
-            let result = !allPagesRef |> List.map pageToNunjucksDict |> Array.ofList
-            _cachedPagesForNunjucks <- Some result
+            let result = !allPagesRef |> List.map pageToZealucksDict |> Array.ofList
+            _cachedPagesForZealucks <- Some result
             result
 
-    let getTagsForNunjucks () : string[] =
-        match _cachedTagsForNunjucks with
+    let getTagsForZealucks () : string[] =
+        match _cachedTagsForZealucks with
         | Some cached -> cached
         | None ->
             let result = !allPagesRef |> List.collect (fun p -> p.Tags) |> List.distinct |> List.sort |> Array.ofList
-            _cachedTagsForNunjucks <- Some result
+            _cachedTagsForZealucks <- Some result
             result
 
     /// Collection pages keyed by collection name, newest first — enables
     /// `{% for post in collections.posts %}` and prev/next pagination via
     /// the `prevPost` / `nextPost` filters.
-    let getCollectionsForNunjucks () : IDictionary<string, obj> =
-        match _cachedCollectionsForNunjucks with
+    let getCollectionsForZealucks () : IDictionary<string, obj> =
+        match _cachedCollectionsForZealucks with
         | Some cached -> cached
         | None ->
             let result = Dictionary<string, obj>()
@@ -196,7 +196,7 @@ module PageQuery =
                     // so pagination/listing navigate between actual posts only.
                     |> List.filter (fun p -> not (p.Url.Trim('/').Equals(name, StringComparison.OrdinalIgnoreCase)))
                     |> List.sortByDescending (fun p -> p.Date |> Option.defaultValue DateTime.MinValue)
-                    |> List.map pageToNunjucksDict
+                    |> List.map pageToZealucksDict
                     |> Array.ofList
                 result.[name] <- box pages
 
@@ -229,7 +229,7 @@ module PageQuery =
                         !allPagesRef
                         |> List.filter (fun p -> select p |> List.exists (fun t -> t.Equals(term, StringComparison.OrdinalIgnoreCase)))
                         |> List.sortByDescending (fun p -> p.Date |> Option.defaultValue DateTime.MinValue)
-                        |> List.map pageToNunjucksDict
+                        |> List.map pageToZealucksDict
                         |> Array.ofList
                     let entry = Dictionary<string, obj>()
                     entry.["name"] <- box term
@@ -244,5 +244,5 @@ module PageQuery =
             result.["tagList"]    <- box (taxonomyTable "tags" (getAllTags ()) (fun p -> p.Tags))
 
             let boxed = result :> IDictionary<string, obj>
-            _cachedCollectionsForNunjucks <- Some boxed
+            _cachedCollectionsForZealucks <- Some boxed
             boxed

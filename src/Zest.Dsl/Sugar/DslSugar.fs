@@ -325,7 +325,7 @@ module DslSugar =
     /// Usage: `pjax_script ()`
     ///
     /// Reuses Zest.Engine.Resources.ZestPjax.script (the single source of
-    /// truth also served to Nunjucks templates via `{{ pjaxScript | safe }}`),
+    /// truth also served to Zealucks templates via `{{ pjaxScript | safe }}`),
     /// so the DSL and template paths always ship the same script.
     let pjax_script () : string =
         Zest.Engine.Resources.ZestPjax.script

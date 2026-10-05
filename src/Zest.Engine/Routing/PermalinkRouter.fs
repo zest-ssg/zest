@@ -19,28 +19,13 @@ open System.Text.RegularExpressions
 /// URL slug and route computation.
 module PermalinkRouter =
 
-    /// Matches any character that is neither a word character nor a hyphen.
-    let private invalidCharsPat = Regex(@"[^\w\-]", RegexOptions.Compiled)
-
-    /// Matches runs of two or more hyphens.
-    let private multiDashPat = Regex(@"-{2,}", RegexOptions.Compiled)
-
     /// <summary>
-    /// Convert arbitrary text into a URL-safe slug.
-    /// Spaces and underscores become hyphens, invalid characters are removed,
-    /// hyphen runs collapse to one, and leading/trailing hyphens are trimmed.
+    /// Convert arbitrary text into a URL-safe slug. Delegates to
+    /// Zest.Core.SlugFormatter so the DSL and the router cannot drift apart.
     /// </summary>
     /// <param name="text">Raw text such as a page title or file name stem.</param>
     /// <returns>A lowercase slug, or an empty string for null or empty input.</returns>
-    let slugify (text: string) : string =
-        if String.IsNullOrEmpty text then ""
-        else
-            // Remove invalid characters before collapsing hyphens so punctuation
-            // sitting between two words cannot leave a doubled hyphen behind.
-            text.ToLowerInvariant().Replace(' ', '-').Replace('_', '-')
-            |> fun s -> invalidCharsPat.Replace(s, "")
-            |> fun s -> multiDashPat.Replace(s, "-")
-            |> fun s -> s.Trim('-')
+    let slugify (text: string) : string = Zest.Core.SlugFormatter.slugify text
 
     /// <summary>
     /// Parse an explicit permalink into its URL and output path.

@@ -77,27 +77,23 @@ module PaginationGenerator =
         pairs.Add("site.language", box config.Language)
         for kv in globalData do
             pairs.Add("site." + kv.Key, kv.Value)
-        pairs.Add("pages", box (PageQuery.getPagesForNunjucks () |> Array.map box))
-        pairs.Add("tags", box (PageQuery.getTagsForNunjucks ()))
-        pairs.Add("collections", box (PageQuery.getCollectionsForNunjucks ()))
+        pairs.Add("pages", box (PageQuery.getPagesForZealucks () |> Array.map box))
+        pairs.Add("tags", box (PageQuery.getTagsForZealucks ()))
+        pairs.Add("collections", box (PageQuery.getCollectionsForZealucks ()))
         pairs.Add("collection", box collection)
         pairs.Add("pagination", box pagination)
         TemplateManager.buildNestedContext pairs
 
-    /// Render a fragment template to inner HTML via the Nunjucks engine.
+    /// Render a fragment template to inner HTML via the Zealucks engine.
     let private renderFragment (templateBody: string)
                                (ctx: IDictionary<string, obj>) : string =
-        match TemplateManager.getOrCreateEngine "nunjucks"
-                  { Engine = "nunjucks"; EnableCache = true
-                    Extension = FileExtensions.Nunjucks; Filters = [] } with
-        | Some engine ->
-            FilterRegistry.registerAllFilters engine |> ignore
-            match engine.Render templateBody ctx with
-            | Ok html -> html
-            | Error err ->
-                eprintfn "[Zest] Pagination template error: %O" err
-                templateBody
-        | None -> templateBody
+        let engine = TemplateManager.getEngine ()
+        FilterRegistry.registerAllFilters engine |> ignore
+        match engine.Render templateBody ctx with
+        | Ok html -> html
+        | Error err ->
+            eprintfn "[Zest] Pagination template error: %O" err
+            templateBody
 
     /// Apply the layout chain to all generated pages in ONE batched FSI pass
     /// and write the results. Pagination pages share the same F# layout, so
@@ -157,7 +153,7 @@ module PaginationGenerator =
         pages
         |> List.skip skipCount
         |> List.truncate perPage
-        |> List.map PageQuery.pageToNunjucksDict
+        |> List.map PageQuery.pageToZealucksDict
         |> Array.ofList
 
     /// Generate all pagination pages for a single opt-in index file.
@@ -268,9 +264,8 @@ module PaginationGenerator =
             for filePath in Directory.EnumerateFiles(contentDir, "*.*", SearchOption.AllDirectories) do
                 let ext = Path.GetExtension(filePath).ToLowerInvariant()
                 let processable =
-                    [ FileExtensions.Nunjucks; FileExtensions.Liquid; FileExtensions.Handlebars
-                      FileExtensions.Mustache; FileExtensions.WebC; FileExtensions.Haml
-                      FileExtensions.Pug; FileExtensions.Markdown; FileExtensions.MarkdownLong ]
+                    [ FileExtensions.Zealucks; FileExtensions.WebC
+                      FileExtensions.Markdown; FileExtensions.MarkdownLong ]
                     |> List.exists ((=) ext)
                 if processable && not (PathResolver.isExcludedWithConfig contentDir config filePath) then
                     try
@@ -282,7 +277,7 @@ module PaginationGenerator =
                                 let d = Path.GetDirectoryName(relPath)
                                 if String.IsNullOrEmpty d then "" else d.Replace('\\', '/')
                             let collection, perPage = parseDirective m.Groups.[1].Value dirFallback perPageDefault
-                            // A root index file (content/index.njk) without an
+                            // A root index file (content/index.zlk) without an
                             // explicit collection paginates the site root; the
                             // directive may also name a collection explicitly.
                             let effectiveCollection =

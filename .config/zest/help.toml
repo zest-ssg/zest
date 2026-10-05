@@ -1,0 +1,7 @@
+# ─── Zest CLI Help Text ───────────────────────────────
+# Copy shown under the command list in `zest --help`.
+# Embedded as the manifest resource `zest.help.toml` and read by
+# Zest.App.CommandLine.HelpRenderer, which merges it with meta.toml.
+
+[suffix]
+help_message = "Run 'zest <command> --help' for command-specific options."

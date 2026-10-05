@@ -4,16 +4,16 @@ open System
 open System.Collections.Concurrent
 open System.IO
 open System.Text
-open NunjucksTypes
+open ZealucksTypes
 
-// NunjucksTokenizer.fs
+// ZealucksTokenizer.fs
 //
 // Turns raw template text into a Token list in a single pass.
 // Caches tokens per file by last-write time so repeated renders skip scanning.
 //
 // Invariant: tokenCache keys are absolute, normalized paths.
 
-module internal NunjucksTokenizer =
+module internal ZealucksTokenizer =
 
     // ── Tokenizer (idempotent, cached) ─────────────────────
     // ConcurrentDictionary: many threads may populate the cache for the same

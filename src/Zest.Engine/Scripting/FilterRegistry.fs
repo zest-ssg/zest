@@ -6,7 +6,7 @@ open System.Text.RegularExpressions
 open Zest.Engine.Template
 open Zest.Engine.Resources
 
-/// Centralised Nunjucks custom filter registration for Zest.
+/// Centralised Zealucks custom filter registration for Zest.
 /// Used by both content rendering and layout rendering paths.
 module FilterRegistry =
 
@@ -16,9 +16,9 @@ module FilterRegistry =
     let private initFilters = Dictionary<string, string>()
 
     /// Whether to register Zest extension filters (pages_by_tag, recent,
-    /// by_collection, search). When `NunjucksCompatibility = "strict"`,
-    /// these are skipped so only official-Nunjucks-compatible filters
-    /// remain available. User-declared init filters are always registered.
+    /// by_collection, search). When `ZealucksCompatibility = "strict"`,
+    /// these are skipped so only the Nunjucks-compatible filter set
+    /// remains available. User-declared init filters are always registered.
     let private strictMode = ref false
 
     /// Set the init-script-declared filter specs. Called once per build
@@ -34,27 +34,10 @@ module FilterRegistry =
             if not (initFilters.ContainsKey kv.Key) then
                 initFilters.[kv.Key] <- kv.Value
 
-    /// Toggle strict Nunjucks compatibility mode. When true, Zest-specific
+    /// Toggle strict Zealucks compatibility mode. When true, Zest-specific
     /// extension filters are not registered on engine instances.
     let setStrictMode (enabled: bool) = strictMode := enabled
 
-    /// Strip HTML tags plus fenced and inline code blocks. Both the word-count
-    /// and reading-time filters count prose only, so code samples never inflate
-    /// either statistic.
-    let private stripProse (text: string) : string =
-        Regex(@"<pre[^>]*>[\s\S]*?<\/pre>").Replace(text, "")
-        |> fun s -> Regex(@"<code[^>]*>[\s\S]*?<\/code>").Replace(s, "")
-        |> fun s -> Regex(@"<[^>]+>").Replace(s, " ")
-        |> fun s -> s.Trim()
-
-    /// Count CJK ideographs plus Latin/digit word groups in HTML prose.
-    /// Each Hanzi counts as one word; English words are whitespace-free
-    /// letter/digit runs, matching the site's 11ty implementation.
-    let private countWords (text: string) : int =
-        let stripped = stripProse text
-        let cjkChars = Regex(@"[一-鿿㐀-䶿]").Matches(stripped).Count
-        let latinWords = Regex(@"[a-zA-Z0-9]+").Matches(stripped).Count
-        cjkChars + latinWords
 
     /// Read the taxonomy term-to-slug alias map injected by BuildData. The
     /// map lives at global key `params.taxonomy`; missing or malformed data
@@ -118,9 +101,9 @@ module FilterRegistry =
     /// Register all Zest-specific filters on the given template engine,
     /// including any init-script-declared filters.
     ///
-    /// In strict Nunjucks mode (setStrictMode true), the Zest extension
+    /// In strict mode (setStrictMode true), the Zest extension
     /// filters (pages_by_tag / recent / by_collection / search) are skipped
-    /// so templates behave like official Nunjucks. Init-declared filters
+    /// so templates behave like stock Nunjucks. Init-declared filters
     /// are always registered because they are user-owned, not Zest builtins.
     let registerAllFilters (engine: ITemplateEngine) =
         // ── Zest extension filters (skipped in strict mode) ──
@@ -131,7 +114,7 @@ module FilterRegistry =
             // rewriting. Both names share the same filter body.
             let pagesByTag (value: obj) (args: string list) =
                 let tag = if args.Length > 0 then args.[0] else ""
-                let pages = PageQuery.getPagesForNunjucks ()
+                let pages = PageQuery.getPagesForZealucks ()
                 pages
                 |> Array.filter (fun p ->
                     match p.TryGetValue "tags" with
@@ -145,7 +128,7 @@ module FilterRegistry =
             // ── recent: get N most recent pages ────────────────
             engine.RegisterFilter "recent" (fun value args ->
                 let n = if args.Length > 0 then (try int args.[0] with _ -> 5) else 5
-                PageQuery.getPagesForNunjucks ()
+                PageQuery.getPagesForZealucks ()
                 |> Array.filter (fun p ->
                     match p.TryGetValue "date" with
                     | true, (:? string as d) -> d <> ""
@@ -164,7 +147,7 @@ module FilterRegistry =
                 let excludeIndex =
                     args.Length > 1 &&
                     (match args.[1].Trim().ToLowerInvariant() with "true" | "yes" | "1" -> true | _ -> false)
-                PageQuery.getPagesForNunjucks ()
+                PageQuery.getPagesForZealucks ()
                 |> Array.filter (fun p ->
                     match p.TryGetValue "url" with
                     | true, (:? string as u) ->
@@ -178,7 +161,7 @@ module FilterRegistry =
             // ── search: simple full-text search across pages ───
             engine.RegisterFilter "search" (fun value args ->
                 let query = if args.Length > 0 then args.[0].ToLowerInvariant() else ""
-                let pages = PageQuery.getPagesForNunjucks ()
+                let pages = PageQuery.getPagesForZealucks ()
                 if query = "" then pages |> Array.map (fun d -> d :> obj) |> box
                 else
                     pages
@@ -191,9 +174,9 @@ module FilterRegistry =
                             | _ -> false))
                     |> Array.map (fun d -> d :> obj) |> box)
 
-        // ── where: generic attribute filter (Liquid-style, also in 11ty) ──
-        // Kept available even in strict mode because Liquid and 11ty users
-        // expect `where` to work.
+        // ── where: generic attribute filter (also available in 11ty) ──
+        // Kept available even in strict mode because 11ty users expect
+        // `where` to work.
         engine.RegisterFilter "where" (fun value args ->
             let key = if args.Length > 0 then args.[0] else ""
             let expected = if args.Length > 1 then args.[1] else ""
@@ -212,7 +195,7 @@ module FilterRegistry =
             | _ -> value)
 
         // ── init-script-declared filters (from _init.zest.fsx) ──
-        // Each spec is a Nunjucks filter pipeline applied via a mini-render.
+        // Each spec is a Zealucks filter pipeline applied via a mini-render.
         // Always registered — these are user-owned, not Zest builtins.
         for kv in initFilters do
             let spec = kv.Value
@@ -220,23 +203,15 @@ module FilterRegistry =
             engine.RegisterFilter name (fun value _args -> applyPipeline engine spec value)
 
         // ── readingTime: estimate reading time in minutes ──────
-        // Chinese: ~350 chars/min, English: ~220 words/min.
-        // Strips HTML tags and code blocks before counting.
         engine.RegisterFilter "readingTime" (fun value _args ->
             if isNull value then box 1
-            else
-                let text = value.ToString()
-                let stripped = stripProse text
-                let chineseChars = Regex(@"[一-鿿㐀-䶿]").Matches(stripped).Count
-                let englishWords = Regex(@"[a-zA-Z0-9]+").Matches(stripped).Count
-                let minutes = Math.Max(1, Math.Ceiling(float chineseChars / 350. + float englishWords / 220.) |> int)
-                box minutes)
+            else box (Zest.Core.TextMetrics.readingMinutes (value.ToString())))
 
         // ── wordCount: count CJK chars plus English words ──────
         // Usage: {{ post.templateContent | wordCount }}
         engine.RegisterFilter "wordCount" (fun value _args ->
             if isNull value then box 0
-            else box (countWords (value.ToString())))
+            else box (Zest.Core.TextMetrics.countWords (value.ToString())))
 
         // ── year: current calendar year for copyright lines ────
         engine.RegisterFilter "year" (fun _value _args -> box DateTime.Now.Year)
@@ -272,7 +247,7 @@ module FilterRegistry =
             | _ -> box Array.empty<obj>)
 
         // ── groupByYear: group page dicts by publication year, newest first ──
-        // Returns an array of { year, posts } dictionaries so Nunjucks can
+        // Returns an array of { year, posts } dictionaries so Zealucks can
         // iterate `{% for group in posts | groupByYear %}` without object keys.
         engine.RegisterFilter "groupByYear" (fun value _args ->
             let pageYear (d: IDictionary<string, obj>) : int =
@@ -410,7 +385,7 @@ module FilterRegistry =
                 match value with
                 | :? System.Collections.IEnumerable as ie ->
                     ie |> Seq.cast<obj> |> Array.ofSeq
-                | _ -> PageQuery.getPagesForNunjucks () |> Array.map box
+                | _ -> PageQuery.getPagesForZealucks () |> Array.map box
             let index =
                 pages
                 |> Array.choose (fun p ->
@@ -440,111 +415,3 @@ module FilterRegistry =
         engine.RegisterFilter "pjaxScript" (fun _value _args ->
             box ZestPjax.script)
 
-        // ── Liquid standard filters ─────────────────────────────
-        // Registered on the Nunjucks engine so `.liquid` content converted by
-        // LiquidConverter resolves every filter it emits. Names follow Liquid
-        // semantics (e.g. `size` counts a string's chars, `capitalize` folds
-        // the tail to lowercase); where Nunjucks already has an equivalent
-        // filter the Liquid name is kept as a thin alias.
-        let toStr (v: obj) = if isNull v then "" else v.ToString()
-        let asEnum (v: obj) =
-            match v with
-            | :? System.Collections.IEnumerable as ie when not (v :? string) -> Some (ie |> Seq.cast<obj> |> Array.ofSeq)
-            | _ -> None
-        let tryNum (s: string) = match Double.TryParse s with true, n -> Some n | _ -> None
-
-        engine.RegisterFilter "downcase" (fun v _ -> box ((toStr v).ToLowerInvariant()))
-        engine.RegisterFilter "upcase"   (fun v _ -> box ((toStr v).ToUpperInvariant()))
-        engine.RegisterFilter "capitalize" (fun v _ ->
-            let s = toStr v
-            if s.Length = 0 then box s
-            else box (s.[0..0].ToUpperInvariant() + s.[1..].ToLowerInvariant()))
-        engine.RegisterFilter "size" (fun v _ ->
-            match v with
-            | :? string as s -> box s.Length
-            | :? System.Collections.ICollection as c -> box c.Count
-            | :? System.Collections.IEnumerable as ie -> box (ie |> Seq.cast<obj> |> Seq.length)
-            | _ -> box 0)
-        engine.RegisterFilter "uniq" (fun v _ ->
-            match asEnum v with
-            | Some a -> box (a |> Array.distinctBy toStr)
-            | None -> v)
-        engine.RegisterFilter "concat" (fun v args ->
-            match asEnum v, (if args.Length > 0 then asEnum args.[0] else None) with
-            | Some a, Some b -> box (Array.append a b)
-            | _ -> v)
-        engine.RegisterFilter "strip_html" (fun v _ -> box (Regex(@"<[^>]+>").Replace(toStr v, "")))
-        engine.RegisterFilter "newline_to_br" (fun v _ -> box ((toStr v).Replace("\r\n", "\n").Replace("\n", "<br />")))
-        engine.RegisterFilter "integer" (fun v _ ->
-            match Double.TryParse (toStr v) with true, n -> box (int n) | _ -> box 0)
-        engine.RegisterFilter "json" (fun v _ -> box (System.Text.Json.JsonSerializer.Serialize v))
-        engine.RegisterFilter "url_encode" (fun v _ -> box (Uri.EscapeDataString (toStr v)))
-        engine.RegisterFilter "url_decode" (fun v _ ->
-            try box (Uri.UnescapeDataString (toStr v)) with _ -> box (toStr v))
-        engine.RegisterFilter "split" (fun v args ->
-            let sep = if args.Length > 0 then args.[0] else " "
-            box ((toStr v).Split([|sep|], StringSplitOptions.None)))
-        engine.RegisterFilter "truncatewords" (fun v args ->
-            let n = if args.Length > 0 then (try int args.[0] with _ -> 15) else 15
-            let words = (toStr v).Split([|' ';'\n';'\t';'\r'|], StringSplitOptions.RemoveEmptyEntries)
-            if words.Length <= n then box (toStr v)
-            else box (String.Join(" ", words.[0..n-1]) + "…"))
-        engine.RegisterFilter "strip_newlines" (fun v _ -> box ((toStr v).Replace("\r", "").Replace("\n", "")))
-        engine.RegisterFilter "replace_first" (fun v args ->
-            if args.Length < 2 then v
-            else
-                let s = toStr v
-                let idx = s.IndexOf(args.[0], StringComparison.Ordinal)
-                box (if idx < 0 then s else s.Substring(0, idx) + args.[1] + s.Substring(idx + args.[0].Length)))
-        engine.RegisterFilter "remove" (fun v args ->
-            if args.Length < 1 then v
-            else box ((toStr v).Replace(args.[0], "")))
-        engine.RegisterFilter "remove_first" (fun v args ->
-            if args.Length < 1 then v
-            else
-                let s = toStr v
-                let idx = s.IndexOf(args.[0], StringComparison.Ordinal)
-                box (if idx < 0 then s else s.Remove(idx, args.[0].Length)))
-        engine.RegisterFilter "compact" (fun v _ ->
-            match asEnum v with
-            | Some a -> box (a |> Array.filter (fun x -> not (isNull x) && toStr x <> ""))
-            | None -> v)
-        engine.RegisterFilter "ceil" (fun v _ -> box (Math.Ceiling (match tryNum (toStr v) with Some n -> n | None -> 0.0)))
-        engine.RegisterFilter "floor" (fun v _ -> box (Math.Floor (match tryNum (toStr v) with Some n -> n | None -> 0.0)))
-        engine.RegisterFilter "at_least" (fun v args ->
-            let b = if args.Length > 0 then (match tryNum args.[0] with Some n -> n | None -> 0.0) else 0.0
-            let a = match tryNum (toStr v) with Some n -> n | None -> 0.0
-            box (Math.Max(a, b)))
-        engine.RegisterFilter "at_most" (fun v args ->
-            let b = if args.Length > 0 then (match tryNum args.[0] with Some n -> n | None -> 0.0) else 0.0
-            let a = match tryNum (toStr v) with Some n -> n | None -> 0.0
-            box (Math.Min(a, b)))
-        engine.RegisterFilter "sort_natural" (fun v _ ->
-            match asEnum v with
-            | Some a -> box (a |> Array.sortBy (fun x -> (toStr x).ToLowerInvariant()))
-            | None -> v)
-        engine.RegisterFilter "take" (fun v args ->
-            let offset = if args.Length > 0 then (try int args.[0] with _ -> 0) else 0
-            let count = if args.Length > 1 then Some (try int args.[1] with _ -> 0) else None
-            match v with
-            | :? string as s ->
-                let start = min offset s.Length
-                match count with
-                | Some c -> box (if c <= 0 then "" else s.Substring(start, min c (s.Length - start)))
-                | None -> box (s.Substring(start))
-            | _ ->
-                match asEnum v with
-                | Some a ->
-                    let start = min offset a.Length
-                    match count with
-                    | Some c when c > 0 -> box (a.[start..min (start + c - 1) (a.Length - 1)])
-                    | _ -> box (a.[start..])
-                | None -> v)
-        engine.RegisterFilter "contains" (fun v args ->
-            let needle = if args.Length > 0 then args.[0] else ""
-            match v with
-            | :? string as s -> box (s.Contains(needle, StringComparison.OrdinalIgnoreCase))
-            | _ ->
-                match asEnum v with
-                | Some a -> box (a |> Array.exists (fun x -> (toStr x).Equals(needle, StringComparison.OrdinalIgnoreCase)))
-                | None -> box false)

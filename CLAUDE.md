@@ -92,7 +92,7 @@ Every non-trivial file must state its responsibility, dependencies, and any non-
 ```fsharp
 // TemplateRenderer.fs
 //
-// Compiles Nunjucks templates and caches parsed results in memory.
+// Compiles Zealucks templates and caches parsed results in memory.
 // Caching prevents redundant disk reads on every page render.
 //
 // Invariant: cache keys are absolute, normalized paths.
@@ -116,7 +116,7 @@ Cover:
 /// Returns an empty string for invalid paths so a single
 /// broken template cannot fail the whole build pipeline.
 /// </summary>
-/// <param name="templatePath">Absolute, normalized path to the .njk file.</param>
+/// <param name="templatePath">Absolute, normalized path to the .zlk file.</param>
 /// <param name="context">Data bag used for variable interpolation.</param>
 /// <returns>The rendered output, or an empty string on path failure.</returns>
 let renderTemplate templatePath context = ...
@@ -127,7 +127,7 @@ Private members do not require XML documentation. Add a comment only when the co
 ### 3.3 Inline Comments: Explain *Why*, Never *What*
 - ✅ `// Offset by 1 to match the 1-based page numbers shown in the UI.`
 - ❌ `// Add 1.`
-- ✅ `// HACK: nunjucks caches by relative path; keying on absolute path survives cwd changes.`
+- ✅ `// HACK: Zealucks caches by relative path; keying on absolute path survives cwd changes.`
 - ❌ `// Loop through templates.`
 
 Rule of thumb: if the comment restates the code, delete it.

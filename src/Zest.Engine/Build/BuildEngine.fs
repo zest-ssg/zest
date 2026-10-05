@@ -40,7 +40,7 @@ module BuildEngine =
             progress.Phase <- BuildPhase.Initializing
 
             ScriptRunner.resetSession()
-            ScriptEvaluator.resetNunjucksCache()
+            ScriptEvaluator.resetZealucksCache()
 
             // ── Surface active compatibility / template modes ──
             // Helps users verify that [compat] / [template] flags took effect.
@@ -51,12 +51,12 @@ module BuildEngine =
                   if config.CompatEleventy then "eleventy" ]
             if not (List.isEmpty compatFlags) then
                 eprintfn "[Zest] Compat mode active: %s" (String.concat ", " compatFlags)
-            // Strict Nunjucks mode disables Zest extension filters so only
-            // official-Nunjucks-compatible filters remain available.
-            let isStrict = config.NunjucksCompatibility = "strict"
+            // Strict mode disables Zest extension filters so only the
+            // Nunjucks-compatible filter set remains available.
+            let isStrict = config.ZealucksCompatibility = "strict"
             FilterRegistry.setStrictMode isStrict
             if isStrict then
-                eprintfn "[Zest] Nunjucks strict mode — Zest extension filters disabled."
+                eprintfn "[Zest] Zealucks strict mode — Zest extension filters disabled."
 
             let root       = Directory.GetCurrentDirectory()
             let contentDir = resolveEffectiveContentDir root config
@@ -65,9 +65,9 @@ module BuildEngine =
             let dataDir    = resolvePath root config.DataDir
             let includesDir = resolvePath root config.IncludesDir
 
-            // Native Nunjucks `{% include %}` uses bare filenames; register
+            // Native Zealucks `{% include %}` uses bare filenames; register
             // both project and theme include directories on the loader so
-            // "head.njk" resolves without leaking absolute paths in templates.
+            // "head.zlk" resolves without leaking absolute paths in templates.
             TemplateManager.clearTemplateSearchDirs ()
             TemplateManager.addTemplateSearchDir includesDir
             match ThemeResolver.resolve root config.Theme with
@@ -181,7 +181,7 @@ module BuildEngine =
             // _data/params.toml < _config.toml [params] (highest). Deep-merge
             // so nested tables (e.g. [params.colors]) replace only the keys
             // they specify, not the entire sub-table. Both the whole `params`
-            // object and flat `params.<key>` entries are set so Nunjucks can
+            // object and flat `params.<key>` entries are set so Zealucks can
             // resolve `site.params` as an object and `site.params.colors.accent`
             // via property traversal.
             let rec deepMergeParams (src: IDictionary<string, obj>) (dst: Dictionary<string, obj>) =

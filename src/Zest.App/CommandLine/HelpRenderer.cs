@@ -7,20 +7,30 @@ namespace Zest.App.CommandLine;
 
 /// <summary>
 /// Reads CLI metadata (branding, version, and the help footer) from the
-/// bundled <c>zest.toml</c> resource and provides static access to it.
+/// bundled <c>.config/zest/</c> resources and provides static access to it.
+/// The configuration is split by concern — <c>meta.toml</c> carries identity
+/// and branding, <c>help.toml</c> carries user-facing copy — and the two are
+/// merged into one table at load time.
+/// </summary>
 ///
 /// <para><b>Resolution order:</b></para>
 /// <list type="number">
-///   <item><c>zest.toml</c> embedded as a manifest resource (used by the
-///     installed <c>dotnet tool</c> — works with no file on disk).</item>
-///   <item><c>zest.toml</c> on disk next to the executable (dev builds).</item>
-///   <item><c>zest.toml</c> found by walking up to the repo root (local dev).</item>
+///   <item><c>zest.meta.toml</c> and <c>zest.help.toml</c> embedded as manifest
+///     resources (used by the installed <c>dotnet tool</c> — works with no file
+///     on disk).</item>
+///   <item>The same two files under <c>.config/zest/</c>, found by walking up to
+///     the repository root (local dev).</item>
 ///   <item>Hard-coded minimal defaults (last resort).</item>
 /// </list>
 /// Loaded once at first access via <see cref="Lazy{T}"/>.
-/// </summary>
 internal static class HelpRenderer
 {
+    /// Manifest resource names produced by the EmbeddedResource items in the csproj.
+    private static readonly string[] ResourceNames = { "zest.meta.toml", "zest.help.toml" };
+
+    /// File names looked up under <c>.config/zest/</c> when no resource is embedded.
+    private static readonly string[] FileNames = { "meta.toml", "help.toml" };
+
     private static readonly Lazy<TomlTable> _config = new(() => LoadConfig());
 
     private static TomlTable Config => _config.Value;
@@ -29,66 +39,107 @@ internal static class HelpRenderer
 
     private static TomlTable LoadConfig()
     {
-        // 1) Embedded resource — always available in the packed tool.
+        // 1) Embedded resources — always available in the packed tool.
         var embedded = TryReadEmbeddedConfig();
         if (embedded is not null)
             return embedded;
 
-        // 2) File on disk (dev builds: next to exe, or walked up to repo root).
-        var path = ResolveConfigPath();
-        if (File.Exists(path))
-        {
-            try { return Toml.ToModel(File.ReadAllText(path, Encoding.UTF8)); }
-            catch { /* fall through to defaults */ }
-        }
+        // 2) Files on disk (local dev).
+        var onDisk = TryReadDirectoryConfig(ResolveConfigDirectory());
+        if (onDisk is not null)
+            return onDisk;
 
         // 3) Hard-coded minimal defaults.
         return CreateDefaultTable();
     }
 
     /// <summary>
-    /// Read the zest.toml content compiled in as the <c>zest.toml</c>
-    /// manifest resource. Returns null if the resource is absent (e.g.
-    /// running from a loose dev build without the EmbeddedResource item).
+    /// Parse and merge every embedded CLI config resource. Returns null when
+    /// the resources are absent (e.g. running from a loose dev build without
+    /// the EmbeddedResource items).
     /// </summary>
     private static TomlTable? TryReadEmbeddedConfig()
     {
         var asm = Assembly.GetExecutingAssembly();
-        // LogicalName="zest.toml" in the .csproj maps to this resource name.
-        using var stream = asm.GetManifestResourceStream("zest.toml");
-        if (stream is null) return null;
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-        try { return Toml.ToModel(reader.ReadToEnd()); }
-        catch { return null; }
+        TomlTable? merged = null;
+        foreach (var name in ResourceNames)
+        {
+            using var stream = asm.GetManifestResourceStream(name);
+            if (stream is null) continue;
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            try
+            {
+                var table = Toml.ToModel(reader.ReadToEnd());
+                merged = Merge(merged, table);
+            }
+            catch { /* skip a malformed fragment, keep the rest */ }
+        }
+        return merged;
+    }
+
+    /// <summary>
+    /// Parse and merge every CLI config file in <paramref name="dir"/>.
+    /// Returns null when the directory holds no readable config.
+    /// </summary>
+    private static TomlTable? TryReadDirectoryConfig(string? dir)
+    {
+        if (dir is null || !Directory.Exists(dir)) return null;
+        TomlTable? merged = null;
+        foreach (var name in FileNames)
+        {
+            var path = Path.Combine(dir, name);
+            if (!File.Exists(path)) continue;
+            try
+            {
+                var table = Toml.ToModel(File.ReadAllText(path, Encoding.UTF8));
+                merged = Merge(merged, table);
+            }
+            catch { /* skip a malformed fragment, keep the rest */ }
+        }
+        return merged;
+    }
+
+    /// <summary>
+    /// Merge <paramref name="source"/> into <paramref name="target"/>. Later
+    /// files win on a key collision, which keeps help.toml able to override
+    /// branding without editing meta.toml.
+    /// </summary>
+    private static TomlTable Merge(TomlTable? target, TomlTable source)
+    {
+        var result = target ?? new TomlTable();
+        foreach (var kv in source)
+            result[kv.Key] = kv.Value;
+        return result;
     }
 
     // ── Path resolution (dev fallback) ─────────────────────
 
-    private static string ResolveConfigPath()
+    /// <summary>
+    /// Locate <c>.config/zest</c>: next to the executable first, then by
+    /// walking up towards the repository root. Returns null when absent.
+    /// </summary>
+    private static string? ResolveConfigDirectory()
     {
-        // Dev build: next to the executable
         var exeDir = AppContext.BaseDirectory;
-        var local = Path.Combine(exeDir, "zest.toml");
-        if (File.Exists(local))
+        var local = Path.Combine(exeDir, ".config", "zest");
+        if (Directory.Exists(local))
             return local;
 
-        // Development: walk up from bin/<Config>/<TFM>/<RID>/ to find the
-        // repo root containing zest.toml. Robust against RID subfolders
-        // (e.g. win-x64) and framework version changes (net10.0 → net8.0).
+        // Walk up from bin/<Config>/<TFM>/<RID>/ to the repo root. Robust
+        // against RID subfolders (e.g. win-x64) and framework version changes.
         var dir = exeDir;
         for (var i = 0; i < 8; i++)
         {
             dir = Path.GetFullPath(Path.Combine(dir, ".."));
-            var candidate = Path.Combine(dir, "zest.toml");
-            if (File.Exists(candidate))
+            var candidate = Path.Combine(dir, ".config", "zest");
+            if (Directory.Exists(candidate))
                 return candidate;
             // Stop at the drive root to avoid infinite loops.
             if (Path.GetPathRoot(dir) == dir)
                 break;
         }
 
-        // Fallback: assume the original 5-up guess (may not exist).
-        return Path.GetFullPath(Path.Combine(exeDir, "..", "..", "..", "..", "..", "zest.toml"));
+        return null;
     }
 
     private static TomlTable CreateDefaultTable()
@@ -98,7 +149,7 @@ internal static class HelpRenderer
         {
             ["version"] = "0.0.0",
             ["header"] = "Zest v{0} — Zealous Efficient Static Toolkit",
-            ["ecosystem"] = "Ecosystem: .zest.fsx + .zcss"
+            ["ecosystem"] = "Ecosystem: .zlk + .zest.fsx + .zcss"
         };
         t["meta"] = meta;
         return t;
@@ -124,11 +175,10 @@ internal static class HelpRenderer
     private static string Get(string section, string key)
     {
         // Use TryGetValue instead of the indexer so a missing section
-        // (e.g. when zest.toml is partial or absent) yields an empty
+        // (e.g. when a config fragment is absent) yields an empty
         // string rather than throwing KeyNotFoundException.
         if (!Config.TryGetValue(section, out var sectionObj) || sectionObj is not TomlTable table)
             return "";
         return table.TryGetValue(key, out var v) ? v?.ToString()?.Trim() ?? "" : "";
     }
 }
-
