@@ -5,34 +5,34 @@
   <!-- F# compiles top-down: a file may only reference symbols declared in
        earlier files, so the list below is ordered by dependency. -->
   <ItemGroup>
-    <!-- Core: build context, the foundational DSL primitives, and sugar -->
-    <Compile Include="Core/ZestContext.fs" />
-    <Compile Include="Core/Dsl.fs" />
-    <Compile Include="Core/DslSugar.fs" />
-    <Compile Include="Core/ContentGuard.fs" />
+    <!-- Dsl: build context, the foundational DSL primitives, and sugar -->
+    <Compile Include="Dsl/Context.fs" />
+    <Compile Include="Dsl/Dsl.fs" />
+    <Compile Include="Dsl/DslSugar.fs" />
+    <Compile Include="Dsl/ContentGuard.fs" />
 
-    <!-- Utility: generic string/date/sequence/config helpers -->
-    <Compile Include="Utility/StringHelper.fs" />
-    <Compile Include="Utility/DateHelper.fs" />
-    <Compile Include="Utility/SequenceHelper.fs" />
-    <Compile Include="Utility/DslHelpers.fs" />
+    <!-- Primitives: generic string/date/sequence/value helpers -->
+    <Compile Include="Primitives/Text.fs" />
+    <Compile Include="Primitives/Dates.fs" />
+    <Compile Include="Primitives/Sequences.fs" />
+    <Compile Include="Primitives/Values.fs" />
 
-    <!-- Style: the ZCSS DSL, validation, scoping, and the inline style API -->
-    <Compile Include="Style/DslCss.fs" />
-    <Compile Include="Style/CssValidator.fs" />
-    <Compile Include="Style/CssScoper.fs" />
-    <Compile Include="Style/DslStyle.fs" />
+    <!-- Css: the ZCSS stylesheet DSL, validation, scoping, and the inline style API -->
+    <Compile Include="Css/Stylesheet.fs" />
+    <Compile Include="Css/Validator.fs" />
+    <Compile Include="Css/Scoper.fs" />
+    <Compile Include="Css/InlineStyle.fs" />
 
-    <!-- Html: high-level component builders (CompoundBuilder opens DslSugar) -->
-    <Compile Include="Html/DslComponents.fs" />
-    <Compile Include="Html/CompoundBuilder.fs" />
+    <!-- Component: high-level component builders (Compound opens DslSugar) -->
+    <Compile Include="Component/Components.fs" />
+    <Compile Include="Component/Compound.fs" />
 
-    <!-- Data: page query and collection APIs -->
-    <Compile Include="Data/DslCollections.fs" />
+    <!-- Query: page query and collection APIs -->
+    <Compile Include="Query/Collections.fs" />
 
     <!-- Metadata: SEO tags and RSS/Atom/Sitemap feeds -->
-    <Compile Include="Metadata/DslSeo.fs" />
-    <Compile Include="Metadata/DslXml.fs" />
+    <Compile Include="Metadata/Seo.fs" />
+    <Compile Include="Metadata/Feeds.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Tomlyn" Version="0.17.0" />
@@ -46,7 +46,7 @@
   </ItemGroup>
   <ItemGroup>
     <!-- Needed so the DSL can expose a native `md` helper that renders
-         Markdown to HTML (Zest.Compiler.Html.MarkdownEngine.toHtml). The FSI
+         Markdown to HTML (Zest.Compiler.Html.Markdown.toHtml). The FSI
          isolation copies only Zest.Markup.dll, so Zest.Compiler.dll resolves from
          the app base directory at runtime — no second FSharp.Core is loaded. -->
     <ProjectReference Include="..\Zest.Compiler\Zest.Compiler.fsproj" />

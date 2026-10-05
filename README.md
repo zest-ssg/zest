@@ -37,7 +37,7 @@
 
 - **F# everywhere.** Pages can be written as ordinary F# programs using a type-safe HTML DSL — loops, conditionals, functions, and data, with no template-language workarounds. Markdown remains available whenever prose is preferable to code.
 
-- **No lock-in.** Zest ships exactly one template language — **Zealucks** (`.zlk`), which is syntax-compatible with Nunjucks — and one script layer, `.zest.fsx`. Output is plain, static HTML that can be hosted anywhere.
+- **No lock-in.** Zest ships exactly one template language — **Zealucks** (`.zlk`, and `.njk` for Nunjucks files), which is syntax-compatible with Nunjucks — and one script layer, `.zest.fsx`. Output is plain, static HTML that can be hosted anywhere.
 
 - **Quiet by default.** The bundled starter ships with no animation, no shadows, and no hover theatrics — typography and whitespace carry the page.
 
@@ -199,17 +199,18 @@ Templates read it as `{{ site.socials }}`.
 
 Zest has exactly two authoring formats:
 
-| Format       | Purpose                                                             |
-|--------------|---------------------------------------------------------------------|
-| `.zlk`       | **Zealucks** templates — Nunjucks-compatible syntax for markup.      |
-| `.zest.fsx`  | F# scripts — data loading, logic, and complex computation.           |
+| Format          | Purpose                                                             |
+|-----------------|---------------------------------------------------------------------|
+| `.zlk` / `.njk` | **Zealucks** templates — Nunjucks-compatible syntax for markup.      |
+| `.zest.fsx`     | F# scripts — data loading, logic, and complex computation.           |
 
 Zealucks is Zest's own brand for its Nunjucks-compatible engine. It speaks the
 same syntax — variables, filters, `if` / `for`, inheritance, `block`, `include`,
-and macros — so existing Nunjucks templates work unchanged.
+and macros — so existing Nunjucks templates work unchanged. `.njk` files are
+accepted as-is: the engine does not distinguish the two extensions.
 
-Layouts and partials are `.zlk` files (plain HTML works too: `.html` files are
-run through Zealucks when they contain `{{ }}` / `{% %}` syntax).
+Layouts and partials are `.zlk` or `.njk` files (plain HTML works too: `.html`
+files are run through Zealucks when they contain `{{ }}` / `{% %}` syntax).
 
 ```html
 <!DOCTYPE html>
@@ -231,17 +232,26 @@ run through Zealucks when they contain `{{ }}` / `{% %}` syntax).
 
 Supported Zealucks constructs include `{{ include }}`, `{{ content }}`, `{% if %}` / `{% for %}`, `{% assign %}`, filters (`| t`, `| date`, `| readingTime`), and i18n strings from `_locales/*.toml`.
 
-### Migrating from `.njk`
+### Nunjucks compatibility (`.njk`)
 
-Zealucks is a rename, not a rewrite. If your site used `.njk` templates:
+Zealucks is a rename, not a rewrite, and it accepts Nunjucks file names as
+well. `.zlk` and `.njk` are the same language — same engine, same syntax, no
+translation step — so an existing Nunjucks template can be dropped in as is.
 
-1. Rename every template file: `layout.njk` → `layout.zlk`.
-2. Update any `{% include %}` / `{% extends %}` / `{{ include }}` references
-   that spell out the old extension.
-3. Remove the `template_engine` key (and the `[template] engine` key) from
-   `_config.toml`; there is no engine selection any more.
+| Position            | `.zlk`      | `.njk`      | Meaning                        |
+|---------------------|-------------|-------------|--------------------------------|
+| `_layouts/`         | yes         | yes         | Layout, resolved by stem name. |
+| `_includes/`        | yes         | yes         | Partial referenced bare.       |
+| `content/`          | yes         | yes         | Becomes a routed page.         |
+| References to it    | `layout.zlk`| `layout.njk`| Both spellings work.           |
 
-Template syntax needs no changes.
+References may omit the extension entirely: `{% include "head" %}` and
+`{% extends "base" %}` resolve against `_includes/` then `_layouts/`, trying
+`.zlk` before `.njk`. When both exist, `.zlk` wins.
+
+To migrate an older Zest site, remove the `template_engine` key (and the
+`[template] engine` key) from `_config.toml` — there is no engine selection any
+more. Renaming `.njk` to `.zlk` is optional.
 
 ---
 
@@ -315,12 +325,30 @@ Anything not listed — `[[taxonomies]]`, `[menu.*]`, `[[defaults]]`,
 
 ### Source Layout
 
+Directories are named after the concern they hold, and in `Zest.Compiler` the
+directory name is also the namespace (last segment included). `Zest.Markup`
+keeps a single flat namespace — its subdirectories only organise files, because
+its module names are the public DSL surface page authors write against.
+
 ```
-src/Zest.App/            C#   Program, CommandLine/, Commands/, Configuration/, Services/, Starters/
-src/Zest.Compiler/       F#   Domain/ Style/ Content/ Template/ Html/ Scripting/
-src/Zest.Markup/         F#   Core/ Utility/ Style/ Html/ Data/ Metadata/
+src/Zest.App/            C#   Program, Cli/, Command/, Config/, Runtime/, Starter/
+src/Zest.Compiler/       F#   Model/ Zcss/ Build/ Zealucks/ Rendering/ Execution/
+src/Zest.Markup/         F#   Dsl/ Primitives/ Css/ Component/ Query/ Metadata/
 libs/Zest.Core/          F#   SlugFormatter, TextMetrics, DateFormatter
 ```
+
+| Directory           | Holds                                                                |
+|---------------------|----------------------------------------------------------------------|
+| `Zest.Compiler/Model`      | Records with no behaviour: pages, front matter, config, file types.  |
+| `Zest.Compiler/Zcss`       | The ZCSS compiler: tokenizer, parsers, evaluator, CSS writer.        |
+| `Zest.Compiler/Build`      | Front matter parsing, permalinks, the page pipeline, generated pages, the build entry point. |
+| `Zest.Compiler/Zealucks`   | The Zealucks template engine, end to end.                            |
+| `Zest.Compiler/Rendering`  | HTML nodes, HTML writing, formatting, Markdown, page construction.   |
+| `Zest.Compiler/Execution`  | `dotnet fsi` execution, the page index, and Zest's template filters. |
+| `Zest.App/Runtime`         | The CLI process's runtime facilities: HTTP servers, watching, logging. |
+| `Zest.App/Cli`             | Argument parsing, options, help text.                                |
+| `Zest.App/Command`         | One type per subcommand (`build`, `clean`, `init`, `serve`).         |
+| `Zest.App/Starter`         | The single scaffold site copied out by `zest init`.                  |
 
 ---
 
@@ -328,13 +356,64 @@ libs/Zest.Core/          F#   SlugFormatter, TextMetrics, DateFormatter
 
 ### File Types
 
-| Extension   | Purpose                                                      | Processing                                          |
-|-------------|--------------------------------------------------------------|-----------------------------------------------------|
-| `.zest.fsx` | F# script templates (F# + Markdown + HTML DSL)               | Compiled via `dotnet fsi`                           |
-| `.zlk`      | Zealucks templates (filters, macros, inheritance, Zest API)  | Rendered via ZealucksEngine                         |
-| `.zcss`     | ZCSS stylesheets (CSS superset)                              | Compiled to `.css`                                  |
-| `.md`       | Standard Markdown                                            | Rendered to HTML                                    |
-| `.toml`     | Configuration and data (no YAML)                             | Parsed at build time                                |
+Zest distinguishes two kinds of F# script. Only one of them becomes a page.
+
+| File pattern   | Purpose                                                        | Processing                                          |
+|----------------|----------------------------------------------------------------|-----------------------------------------------------|
+| `*.zlk` / `*.html` | Zealucks native templates (filters, macros, inheritance, Zest API) | Rendered by the Zealucks engine                |
+| `*.njk`        | Nunjucks-compatible templates — same engine as `.zlk`            | Rendered by the Zealucks engine                     |
+| `*.zest.fsx`   | **Zest Pages** — F# script templates with routing semantics      | Compiled via `dotnet fsi`, then given a URL         |
+| `*.fsx`        | Ordinary F# scripts — **Zest does not route them**               | Ignored by discovery                                |
+| `*.md`         | Standard Markdown                                                | Rendered to HTML                                    |
+| `*.zcss`       | ZCSS stylesheets (CSS superset)                                  | Compiled to `.css`                                  |
+| `*.toml`       | Configuration and data (no YAML)                                 | Parsed at build time                                |
+
+`*.fsx` scripts are invisible to the build: they are never scanned, evaluated,
+or given a URL. Use them for whatever a page does not need — data generation,
+deployment helpers, scratch work. Keeping them next to pages is fine.
+
+The config entry `zest.config.fsx` (or `zest.fsx`) is a special case: even
+though it is an F# script, it is never routed.
+
+### `.zest.fsx` Routing
+
+A Zest Page is any `*.zest.fsx` file inside the content directory. Its path
+relative to that directory — with the `.zest.fsx` suffix stripped — is its
+route. A page never declares its own URL unless it sets `@permalink`.
+
+```text
+content/
+├── index.zest.fsx          → /
+├── 404.zest.fsx            → /404
+├── about.zest.fsx          → /about
+├── blog/
+│   ├── index.zest.fsx      → /blog
+│   └── post.zest.fsx       → /blog/post
+└── scripts/
+    └── build.fsx           → ordinary F# script, no route
+```
+
+Zest emits directory-style URLs, so every route above is written as
+`<route>/index.html` and is served with a trailing slash — `/about/` for
+`about.zest.fsx`, `/blog/` for `blog/index.zest.fsx`, and so on. `/` is the one
+route with no further segment. Both `/about` and `/about/` resolve to
+`about/index.html` on the dev server and on ordinary static hosts.
+
+Three details follow from this:
+
+- **`index` names their directory.** `index.zest.fsx` (and `default.zest.fsx`)
+  collapses to the route of its parent directory, so `blog/index.zest.fsx` is
+  `/blog`, not `/blog/index`.
+- **`@permalink` overrides everything.** Use it when the URL must be exact —
+  the starter's feeds do this (`// @permalink /rss.xml`), as would a 404 page
+  that has to be `/404.html` rather than `/404/`.
+- **Only `.zest.fsx` routes.** Renaming `scripts/build.fsx` to
+  `scripts/build.zest.fsx` would publish it at `/scripts/build/`. Leave a URL
+  that should not exist as a plain `.fsx`.
+
+When two files would produce the same output — `about.zlk` beside
+`about.zest.fsx`, say — Zest does not arbitrate. Whichever page is written last
+wins, so give each route exactly one source file.
 
 ### ZCSS Reference
 
@@ -361,8 +440,12 @@ routing depends only on the file extension:
 | Layout extension | Handling                                                    |
 |------------------|-------------------------------------------------------------|
 | `.zest.fsx`, `.fsx` | Evaluated as F# scripts by `dotnet fsi`.                 |
-| `.zlk`           | Rendered by Zealucks.                                        |
-| `.html`, `.htm`  | Copied verbatim; run through Zealucks when `{{ }}` / `{% %}` syntax is present. |
+| `.zlk`, `.njk`   | Rendered by Zealucks — the same language, two extensions.    |
+| `.html`, `.htm`  | Rendered by Zealucks when `{{ }}` / `{% %}` syntax is present, otherwise copied verbatim. |
+
+This table describes `_layouts/` only. Layout files have no route, so a plain
+`.fsx` layout is fine — inside the content directory it would not be a page at
+all (see *File Types*).
 
 ### Zealucks Compatibility Mode
 

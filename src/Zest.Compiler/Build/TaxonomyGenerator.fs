@@ -1,0 +1,332 @@
+// TaxonomyGenerator.fs
+//
+// Auto-generates taxonomy archive pages (e.g. /tags/ and /tags/<term>/) so
+// that adding a tag to a post is enough — no need to hand-author a .zlk file
+// per tag. Runs after the content pipeline so PageStore already knows every
+// page and tag.
+//
+// Content files always win: if /tags/foo/ is produced by a content file, the
+// generator skips it. Every other archive page is rewritten on each build so
+// template or config changes never leave a stale page behind.
+//
+// Dependencies: Zest.Compiler.Domain, Zest.Compiler.Scripting, Zest.Compiler.Template, Zest.Compiler.Html
+
+namespace Zest.Compiler.Build
+open System
+open System.Collections.Generic
+open System.IO
+open System.Text.RegularExpressions
+open Zest.Compiler.Model
+open Zest.Compiler.Execution
+open Zest.Compiler.Zealucks
+open Zest.Compiler.Rendering
+
+/// Generates listing pages for taxonomy terms (tags by default).
+module TaxonomyGenerator =
+
+    /// Built-in fallback for a single term listing, used when the theme does
+    /// not ship `_layouts/<singular>.zlk`. Keeps the generator useful standalone.
+    let private defaultTermTemplate = """
+<div class="posts tag-posts">
+  <h2>{{ term }}</h2>
+  {% for p in term_pages %}
+  <article class="post">
+    <div class="post-title"><a href="{{ p.url }}">{{ p.title }}</a></div>
+    <div class="post-meta">{{ p.date | date("MMM d, yyyy") }}</div>
+    {% if p.description %}<div class="post-summary">{{ p.description }}</div>{% endif %}
+  </article>
+  {% else %}
+  <p>No posts found.</p>
+  {% endfor %}
+</div>
+"""
+
+    /// Built-in fallback for the terms index, used when the theme does not
+    /// ship `_layouts/<plural>.zlk`.
+    let private defaultIndexTemplate = """
+<div class="terms terms-index">
+  <h2>{{ taxonomy.plural | capitalize }}</h2>
+  <ul class="terms-tags">
+    {% for t in terms %}
+    <li class="term-tag"><a href="/{{ taxonomy.plural }}/{{ t.slug }}/">#{{ t.name }}</a></li>
+    {% endfor %}
+  </ul>
+</div>
+"""
+
+    /// Strip `<!-- @title ... -->` / `<!-- @layout ... -->` frontmatter
+    /// comments so they do not leak into the rendered inner HTML. The
+    /// generator wraps the fragment in a layout itself, so these directives
+    /// are redundant here.
+    let private stripFrontMatter (text: string) : string =
+        Regex.Replace(text, @"^\s*<!--\s*@[a-zA-Z]+[^>]*-->\s*$", "",
+                      RegexOptions.Multiline).TrimStart('\n')
+
+    /// Resolve a template body from the loaded layouts, falling back to a
+    /// built-in default so generation works even without a theme template.
+    let private resolveTemplate (layouts: Map<string, string * string>)
+                                (keys: string list) (fallback: string) : string =
+        let rec tryFind =
+            function
+            | [] -> None
+            | k :: rest ->
+                match layouts.TryFind k with
+                | Some (_, body) -> Some body
+                | None -> tryFind rest
+        match tryFind keys with Some b -> stripFrontMatter b | None -> fallback
+
+    /// Build the standard render-context pairs: site.* (mirroring
+    /// PageEvaluator.getZealucksSiteContext) plus the taxonomy extras.
+    let private buildContext (config: SiteConfig)
+                             (globalData: IDictionary<string, obj>)
+                             (extras: (string * obj) list)
+                             : IDictionary<string, obj> =
+        let pairs = ResizeArray<string * obj>()
+        pairs.Add("site.title", box config.Title)
+        pairs.Add("site.description", box config.Description)
+        pairs.Add("site.base_url", box config.BaseUrl)
+        pairs.Add("site.version", box config.SiteVersion)
+        pairs.Add("site.author", box config.Author)
+        pairs.Add("site.language", box config.Language)
+        // Surface every global data key under site. so site.params.*,
+        // site.nav.*, site.socials, etc. resolve in content templates too.
+        for kv in globalData do
+            pairs.Add("site." + kv.Key, kv.Value)
+        // Collection data shared with all templates.
+        pairs.Add("pages", box (PageStore.getPagesForZealucks () |> Array.map box))
+        pairs.Add("tags", box (PageStore.getTagsForZealucks ()))
+        pairs.Add("collections", box (PageStore.getCollectionsForZealucks ()))
+        for (k, v) in extras do pairs.Add(k, v)
+        EngineHost.buildContext pairs
+
+    /// Render a fragment template to inner HTML via the Zealucks engine.
+    let private renderFragment (templateBody: string)
+                               (ctx: IDictionary<string, obj>) : string =
+        let engine = EngineHost.instance
+        ZealucksFilters.registerAllFilters engine |> ignore
+        match engine.Render templateBody ctx with
+        | Ok html -> html
+        | Error err ->
+            eprintfn "[Zest] Taxonomy template error: %O" err
+            templateBody
+
+    /// Apply the layout chain to all generated pages in ONE batched FSI pass
+    /// and write the results. Rendering layout per page entered FSI ~25 times
+    /// (once per tag), which dominated the whole build; batching cuts that to
+    /// one FSI run per layout-chain level.
+    let private batchRenderAndWrite (pages: ContentPage list)
+                                    (config: SiteConfig) (outputDir: string)
+                                    (layouts: Map<string, string * string>)
+                                    (includes: IDictionary<string, string>)
+                                    (globalData: IDictionary<string, obj>) : unit =
+        if pages.IsEmpty then ()
+        else
+            let tasks =
+                pages |> List.map (fun p -> p, (p.Layout |> Option.defaultValue config.DefaultLayout))
+            let batchedHtml =
+                LayoutChain.applyLayoutsBatched tasks layouts includes config globalData
+
+            // Post-processing (format or minify) is pulled out of the write loop.
+            // Formatting takes priority over minification.
+            let htmlPostProcess =
+                if config.EnableHtmlFormatting then Formatting.formatDefault
+                else Formatting.minifySafe
+            let needsHtmlPostProcess = config.EnableHtmlFormatting || config.EnableHtmlMinification
+            let processedHtml =
+                if needsHtmlPostProcess then
+                    pages
+                    |> Seq.map (fun (page: ContentPage) ->
+                        let raw =
+                            match batchedHtml.TryFind page.SourcePath with
+                            | Some html -> html
+                            | None -> page.Content
+                        page.SourcePath, htmlPostProcess raw)
+                    |> Map.ofSeq
+                else Map.empty
+
+            System.Threading.Tasks.Parallel.ForEach(pages, fun (page: ContentPage) ->
+                try
+                    let finalHtml =
+                        if needsHtmlPostProcess then processedHtml.[page.SourcePath]
+                        else
+                            match batchedHtml.TryFind page.SourcePath with
+                            | Some html -> html
+                            | None -> page.Content
+                    let outPath = Path.Combine(outputDir, page.OutputPath)
+                    let dir = Path.GetDirectoryName outPath
+                    if dir <> null then Directory.CreateDirectory(dir) |> ignore
+                    // Atomic replace keeps the preview server's open read handles valid.
+                    AtomicFile.write outPath (System.Text.Encoding.UTF8.GetBytes finalHtml)
+                with ex ->
+                    // A single failing term must not abort the whole build.
+                    eprintfn "[Zest] Taxonomy page '%s' failed: %s" page.Url ex.Message) |> ignore
+
+    /// Read the term-to-slug alias table for one taxonomy kind from global
+    /// data (`site.params.taxonomy.<kind>`). Terms without an alias fall back
+    /// to ASCII slugification so Chinese names never appear in URLs.
+    let private aliasMapFor (globalData: IDictionary<string, obj>) (kind: string) : Map<string, string> =
+        match globalData.TryGetValue "params.taxonomy" with
+        | true, (:? IDictionary<string, obj> as tax) ->
+            match tax.TryGetValue kind with
+            | true, (:? IDictionary<string, obj> as table) ->
+                table |> Seq.map (fun kv -> kv.Key, string kv.Value) |> Map.ofSeq
+            | _ -> Map.empty
+        | _ -> Map.empty
+
+    /// ASCII fallback for terms without a configured alias.
+    let private fallbackSlug (term: string) : string =
+        let slug =
+            Regex.Replace(term.ToLowerInvariant(), @"\s+", "-")
+            |> fun s -> Regex.Replace(s, "[^a-z0-9-]", "")
+            |> fun s -> s.Trim('-')
+        if slug.Length = 0 then "untitled" else slug
+
+    /// Resolve a taxonomy term to its URL slug via the alias table.
+    let private termSlug (aliases: Map<string, string>) (term: string) : string =
+        match Map.tryFind term aliases with
+        | Some s when s.Length > 0 -> s
+        | _ -> fallbackSlug term
+
+    /// Pages and terms belonging to one taxonomy. Categories live in the
+    /// independent Categories field; tags remain in Tags.
+    let private taxonomyMembers (tax: TaxonomyConfig) (pages: ContentPage list)
+                               : ContentPage list * string list =
+        if tax.Name = "category" then
+            pages, PageStore.getAllCategories ()
+        else
+            pages, PageStore.getAllTags ()
+
+    /// True when a real content page already owns this output path or URL.
+    /// Checking the in-memory page list (not the file system) is what lets
+    /// generated archive pages be rewritten on every build while still letting
+    /// hand-authored content files claim the same URL.
+    let private urlOccupiedByPage (pages: ContentPage list) (outRel: string) (url: string) : bool =
+        pages
+        |> List.exists (fun p -> p.OutputPath = outRel || p.Url = url)
+
+    /// Generate a listing page for one taxonomy term.
+    let private generateTerm (tax: TaxonomyConfig) (aliases: Map<string, string>)
+                             (term: string) (pages: ContentPage list)
+                             (config: SiteConfig)
+                             (layouts: Map<string, string * string>)
+                             (includes: IDictionary<string, string>)
+                             (globalData: IDictionary<string, obj>) : ContentPage option =
+        let slug = termSlug aliases term
+        let url = sprintf "/%s/%s/" tax.Plural slug
+        let outRel = Path.Combine(tax.Plural, slug, "index.html").Replace('\\', '/')
+        if urlOccupiedByPage pages outRel url then
+            // Content file already produced this URL — keep it.
+            None
+        else
+            let belongs (p: ContentPage) =
+                if tax.Name = "category" then
+                    p.Categories |> List.exists (fun t -> t.Equals(term, StringComparison.OrdinalIgnoreCase))
+                else
+                    p.Tags |> List.exists (fun t -> t.Equals(term, StringComparison.OrdinalIgnoreCase))
+            let termPages =
+                pages
+                |> List.filter belongs
+                |> List.sortByDescending (fun p -> p.Date |> Option.defaultValue DateTime.MinValue)
+                |> List.map PageStore.pageToZealucksDict
+                |> Array.ofList
+            let taxDict = dict [
+                "name", box tax.Name
+                "plural", box tax.Plural
+                "term", box term
+                "slug", box slug
+            ]
+            let extras = [
+                "term", box term
+                "term_slug", box slug
+                "term_pages", box termPages
+                "taxonomy", box taxDict
+            ]
+            let ctx = buildContext config globalData extras
+            let body = resolveTemplate layouts [ tax.Name; "taxonomy" ] defaultTermTemplate
+            let inner = renderFragment body ctx
+            let titlePrefix = if tax.Name = "category" then "Posts in " else "Posts tagged "
+            Some { ContentPage.empty with
+                    Url = url
+                    OutputPath = outRel
+                    Layout = Some "base"
+                    Title = sprintf "%s%s" titlePrefix term
+                    Content = inner
+                    Slug = slug
+                    Tags = [ term ]
+                    Data = dict [ "description", box (sprintf "%s%s" titlePrefix term) ]
+                    SourcePath = sprintf "<taxonomy:%s:%s>" tax.Name term }
+
+    /// Generate the terms index page for a taxonomy.
+    let private generateIndex (tax: TaxonomyConfig) (aliases: Map<string, string>)
+                              (terms: string list) (pages: ContentPage list)
+                              (config: SiteConfig)
+                              (layouts: Map<string, string * string>)
+                              (includes: IDictionary<string, string>)
+                              (globalData: IDictionary<string, obj>) : ContentPage option =
+        let outRel = Path.Combine(tax.Plural, "index.html").Replace('\\', '/')
+        let url = sprintf "/%s/" tax.Plural
+        if urlOccupiedByPage pages outRel url then None
+        else
+            let termEntries =
+                terms
+                |> List.map (fun term ->
+                    let d = Dictionary<string, obj>()
+                    d.["name"] <- box term
+                    d.["slug"] <- box (termSlug aliases term)
+                    d :> IDictionary<string, obj>)
+                |> Array.ofList
+            let taxDict = dict [
+                "name", box tax.Name
+                "plural", box tax.Plural
+            ]
+            let extras = [
+                "taxonomy", box taxDict
+                "terms", box termEntries
+            ]
+            let ctx = buildContext config globalData extras
+            let body = resolveTemplate layouts [ tax.Plural; "terms" ] defaultIndexTemplate
+            let inner = renderFragment body ctx
+            Some { ContentPage.empty with
+                    Url = sprintf "/%s/" tax.Plural
+                    OutputPath = outRel
+                    Layout = Some "base"
+                    Title = sprintf "%s" (tax.Plural.Substring(0,1).ToUpper() + tax.Plural.Substring(1))
+                    Content = inner
+                    Slug = tax.Plural
+                    Data = dict [ "description", box (sprintf "%s index" tax.Plural) ]
+                    SourcePath = sprintf "<taxonomy:%s:index>" tax.Name }
+
+    /// <summary>
+    /// Generate taxonomy archive pages for every term discovered across pages.
+    /// Handles the built-in <c>tag</c> and <c>category</c> taxonomies. Term
+    /// URLs use the configured alias slugs from <c>site.params.taxonomy</c>
+    /// and fall back to ASCII slugification for unlisted terms.
+    /// </summary>
+    let generate (config: SiteConfig) (outputDir: string)
+                 (layouts: Map<string, string * string>)
+                 (includes: IDictionary<string, string>)
+                 (globalData: IDictionary<string, obj>) : int =
+        let mutable generated = 0
+        // Page list is fixed for the whole generation — snapshot it once so
+        // URL-occupancy checks do not re-filter the full page set per term.
+        let pages = PageStore.getPages()
+        let generatedPages = ResizeArray<ContentPage>()
+        for tax in config.Taxonomies do
+            let members, terms = taxonomyMembers tax pages
+            // A taxonomy nobody uses produces no pages: the default tag and
+            // category taxonomies must not litter a site that tags nothing.
+            if not (List.isEmpty terms) then
+                let aliases =
+                    if tax.Name = "category" then aliasMapFor globalData "categories"
+                    else aliasMapFor globalData "tags"
+                for term in terms do
+                    match generateTerm tax aliases term members config layouts includes globalData with
+                    | Some page ->
+                        generatedPages.Add(page); generated <- generated + 1
+                    | None -> ()
+                match generateIndex tax aliases terms members config layouts includes globalData with
+                | Some page ->
+                    generatedPages.Add(page); generated <- generated + 1
+                | None -> ()
+        batchRenderAndWrite (Seq.toList generatedPages) config outputDir layouts includes globalData
+        generated

@@ -1,8 +1,8 @@
 using System.Globalization;
 using System.Text;
-using Zest.App.CommandLine;
-using Zest.App.Commands;
-using Zest.App.Services;
+using Zest.App.Cli;
+using Zest.App.Command;
+using Zest.App.Runtime;
 
 // Program.cs
 //

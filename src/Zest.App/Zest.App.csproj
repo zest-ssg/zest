@@ -68,17 +68,17 @@
        runtime. `Starters` is the scaffold copied out by init; it is not the
        runtime template engine (which lives in Zest.Compiler/Template). -->
   <ItemGroup>
-    <None Remove="Starters\**\*" />
-    <EmbeddedResource Include="Starters\_config.toml" LogicalName="Zest.App.Starters._config.toml" />
-    <EmbeddedResource Include="Starters\README.md" LogicalName="Zest.App.Starters.README.md" />
-    <EmbeddedResource Include="Starters\content\index.md" LogicalName="Zest.App.Starters.content\index.md" />
-    <EmbeddedResource Include="Starters\content\rss.zest.fsx" LogicalName="Zest.App.Starters.content\rss.zest.fsx" />
-    <EmbeddedResource Include="Starters\content\atom.zest.fsx" LogicalName="Zest.App.Starters.content\atom.zest.fsx" />
-    <EmbeddedResource Include="Starters\content\sitemap.zest.fsx" LogicalName="Zest.App.Starters.content\sitemap.zest.fsx" />
-    <EmbeddedResource Include="Starters\_layouts\post.zlk" LogicalName="Zest.App.Starters._layouts\post.zlk" />
-    <EmbeddedResource Include="Starters\_includes\head.zlk" LogicalName="Zest.App.Starters._includes\head.zlk" />
-    <EmbeddedResource Include="Starters\_includes\header.zlk" LogicalName="Zest.App.Starters._includes\header.zlk" />
-    <EmbeddedResource Include="Starters\assets\css\main.zcss" LogicalName="Zest.App.Starters.assets\css\main.zcss" />
+    <None Remove="Starter\**\*" />
+    <EmbeddedResource Include="Starter\_config.toml" LogicalName="Zest.App.Starter._config.toml" />
+    <EmbeddedResource Include="Starter\README.md" LogicalName="Zest.App.Starter.README.md" />
+    <EmbeddedResource Include="Starter\content\index.md" LogicalName="Zest.App.Starter.content\index.md" />
+    <EmbeddedResource Include="Starter\content\rss.zest.fsx" LogicalName="Zest.App.Starter.content\rss.zest.fsx" />
+    <EmbeddedResource Include="Starter\content\atom.zest.fsx" LogicalName="Zest.App.Starter.content\atom.zest.fsx" />
+    <EmbeddedResource Include="Starter\content\sitemap.zest.fsx" LogicalName="Zest.App.Starter.content\sitemap.zest.fsx" />
+    <EmbeddedResource Include="Starter\_layouts\post.zlk" LogicalName="Zest.App.Starter._layouts\post.zlk" />
+    <EmbeddedResource Include="Starter\_includes\head.zlk" LogicalName="Zest.App.Starter._includes\head.zlk" />
+    <EmbeddedResource Include="Starter\_includes\header.zlk" LogicalName="Zest.App.Starter._includes\header.zlk" />
+    <EmbeddedResource Include="Starter\assets\css\main.zcss" LogicalName="Zest.App.Starter.assets\css\main.zcss" />
   </ItemGroup>
 
   <!-- Package icon + README at the nupkg root (NuGet metadata convention). -->
