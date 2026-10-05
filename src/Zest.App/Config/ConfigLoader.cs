@@ -102,7 +102,7 @@ public static class ConfigLoader
             logLevel: Str(site, "log_level", config.LogLevel),
             logToFile: Bool(site, "log_to_file", config.LogToFile),
             logTimestamps: Bool(site, "log_timestamps", config.LogTimestamps),
-            zealucksCompatibility: ParseZealucksCompatibility(model, config.ZealucksCompatibility),
+            zestucksCompatibility: ParseZestucksCompatibility(model, config.ZestucksCompatibility),
             include: ParseStringList(model, "include"),
             exclude: ParseStringList(model, "exclude"),
             paginationPerPage: paginationPerPage,
@@ -126,12 +126,12 @@ public static class ConfigLoader
 
     // ── Sections ───────────────────────────────────────────────
 
-    /// <summary>Read the Zealucks filter-set mode: [template.zealucks] compatibility.</summary>
-    private static string ParseZealucksCompatibility(TomlTable model, string fallback)
+    /// <summary>Read the Zestucks filter-set mode: [template.zestucks] compatibility.</summary>
+    private static string ParseZestucksCompatibility(TomlTable model, string fallback)
     {
         if (Table(model, "template") is not { } template) return fallback;
-        if (Table(template, "zealucks") is not { } zealucks) return fallback;
-        return TomlReader.GetString(zealucks, "compatibility", fallback);
+        if (Table(template, "zestucks") is not { } zestucks) return fallback;
+        return TomlReader.GetString(zestucks, "compatibility", fallback);
     }
 
     /// <summary>Read [[taxonomies]] entries, e.g. name = "tag", plural = "tags".</summary>
@@ -210,7 +210,7 @@ public static class ConfigLoader
 
     /// <summary>
     /// Recursively convert Tomlyn container values to plain .NET types so the
-    /// <c>[params]</c> table is directly iterable in Zealucks and F# scripts.
+    /// <c>[params]</c> table is directly iterable in Zestucks and F# scripts.
     /// Mirrors <c>GlobalData.tomlToNative</c> in the F# engine: TomlTable →
     /// Dictionary, TomlArray / TomlTableArray → array; scalars pass through.
     /// </summary>

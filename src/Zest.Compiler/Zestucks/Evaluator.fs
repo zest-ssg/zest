@@ -1,4 +1,4 @@
-namespace Zest.Compiler.Zealucks
+namespace Zest.Compiler.Zestucks
 open System
 open System.Collections.Concurrent
 open System.Collections.Generic
@@ -11,8 +11,8 @@ open ExpressionCompiler
 
 // Evaluator.fs
 //
-// Evaluates compiled Zealucks expressions against a render context and
-// implements the standard Zealucks/Jinja2 filter set. This module owns every
+// Evaluates compiled Zestucks expressions against a render context and
+// implements the standard Zestucks/Jinja2 filter set. This module owns every
 // runtime helper, the custom-filter registry, and the compiled-expression cache.
 //
 // Invariant: evaluation is side-effect free except for loop.changed bookkeeping
@@ -23,7 +23,7 @@ module internal Evaluator =
     // ── Custom filter registry (extensible by Zest engine) ──
     // ConcurrentDictionary: filter registration may race with rendering under
     // multi-threaded web servers, so a plain Dictionary is unsafe here.
-    let customFilters = ConcurrentDictionary<string, ZealucksFilter>()
+    let customFilters = ConcurrentDictionary<string, ZestucksFilter>()
 
     // ── Reflection cache for POCO property access ──
     let private propCache = ConcurrentDictionary<string, PropertyInfo>()
@@ -327,7 +327,7 @@ module internal Evaluator =
 
         // Numeric filters
         // `int` parses via `float` first so decimal strings like "1.245"
-        // truncate to 1 instead of failing to 0. Matches Zealucks `int`
+        // truncate to 1 instead of failing to 0. Matches Zestucks `int`
         // semantics (truncate toward zero).
         | "int" -> box(try int (float s) with _ -> 0)
         | "float" -> box(try float s with _ -> 0.0)

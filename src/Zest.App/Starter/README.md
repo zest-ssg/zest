@@ -7,10 +7,10 @@ The site produced by `zest init`.
 ```
 .
 ├── _config.toml          # optional: site metadata and build options
-├── _layouts/             # Zealucks layouts (.zlk)
+├── _layouts/             # Zestucks layouts (.ztk)
 ├── _includes/            # partials pulled in with {{ include }}
 ├── assets/css/main.zcss  # ZCSS stylesheet, compiled to CSS at build time
-├── content/              # pages (.md, .zest.fsx, .zlk)
+├── content/              # pages (.md, .zest.fsx, .ztk)
 └── _site/                # build output
 ```
 
@@ -21,7 +21,7 @@ when it exists, otherwise from the project root.
 ## How it works
 
 - The article is Markdown with `+++` TOML front matter. `index.md` maps to `/`.
-- `post.zlk` is the Zealucks layout: it renders title, author, date and body.
+- `post.ztk` is the Zestucks layout: it renders title, author, date and body.
 - `main.zcss` is ZCSS, a CSS superset compiled to plain CSS at build time.
 - The feeds and sitemap are `.zest.fsx` pages built with `Zest.Markup.Feeds`.
 

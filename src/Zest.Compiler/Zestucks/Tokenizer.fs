@@ -1,4 +1,4 @@
-namespace Zest.Compiler.Zealucks
+namespace Zest.Compiler.Zestucks
 open System
 open System.Collections.Concurrent
 open System.IO

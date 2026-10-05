@@ -21,7 +21,7 @@ open System.Text.RegularExpressions
 open Zest.Compiler.Model
 open Zest.Compiler.Build
 open Zest.Compiler.Execution
-open Zest.Compiler.Zealucks
+open Zest.Compiler.Zestucks
 open Zest.Compiler.Rendering
 
 /// Generates paginated listing pages for collections that opt in via the
@@ -76,18 +76,18 @@ module PaginationGenerator =
         pairs.Add("site.language", box config.Language)
         for kv in globalData do
             pairs.Add("site." + kv.Key, kv.Value)
-        pairs.Add("pages", box (PageStore.getPagesForZealucks () |> Array.map box))
-        pairs.Add("tags", box (PageStore.getTagsForZealucks ()))
-        pairs.Add("collections", box (PageStore.getCollectionsForZealucks ()))
+        pairs.Add("pages", box (PageStore.getPagesForZestucks () |> Array.map box))
+        pairs.Add("tags", box (PageStore.getTagsForZestucks ()))
+        pairs.Add("collections", box (PageStore.getCollectionsForZestucks ()))
         pairs.Add("collection", box collection)
         pairs.Add("pagination", box pagination)
         EngineHost.buildContext pairs
 
-    /// Render a fragment template to inner HTML via the Zealucks engine.
+    /// Render a fragment template to inner HTML via the Zestucks engine.
     let private renderFragment (templateBody: string)
                                (ctx: IDictionary<string, obj>) : string =
         let engine = EngineHost.instance
-        ZealucksFilters.registerAllFilters engine |> ignore
+        ZestucksFilters.registerAllFilters engine |> ignore
         match engine.Render templateBody ctx with
         | Ok html -> html
         | Error err ->
@@ -152,7 +152,7 @@ module PaginationGenerator =
         pages
         |> List.skip skipCount
         |> List.truncate perPage
-        |> List.map PageStore.pageToZealucksDict
+        |> List.map PageStore.pageToZestucksDict
         |> Array.ofList
 
     /// Generate all pagination pages for a single opt-in index file.
@@ -263,7 +263,7 @@ module PaginationGenerator =
             for filePath in Directory.EnumerateFiles(contentDir, "*.*", SearchOption.AllDirectories) do
                 let ext = Path.GetExtension(filePath).ToLowerInvariant()
                 let processable =
-                    [ FileTypes.Zealucks; FileTypes.Nunjucks; FileTypes.WebC
+                    [ FileTypes.Zestucks; FileTypes.Nunjucks; FileTypes.WebC
                       FileTypes.Markdown; FileTypes.MarkdownLong ]
                     |> List.exists ((=) ext)
                 if processable && not (SitePaths.isExcludedWithConfig contentDir config filePath) then
@@ -276,7 +276,7 @@ module PaginationGenerator =
                                 let d = Path.GetDirectoryName(relPath)
                                 if String.IsNullOrEmpty d then "" else d.Replace('\\', '/')
                             let collection, perPage = parseDirective m.Groups.[1].Value dirFallback perPageDefault
-                            // A root index file (content/index.zlk) without an
+                            // A root index file (content/index.ztk) without an
                             // explicit collection paginates the site root; the
                             // directive may also name a collection explicitly.
                             let effectiveCollection =

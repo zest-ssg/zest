@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="{{ site.language | default('en') }}">
 <head>
-  {{ include head.zlk }}
+  {{ include head.ztk }}
 </head>
 <body>
   <div class="page">
-    {{ include header.zlk }}
+    {{ include header.ztk }}
     <main class="page__main">
       <article class="paper">
         <header class="paper__head">

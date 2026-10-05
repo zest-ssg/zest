@@ -10,4 +10,4 @@
 [meta]
 version    = "0.8.0"
 header     = "Zest v{0} — Easy Static-site Toolkit"
-ecosystem  = "Ecosystem: .zlk + .zest.fsx + .zcss"
+ecosystem  = "Ecosystem: .ztk + .zest.fsx + .zcss"

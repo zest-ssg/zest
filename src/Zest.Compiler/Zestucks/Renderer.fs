@@ -1,4 +1,4 @@
-namespace Zest.Compiler.Zealucks
+namespace Zest.Compiler.Zestucks
 open System
 open System.Collections.Generic
 open System.Text
@@ -207,7 +207,7 @@ module internal Renderer =
                         else
                             match item with
                             // A single loop variable over a dictionary binds the
-                            // key, matching Zealucks dictionary iteration.
+                            // key, matching Zestucks dictionary iteration.
                             | :? KeyValuePair<string, obj> as kvp -> ctx.[loopVar] <- box kvp.Key
                             | :? System.Collections.DictionaryEntry as de -> ctx.[loopVar] <- de.Key
                             | _ -> ctx.[loopVar] <- item
@@ -484,7 +484,7 @@ module internal Renderer =
                 | "now" | "endblock" | "endfor" | "endif" | "endmacro" | "endcall" | "endraw" | "endfilter" | "endwith" ->
                     ()  // closing tags are handled by findMatchingEnd
 
-                | _ -> ()  // unknown tag — silently ignore (Zealucks behavior)
+                | _ -> ()  // unknown tag — silently ignore (Zestucks behavior)
 
                 idx <- if isBlock && endIdx > idx then endIdx + 1 else idx + 1
 

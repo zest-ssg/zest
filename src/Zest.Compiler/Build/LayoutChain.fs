@@ -6,7 +6,7 @@ open System.IO
 open System.Text.RegularExpressions
 open Zest.Compiler.Model
 open Zest.Compiler.Execution
-open Zest.Compiler.Zealucks
+open Zest.Compiler.Zestucks
 
 /// Layout loading, include processing, placeholder replacement, and recursive layout application.
 /// Optimized with static Regex, single-pass directory traversal, HashSet-based key lookup, and filter registration caching.
@@ -14,7 +14,7 @@ module LayoutChain =
 
     let private allowedLayoutExts =
         set [ FileTypes.Html; FileTypes.HtmlLong
-              FileTypes.Zealucks; FileTypes.Nunjucks
+              FileTypes.Zestucks; FileTypes.Nunjucks
               FileTypes.ZestScript; FileTypes.FSharpScript ]
 
     /// Load every layout in a directory, keyed by its extension-stripped name.
@@ -87,7 +87,7 @@ module LayoutChain =
 
     // ── Static compiled Regex ──────────────────────────────────────────
     // Include names may contain hyphens (e.g. `page-shell.html`); without the
-    // `-` class the tag falls through to Zealucks and is misread as an
+    // `-` class the tag falls through to Zestucks and is misread as an
     // arithmetic expression (`include - page - shell`), rendering as 0.
     let private includePattern =
         Regex(@"\{\{\s*include\s+([\w\.\-]+)\s*\}\}", RegexOptions.Compiled)
@@ -201,7 +201,7 @@ module LayoutChain =
                     | _ -> entry :: acc
         walk name 0 [] |> List.rev
 
-    /// Render one non-F# layout level with the Zealucks engine, with legacy
+    /// Render one non-F# layout level with the Zestucks engine, with legacy
     /// `{{ page.title }}` placeholder support.
     let private renderNonFsx (name: string) (path: string) (layoutText: string)
                              (content: string) (replacements: IDictionary<string, string>)
@@ -211,7 +211,7 @@ module LayoutChain =
         let e = EngineHost.instance
         let engineKey = e.GetHashCode().ToString()
         if registeredLayoutEngines.TryAdd(engineKey, true) then
-            ZealucksFilters.registerAllFilters e
+            ZestucksFilters.registerAllFilters e
 
         let pairs = ResizeArray<string * obj>()
         for kv in replacements do pairs.Add(kv.Key, box kv.Value)
@@ -242,7 +242,7 @@ module LayoutChain =
         // Replacements from buildReplacements flatten all globalData
         // values to strings via ToString(), which destroys nested
         // structure (arrays / dicts become "System.Object[]"). Re-add
-        // them here as their native objects so Zealucks can traverse
+        // them here as their native objects so Zestucks can traverse
         // dotted keys and iterate arrays. Duplicate keys are harmless
         // because buildNestedContext overwrites with the last value.
         for kv in globalData do
@@ -252,17 +252,17 @@ module LayoutChain =
         for kv in globalData do
             pairs.Add(kv.Key, kv.Value)
 
-        pairs.Add("pages", box (PageStore.getPagesForZealucks () |> Array.map box))
-        pairs.Add("tags", box (PageStore.getTagsForZealucks ()))
-        pairs.Add("collections", box (PageStore.getCollectionsForZealucks ()))
+        pairs.Add("pages", box (PageStore.getPagesForZestucks () |> Array.map box))
+        pairs.Add("tags", box (PageStore.getTagsForZestucks ()))
+        pairs.Add("collections", box (PageStore.getCollectionsForZestucks ()))
         let ctx = EngineHost.buildContext pairs
         // Process legacy `{{ include name }}` partials BEFORE
-        // handing the merged text to Zealucks so that includes work.
+        // handing the merged text to Zestucks so that includes work.
         let layoutText' = applyLayoutCached path layoutText includes
         match e.Render layoutText' ctx with
         | Ok html -> html
         | Error err ->
-            eprintfn "[Zest] Zealucks error in layout '%s': %O" name err
+            eprintfn "[Zest] Zestucks error in layout '%s': %O" name err
             sprintf "<!-- Template error: %O -->" err
 
     let rec internal applyLayout (name: string) (content: string) (layouts: Map<string, string * string>)
@@ -274,7 +274,7 @@ module LayoutChain =
             // Layouts are routed purely by file extension:
             //   `.zest.fsx`/`.fsx` → F# layout, evaluated by FSI (`content`/`page`/`site`
             //                        are injected as top-level bindings, see FsiRunner).
-            //   everything else    → Zealucks, so `{{ }}` / `{% %}` syntax
+            //   everything else    → Zestucks, so `{{ }}` / `{% %}` syntax
             //                        (incl. legacy `{{ page.title }}` placeholders) works.
             // Routing never consults a config field: the extension alone decides.
             let mutable current = content

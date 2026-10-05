@@ -380,7 +380,7 @@ module FrontMatterParser =
         | Some (meta, body) when meta <> ContentMeta.empty -> (meta, body)
         | _ ->
             match ext with
-            | FileTypes.Zealucks | FileTypes.Nunjucks | FileTypes.WebC ->
+            | FileTypes.Zestucks | FileTypes.Nunjucks | FileTypes.WebC ->
                 parseHtmlCommentsWithLines lines
             | _ ->
                 let meta = parseFsxCommentsWithLines lines

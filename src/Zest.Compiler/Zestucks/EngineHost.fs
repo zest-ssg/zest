@@ -1,26 +1,26 @@
-namespace Zest.Compiler.Zealucks
+namespace Zest.Compiler.Zestucks
 open System
 open System.Collections.Generic
 open System.IO
 open Zest.Compiler.Model
 
 // ============================================================
-// EngineHost — the shared Zealucks engine, wired for the build
+// EngineHost — the shared Zestucks engine, wired for the build
 // ============================================================
 // Zest ships exactly one template language. This module owns the shared engine
 // instance, the bare-name search directories behind {% include %} /
 // {% extends %}, and the context shaper every call site needs. Nothing here is
-// engine-agnostic: there is only Zealucks.
+// engine-agnostic: there is only Zestucks.
 //
 // Dependencies: Engine, Tokens, FileTypes
 // ============================================================
 
 /// <summary>
-/// The Zealucks template engine as the build pipeline uses it.
+/// The Zestucks template engine as the build pipeline uses it.
 /// </summary>
 module EngineHost =
 
-    /// Directories searched by the Zealucks file loader after the working
+    /// Directories searched by the Zestucks file loader after the working
     /// directory, most importantly the project's includes directory. The
     /// include/extends tags resolve bare names ("head") against these paths so
     /// templates do not need relative paths that leak the on-disk layout.
@@ -49,30 +49,30 @@ module EngineHost =
 
     /// Candidate paths for one include/extends reference, most specific first.
     /// The reference as written always wins, so an explicit path never changes
-    /// meaning; an extension-less reference then gets each Zealucks file
+    /// meaning; an extension-less reference then gets each Zestucks file
     /// extension appended, which is what lets a bare "base" resolve to either
-    /// `base.zlk` or `base.njk`.
+    /// `base.ztk` or `base.njk`.
     let private candidatePaths (path: string) : string seq =
         let fileName = Path.GetFileName path
         let hasKnownExt =
-            FileTypes.ZealucksFileExtensions
+            FileTypes.ZestucksFileExtensions
             |> List.exists (fun e -> fileName.EndsWith(e, StringComparison.OrdinalIgnoreCase))
         seq {
             // As written.
             yield path
             // Same file with each recognised extension, when none was given.
             if not hasKnownExt then
-                for ext in FileTypes.ZealucksFileExtensions do
+                for ext in FileTypes.ZestucksFileExtensions do
                     yield path + ext
             // Same rules, resolved against every registered search directory.
             for dir in searchDirs do
                 yield Path.Combine(dir, fileName)
                 if not hasKnownExt then
-                    for ext in FileTypes.ZealucksFileExtensions do
+                    for ext in FileTypes.ZestucksFileExtensions do
                         yield Path.Combine(dir, fileName + ext)
         }
 
-    /// The shared Zealucks engine, wired to the search directories above.
+    /// The shared Zestucks engine, wired to the search directories above.
     /// Construction is deferred because build setup registers those
     /// directories after this module is loaded.
     let private sharedEngine =
@@ -86,7 +86,7 @@ module EngineHost =
                 | None -> Error(sprintf "Template not found: %s" path))
             engine
 
-    /// <summary>Get the shared Zealucks engine.</summary>
+    /// <summary>Get the shared Zestucks engine.</summary>
     /// <returns>The process-wide engine instance. Callers must not dispose it.</returns>
     let instance : Engine = sharedEngine.Value
 

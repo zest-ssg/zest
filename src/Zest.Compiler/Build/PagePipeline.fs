@@ -8,7 +8,7 @@ open System.Threading.Tasks
 open Zest.Compiler.Model
 open Zest.Compiler.Rendering
 open Zest.Compiler.Build
-open Zest.Compiler.Zealucks
+open Zest.Compiler.Zestucks
 open Zest.Compiler.Build
 open Zest.Compiler.Execution
 
@@ -17,9 +17,9 @@ module PagePipeline =
 
     /// Extensions routed by the content pipeline, excluding the Zest Page
     /// suffix handled separately below.
-    /// Excludes .html — HTML is handled separately (native-mode Zealucks preprocessing).
+    /// Excludes .html — HTML is handled separately (native-mode Zestucks preprocessing).
     let private processableExts =
-        [ FileTypes.Zealucks; FileTypes.Nunjucks; FileTypes.WebC
+        [ FileTypes.Zestucks; FileTypes.Nunjucks; FileTypes.WebC
           FileTypes.Markdown; FileTypes.MarkdownLong ]
 
     /// <summary>
@@ -69,10 +69,10 @@ module PagePipeline =
 
         progress.TotalFiles <- allFiles.Length
 
-        // ── .html files: native-mode Zealucks preprocessing ──
-        // In native mode, HTML files are routed through the Zealucks compat
+        // ── .html files: native-mode Zestucks preprocessing ──
+        // In native mode, HTML files are routed through the Zestucks compat
         // layer so `{{ }}` / `{% %}` syntax resolves against the full page +
-        // site context (like .zlk content). Plain HTML without template
+        // site context (like .ztk content). Plain HTML without template
         // syntax is copied verbatim.
         if Directory.Exists contentDir then
             let htmlFiles = Directory.GetFiles(contentDir, "*.html", SearchOption.AllDirectories)
@@ -113,9 +113,9 @@ module PagePipeline =
                                 for kv in m.Data do pairs.Add("page." + kv.Key, box kv.Value)
                             | None -> ()
                         with _ -> ()
-                        pairs.Add("pages", box (PageStore.getPagesForZealucks () |> Array.map box))
-                        pairs.Add("tags", box (PageStore.getTagsForZealucks ()))
-                        pairs.Add("collections", box (PageStore.getCollectionsForZealucks ()))
+                        pairs.Add("pages", box (PageStore.getPagesForZestucks () |> Array.map box))
+                        pairs.Add("tags", box (PageStore.getTagsForZestucks ()))
+                        pairs.Add("collections", box (PageStore.getCollectionsForZestucks ()))
                         let ctx = EngineHost.buildContext pairs
                         match engine.Render content ctx with
                         | Ok rendered ->

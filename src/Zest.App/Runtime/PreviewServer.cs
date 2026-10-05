@@ -171,7 +171,7 @@ public class PreviewServer : HttpServerBase
             }
 
             // Reset in-process template caches.
-            try { Zest.Compiler.Zealucks.EngineHost.clearCaches(); }
+            try { Zest.Compiler.Zestucks.EngineHost.clearCaches(); }
             catch { /* non-fatal */ }
 
             try

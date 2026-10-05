@@ -1,4 +1,4 @@
-namespace Zest.Compiler.Zealucks
+namespace Zest.Compiler.Zestucks
 open System.Collections.Generic
 open Tokens
 open ExpressionCompiler

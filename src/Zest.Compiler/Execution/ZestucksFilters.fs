@@ -3,12 +3,12 @@ open Zest.Compiler.Build
 open System
 open System.Collections.Generic
 open System.Text.RegularExpressions
-open Zest.Compiler.Zealucks
+open Zest.Compiler.Zestucks
 open Zest.Compiler.Rendering
 
-/// Centralised Zealucks custom filter registration for Zest.
+/// Centralised Zestucks custom filter registration for Zest.
 /// Used by both content rendering and layout rendering paths.
-module ZealucksFilters =
+module ZestucksFilters =
 
     /// Init-script-declared filters: name → pipeline spec (e.g. "upper | trim").
     /// Set by BuildRunner after running _init.zest.fsx, applied during
@@ -16,7 +16,7 @@ module ZealucksFilters =
     let private initFilters = Dictionary<string, string>()
 
     /// Whether to register Zest extension filters (pages_by_tag, recent,
-    /// by_collection, search). When `ZealucksCompatibility = "strict"`,
+    /// by_collection, search). When `ZestucksCompatibility = "strict"`,
     /// these are skipped so only the Nunjucks-compatible filter set
     /// remains available. User-declared init filters are always registered.
     let private strictMode = ref false
@@ -34,7 +34,7 @@ module ZealucksFilters =
             if not (initFilters.ContainsKey kv.Key) then
                 initFilters.[kv.Key] <- kv.Value
 
-    /// Toggle strict Zealucks compatibility mode. When true, Zest-specific
+    /// Toggle strict Zestucks compatibility mode. When true, Zest-specific
     /// extension filters are not registered on engine instances.
     let setStrictMode (enabled: bool) = strictMode := enabled
 
@@ -71,7 +71,7 @@ module ZealucksFilters =
                 if slug.Length = 0 then "untitled" else slug
 
     /// Apply a filter pipeline spec (e.g. "upper | trim") to a value by
-    /// rendering a minimal template through Zealucks. This avoids duplicating
+    /// rendering a minimal template through Zestucks. This avoids duplicating
     /// the `|` pipe semantics outside the engine.
     let private applyPipeline (engine: Engine) (spec: string) (value: obj) : obj =
         let ctx = Dictionary<string, obj>()
@@ -113,7 +113,7 @@ module ZealucksFilters =
             // rewriting. Both names share the same filter body.
             let pagesByTag (value: obj) (args: string list) =
                 let tag = if args.Length > 0 then args.[0] else ""
-                let pages = PageStore.getPagesForZealucks ()
+                let pages = PageStore.getPagesForZestucks ()
                 pages
                 |> Array.filter (fun p ->
                     match p.TryGetValue "tags" with
@@ -127,7 +127,7 @@ module ZealucksFilters =
             // ── recent: get N most recent pages ────────────────
             engine.RegisterFilter "recent" (fun value args ->
                 let n = if args.Length > 0 then (try int args.[0] with _ -> 5) else 5
-                PageStore.getPagesForZealucks ()
+                PageStore.getPagesForZestucks ()
                 |> Array.filter (fun p ->
                     match p.TryGetValue "date" with
                     | true, (:? string as d) -> d <> ""
@@ -146,7 +146,7 @@ module ZealucksFilters =
                 let excludeIndex =
                     args.Length > 1 &&
                     (match args.[1].Trim().ToLowerInvariant() with "true" | "yes" | "1" -> true | _ -> false)
-                PageStore.getPagesForZealucks ()
+                PageStore.getPagesForZestucks ()
                 |> Array.filter (fun p ->
                     match p.TryGetValue "url" with
                     | true, (:? string as u) ->
@@ -160,7 +160,7 @@ module ZealucksFilters =
             // ── search: simple full-text search across pages ───
             engine.RegisterFilter "search" (fun value args ->
                 let query = if args.Length > 0 then args.[0].ToLowerInvariant() else ""
-                let pages = PageStore.getPagesForZealucks ()
+                let pages = PageStore.getPagesForZestucks ()
                 if query = "" then pages |> Array.map (fun d -> d :> obj) |> box
                 else
                     pages
@@ -194,7 +194,7 @@ module ZealucksFilters =
             | _ -> value)
 
         // ── init-script-declared filters (from _init.zest.fsx) ──
-        // Each spec is a Zealucks filter pipeline applied via a mini-render.
+        // Each spec is a Zestucks filter pipeline applied via a mini-render.
         // Always registered — these are user-owned, not Zest builtins.
         for kv in initFilters do
             let spec = kv.Value
@@ -246,7 +246,7 @@ module ZealucksFilters =
             | _ -> box Array.empty<obj>)
 
         // ── groupByYear: group page dicts by publication year, newest first ──
-        // Returns an array of { year, posts } dictionaries so Zealucks can
+        // Returns an array of { year, posts } dictionaries so Zestucks can
         // iterate `{% for group in posts | groupByYear %}` without object keys.
         engine.RegisterFilter "groupByYear" (fun value _args ->
             let pageYear (d: IDictionary<string, obj>) : int =
@@ -384,7 +384,7 @@ module ZealucksFilters =
                 match value with
                 | :? System.Collections.IEnumerable as ie ->
                     ie |> Seq.cast<obj> |> Array.ofSeq
-                | _ -> PageStore.getPagesForZealucks () |> Array.map box
+                | _ -> PageStore.getPagesForZestucks () |> Array.map box
             let index =
                 pages
                 |> Array.choose (fun p ->

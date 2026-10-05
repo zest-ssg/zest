@@ -37,7 +37,7 @@
 
 - **F# everywhere.** Pages can be written as ordinary F# programs using a type-safe HTML DSL — loops, conditionals, functions, and data, with no template-language workarounds. Markdown remains available whenever prose is preferable to code.
 
-- **No lock-in.** Zest ships exactly one template language — **Zealucks** (`.zlk`, and `.njk` for Nunjucks files), which is syntax-compatible with Nunjucks — and one script layer, `.zest.fsx`. Output is plain, static HTML that can be hosted anywhere.
+- **No lock-in.** Zest ships exactly one template language — **Zestucks** (`.ztk`, and `.njk` for Nunjucks files), which is syntax-compatible with Nunjucks — and one script layer, `.zest.fsx`. Output is plain, static HTML that can be hosted anywhere.
 
 - **Quiet by default.** The bundled starter ships with no animation, no shadows, and no hover theatrics — typography and whitespace carry the page.
 
@@ -57,7 +57,7 @@
 
 - **ZCSS** — A CSS superset with nesting, F#-style `let` bindings, math expressions, color functions, and mixins — compiled to standard CSS.
 
-- **Zealucks templates** — `.zlk` files support the full Nunjucks-compatible feature set: variables, filters, `{% if %}` / `{% for %}`, template inheritance with `{% extends %}` / `{% block %}`, `{% include %}`, and macros, plus the Zest API (`site`, `page`, `pages`, `tags`, `collections`).
+- **Zestucks templates** — `.ztk` files support the full Nunjucks-compatible feature set: variables, filters, `{% if %}` / `{% for %}`, template inheritance with `{% extends %}` / `{% block %}`, `{% include %}`, and macros, plus the Zest API (`site`, `page`, `pages`, `tags`, `collections`).
 
 - **`_init.zest.fsx`** — An optional initialization script (run before each build) for injecting dynamic data, loading JSON/TOML, and reading environment variables.
 
@@ -201,16 +201,17 @@ Zest has exactly two authoring formats:
 
 | Format          | Purpose                                                             |
 |-----------------|---------------------------------------------------------------------|
-| `.zlk` / `.njk` | **Zealucks** templates — Nunjucks-compatible syntax for markup.      |
+| `.ztk` / `.njk` | **Zestucks** templates — Nunjucks-compatible syntax for markup.      |
 | `.zest.fsx`     | F# scripts — data loading, logic, and complex computation.           |
 
-Zealucks is Zest's own brand for its Nunjucks-compatible engine. It speaks the
+Zestucks is Zest's own brand for its Nunjucks-compatible engine. It speaks the
 same syntax — variables, filters, `if` / `for`, inheritance, `block`, `include`,
-and macros — so existing Nunjucks templates work unchanged. `.njk` files are
-accepted as-is: the engine does not distinguish the two extensions.
+and macros — so existing Nunjucks templates work unchanged. `.ztk` and `.njk`
+are the same language — same engine, same syntax: use `.ztk` for new templates,
+while `.njk` stays supported for files ported from Nunjucks.
 
-Layouts and partials are `.zlk` or `.njk` files (plain HTML works too: `.html`
-files are run through Zealucks when they contain `{{ }}` / `{% %}` syntax).
+Layouts and partials are `.ztk` or `.njk` files (plain HTML works too: `.html`
+files are run through Zestucks when they contain `{{ }}` / `{% %}` syntax).
 
 ```html
 <!DOCTYPE html>
@@ -221,37 +222,35 @@ files are run through Zealucks when they contain `{{ }}` / `{% %}` syntax).
   <link rel="stylesheet" href="/assets/css/main.css">
 </head>
 <body>
-  {{ include header.zlk }}
+  {{ include header.ztk }}
   <main>
     {{ content | safe }}
   </main>
-  {{ include footer.zlk }}
+  {{ include footer.ztk }}
 </body>
 </html>
 ```
 
-Supported Zealucks constructs include `{{ include }}`, `{{ content }}`, `{% if %}` / `{% for %}`, `{% assign %}`, filters (`| t`, `| date`, `| readingTime`), and i18n strings from `_locales/*.toml`.
+Supported Zestucks constructs include `{{ include }}`, `{{ content }}`, `{% if %}` / `{% for %}`, `{% assign %}`, filters (`| t`, `| date`, `| readingTime`), and i18n strings from `_locales/*.toml`.
 
 ### Nunjucks compatibility (`.njk`)
 
-Zealucks is a rename, not a rewrite, and it accepts Nunjucks file names as
-well. `.zlk` and `.njk` are the same language — same engine, same syntax, no
-translation step — so an existing Nunjucks template can be dropped in as is.
+The name **Zestucks** comes from the frustration that produced it: we were
+*stuck* with Nunjucks' Node-based tooling, so we rewrote the engine in F#. The
+`-ucks` ending keeps the nod to Nunjucks. `.ztk` and `.njk` are the same
+language — same engine, same syntax, no translation step — so an existing
+Nunjucks template can be dropped in as is.
 
-| Position            | `.zlk`      | `.njk`      | Meaning                        |
+| Position            | `.ztk`      | `.njk`      | Meaning                        |
 |---------------------|-------------|-------------|--------------------------------|
 | `_layouts/`         | yes         | yes         | Layout, resolved by stem name. |
 | `_includes/`        | yes         | yes         | Partial referenced bare.       |
 | `content/`          | yes         | yes         | Becomes a routed page.         |
-| References to it    | `layout.zlk`| `layout.njk`| Both spellings work.           |
+| References to it    | `layout.ztk`| `layout.njk`| Both spellings work.           |
 
 References may omit the extension entirely: `{% include "head" %}` and
 `{% extends "base" %}` resolve against `_includes/` then `_layouts/`, trying
-`.zlk` before `.njk`. When both exist, `.zlk` wins.
-
-To migrate an older Zest site, remove the `template_engine` key (and the
-`[template] engine` key) from `_config.toml` — there is no engine selection any
-more. Renaming `.njk` to `.zlk` is optional.
+`.ztk` before `.njk`. When both exist, `.ztk` wins.
 
 ---
 
@@ -261,7 +260,7 @@ more. Renaming `.njk` to `.zlk` is optional.
 .
 ├── _config.toml           # optional: site metadata and build options
 ├── _init.zest.fsx         # optional: pre-build script (global data, hooks)
-├── _layouts/              # Zealucks layouts (.zlk)
+├── _layouts/              # Zestucks layouts (.ztk)
 ├── _includes/             # partials pulled in with {{ include }}
 ├── _data/                 # global data (nav.toml, …)
 ├── _locales/              # i18n string tables (en.toml, …)
@@ -286,7 +285,7 @@ convention, never configuration.
 
 Anything not listed — `[[taxonomies]]`, `[menu.*]`, `[[defaults]]`,
 `[pagination]`, `[params]`, `include`, `exclude`,
-`[template.zealucks] compatibility` — is read at the top level.
+`[template.zestucks] compatibility` — is read at the top level.
 
 ---
 
@@ -308,7 +307,7 @@ Anything not listed — `[[taxonomies]]`, `[menu.*]`, `[[defaults]]`,
 | Project           | Language | Responsibility                                                                 |
 |-------------------|----------|----------------------------------------------------------------------------------|
 | **Zest.App**      | C#       | CLI entry point and host: command routing, configuration, dev server, file watching, logging, embedded starters. |
-| **Zest.Compiler** | F#       | Turns sources into a site: content pipeline, Zealucks templates, ZCSS, FSI scripting. |
+| **Zest.Compiler** | F#       | Turns sources into a site: content pipeline, Zestucks templates, ZCSS, FSI scripting. |
 | **Zest.Markup**   | F#       | The API surface a page author writes against: the HTML/ZCSS markup builders, SEO and feed helpers, page queries. |
 | **Zest.Core**     | F#       | Dependency-free primitives shared by the compiler and markup: slugs, prose metrics, dates. |
 
@@ -332,7 +331,7 @@ its module names are the public DSL surface page authors write against.
 
 ```
 src/Zest.App/            C#   Program, Cli/, Command/, Config/, Runtime/, Starter/
-src/Zest.Compiler/       F#   Model/ Zcss/ Build/ Zealucks/ Rendering/ Execution/
+src/Zest.Compiler/       F#   Model/ Zcss/ Build/ Zestucks/ Rendering/ Execution/
 src/Zest.Markup/         F#   Dsl/ Primitives/ Css/ Component/ Query/ Metadata/
 libs/Zest.Core/          F#   SlugFormatter, TextMetrics, DateFormatter
 ```
@@ -342,7 +341,7 @@ libs/Zest.Core/          F#   SlugFormatter, TextMetrics, DateFormatter
 | `Zest.Compiler/Model`      | Records with no behaviour: pages, front matter, config, file types.  |
 | `Zest.Compiler/Zcss`       | The ZCSS compiler: tokenizer, parsers, evaluator, CSS writer.        |
 | `Zest.Compiler/Build`      | Front matter parsing, permalinks, the page pipeline, generated pages, the build entry point. |
-| `Zest.Compiler/Zealucks`   | The Zealucks template engine, end to end.                            |
+| `Zest.Compiler/Zestucks`   | The Zestucks template engine, end to end.                            |
 | `Zest.Compiler/Rendering`  | HTML nodes, HTML writing, formatting, Markdown, page construction.   |
 | `Zest.Compiler/Execution`  | `dotnet fsi` execution, the page index, and Zest's template filters. |
 | `Zest.App/Runtime`         | The CLI process's runtime facilities: HTTP servers, watching, logging. |
@@ -360,8 +359,8 @@ Zest distinguishes two kinds of F# script. Only one of them becomes a page.
 
 | File pattern   | Purpose                                                        | Processing                                          |
 |----------------|----------------------------------------------------------------|-----------------------------------------------------|
-| `*.zlk` / `*.html` | Zealucks native templates (filters, macros, inheritance, Zest API) | Rendered by the Zealucks engine                |
-| `*.njk`        | Nunjucks-compatible templates — same engine as `.zlk`            | Rendered by the Zealucks engine                     |
+| `*.ztk` / `*.html` | Zestucks native templates (filters, macros, inheritance, Zest API) | Rendered by the Zestucks engine                |
+| `*.njk`        | Nunjucks-compatible templates — same engine as `.ztk`            | Rendered by the Zestucks engine                     |
 | `*.zest.fsx`   | **Zest Pages** — F# script templates with routing semantics      | Compiled via `dotnet fsi`, then given a URL         |
 | `*.fsx`        | Ordinary F# scripts — **Zest does not route them**               | Ignored by discovery                                |
 | `*.md`         | Standard Markdown                                                | Rendered to HTML                                    |
@@ -411,7 +410,7 @@ Three details follow from this:
   `scripts/build.zest.fsx` would publish it at `/scripts/build/`. Leave a URL
   that should not exist as a plain `.fsx`.
 
-When two files would produce the same output — `about.zlk` beside
+When two files would produce the same output — `about.ztk` beside
 `about.zest.fsx`, say — Zest does not arbitrate. Whichever page is written last
 wins, so give each route exactly one source file.
 
@@ -434,23 +433,23 @@ wins, so give each route exactly one source file.
 
 ### Layout Routing
 
-There is no "template engine" setting. Zest always renders with Zealucks, so
+Zest always renders with Zestucks, so
 routing depends only on the file extension:
 
 | Layout extension | Handling                                                    |
 |------------------|-------------------------------------------------------------|
 | `.zest.fsx`, `.fsx` | Evaluated as F# scripts by `dotnet fsi`.                 |
-| `.zlk`, `.njk`   | Rendered by Zealucks — the same language, two extensions.    |
-| `.html`, `.htm`  | Rendered by Zealucks when `{{ }}` / `{% %}` syntax is present, otherwise copied verbatim. |
+| `.ztk`, `.njk`   | Rendered by Zestucks — the same language, two extensions.    |
+| `.html`, `.htm`  | Rendered by Zestucks when `{{ }}` / `{% %}` syntax is present, otherwise copied verbatim. |
 
 This table describes `_layouts/` only. Layout files have no route, so a plain
 `.fsx` layout is fine — inside the content directory it would not be a page at
 all (see *File Types*).
 
-### Zealucks Compatibility Mode
+### Zestucks Compatibility Mode
 
-`[template.zealucks] compatibility` in `_config.toml` controls how strictly
-Zealucks mirrors Nunjucks:
+`[template.zestucks] compatibility` in `_config.toml` controls how strictly
+Zestucks mirrors Nunjucks:
 
 | Value     | Meaning                                                        |
 |-----------|----------------------------------------------------------------|

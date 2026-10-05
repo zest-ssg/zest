@@ -9,7 +9,7 @@ Zest is a static site generator where templates are real code. This site is the 
 
 ## Writing
 
-Articles are Markdown files with TOML front matter. Layouts are Zealucks templates (`.zlk`, Nunjucks-compatible), and styles are written in ZCSS, a CSS superset with variables and nesting.
+Articles are Markdown files with TOML front matter. Layouts are Zestucks templates (`.ztk`, Nunjucks-compatible), and styles are written in ZCSS, a CSS superset with variables and nesting.
 
 ## Building
 

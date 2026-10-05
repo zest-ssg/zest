@@ -5,8 +5,8 @@ open System.IO
 open Zest.Compiler.Model
 open Zest.Compiler.Build
 
-/// Collections API: page queries, global data, and Zealucks helpers.
-/// Optimized with on-demand caching for Zealucks data.
+/// Collections API: page queries, global data, and Zestucks helpers.
+/// Optimized with on-demand caching for Zestucks data.
 module PageStore =
 
     let internal allPagesRef : ContentPage list ref = ref []
@@ -84,7 +84,7 @@ module PageStore =
             p.Date.Value >= fromDt &&
             p.Date.Value <= toDt)
 
-    // ── Zealucks data helpers ────────────────────────────────────────────
+    // ── Zestucks data helpers ────────────────────────────────────────────
 
     /// Read a page's rendered body for collection templates.
     ///
@@ -126,7 +126,7 @@ module PageStore =
     let internal resetBodyCache () =
         lock renderedBodyLock (fun () -> renderedBodyCache.Clear())
 
-    let pageToZealucksDict (p: ContentPage) : IDictionary<string, obj> =
+    let pageToZestucksDict (p: ContentPage) : IDictionary<string, obj> =
         let d = Dictionary<string, obj>()
         d.["url"]    <- box p.Url
         d.["title"]  <- box p.Title
@@ -151,40 +151,40 @@ module PageStore =
         d.["templateContent"] <- box body
         d :> IDictionary<string, obj>
 
-    // ── Cached Zealucks data — computed once per build pass ──────────────
+    // ── Cached Zestucks data — computed once per build pass ──────────────
 
-    let mutable private _cachedPagesForZealucks : IDictionary<string, obj>[] option = None
-    let mutable private _cachedTagsForZealucks : string[] option = None
-    let mutable private _cachedCollectionsForZealucks : IDictionary<string, obj> option = None
+    let mutable private _cachedPagesForZestucks : IDictionary<string, obj>[] option = None
+    let mutable private _cachedTagsForZestucks : string[] option = None
+    let mutable private _cachedCollectionsForZestucks : IDictionary<string, obj> option = None
 
-    /// Reset cached Zealucks data (call at build start).
-    let internal resetZealucksCache () =
-        _cachedPagesForZealucks <- None
-        _cachedTagsForZealucks <- None
-        _cachedCollectionsForZealucks <- None
+    /// Reset cached Zestucks data (call at build start).
+    let internal resetZestucksCache () =
+        _cachedPagesForZestucks <- None
+        _cachedTagsForZestucks <- None
+        _cachedCollectionsForZestucks <- None
         resetBodyCache ()
 
-    let getPagesForZealucks () : IDictionary<string, obj>[] =
-        match _cachedPagesForZealucks with
+    let getPagesForZestucks () : IDictionary<string, obj>[] =
+        match _cachedPagesForZestucks with
         | Some cached -> cached
         | None ->
-            let result = !allPagesRef |> List.map pageToZealucksDict |> Array.ofList
-            _cachedPagesForZealucks <- Some result
+            let result = !allPagesRef |> List.map pageToZestucksDict |> Array.ofList
+            _cachedPagesForZestucks <- Some result
             result
 
-    let getTagsForZealucks () : string[] =
-        match _cachedTagsForZealucks with
+    let getTagsForZestucks () : string[] =
+        match _cachedTagsForZestucks with
         | Some cached -> cached
         | None ->
             let result = !allPagesRef |> List.collect (fun p -> p.Tags) |> List.distinct |> List.sort |> Array.ofList
-            _cachedTagsForZealucks <- Some result
+            _cachedTagsForZestucks <- Some result
             result
 
     /// Collection pages keyed by collection name, newest first — enables
     /// `{% for post in collections.posts %}` and prev/next pagination via
     /// the `prevPost` / `nextPost` filters.
-    let getCollectionsForZealucks () : IDictionary<string, obj> =
-        match _cachedCollectionsForZealucks with
+    let getCollectionsForZestucks () : IDictionary<string, obj> =
+        match _cachedCollectionsForZestucks with
         | Some cached -> cached
         | None ->
             let result = Dictionary<string, obj>()
@@ -195,7 +195,7 @@ module PageStore =
                     // so pagination/listing navigate between actual posts only.
                     |> List.filter (fun p -> not (p.Url.Trim('/').Equals(name, StringComparison.OrdinalIgnoreCase)))
                     |> List.sortByDescending (fun p -> p.Date |> Option.defaultValue DateTime.MinValue)
-                    |> List.map pageToZealucksDict
+                    |> List.map pageToZestucksDict
                     |> Array.ofList
                 result.[name] <- box pages
 
@@ -228,7 +228,7 @@ module PageStore =
                         !allPagesRef
                         |> List.filter (fun p -> select p |> List.exists (fun t -> t.Equals(term, StringComparison.OrdinalIgnoreCase)))
                         |> List.sortByDescending (fun p -> p.Date |> Option.defaultValue DateTime.MinValue)
-                        |> List.map pageToZealucksDict
+                        |> List.map pageToZestucksDict
                         |> Array.ofList
                     let entry = Dictionary<string, obj>()
                     entry.["name"] <- box term
@@ -243,5 +243,5 @@ module PageStore =
             result.["tagList"]    <- box (taxonomyTable "tags" (getAllTags ()) (fun p -> p.Tags))
 
             let boxed = result :> IDictionary<string, obj>
-            _cachedCollectionsForZealucks <- Some boxed
+            _cachedCollectionsForZestucks <- Some boxed
             boxed

@@ -30,7 +30,7 @@ public class BuildDriver
             var outDir = Path.GetFullPath(Path.Combine(
                 Directory.GetCurrentDirectory(), config.OutputDir.TrimStart('.', '\\', '/')));
             IncrementalCache.clearDiskCache(outDir);
-            try { Zest.Compiler.Zealucks.EngineHost.clearCaches(); }
+            try { Zest.Compiler.Zestucks.EngineHost.clearCaches(); }
             catch { /* non-fatal */ }
         }
 

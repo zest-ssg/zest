@@ -1,23 +1,23 @@
-namespace Zest.Compiler.Zealucks
+namespace Zest.Compiler.Zestucks
 open System
 open System.IO
 
 // Tokens.fs
 //
-// Foundation types shared by every Zealucks engine module. Must stay first in
+// Foundation types shared by every Zestucks engine module. Must stay first in
 // the compilation order: everything else in Template/ builds on these.
 //
 // There is no generic-template-engine layer any more. Zest ships one template
-// language — Zealucks — so these types describe Zealucks directly instead of
+// language — Zestucks — so these types describe Zestucks directly instead of
 // being an abstraction other engines could implement.
 //
 // Invariant: all types here are immutable and carry no render state.
 
 /// <summary>
-/// An error raised while tokenizing, evaluating, or rendering a Zealucks
+/// An error raised while tokenizing, evaluating, or rendering a Zestucks
 /// template.
 /// </summary>
-type ZealucksError =
+type ZestucksError =
     /// Evaluation or rendering failed. Carries the source line when known.
     | RuntimeError of message: string * line: int
     /// A template referenced by an include/extends tag was not found.
@@ -25,21 +25,21 @@ type ZealucksError =
 with
     override this.ToString() =
         match this with
-        | RuntimeError(msg, line) -> sprintf "[Zealucks] %s (line %d)" msg line
-        | NotFound(name)          -> sprintf "[Zealucks] Template not found: %s" name
+        | RuntimeError(msg, line) -> sprintf "[Zestucks] %s (line %d)" msg line
+        | NotFound(name)          -> sprintf "[Zestucks] Template not found: %s" name
 
 /// <summary>
-/// A Zealucks filter: transforms an incoming value into an output value.
+/// A Zestucks filter: transforms an incoming value into an output value.
 /// </summary>
 /// <param name="value">The value produced by the expression preceding the filter.</param>
 /// <param name="args">String forms of any filter arguments, in source order.</param>
 /// <returns>The transformed value. Returning the input unchanged is the
 /// conventional "unknown filter" fallback so a misnamed filter degrades to a
 /// passthrough instead of aborting the whole render.</returns>
-type ZealucksFilter = obj -> string list -> obj
+type ZestucksFilter = obj -> string list -> obj
 
 /// Path helpers for resolving include/extends references.
-module ZealucksPaths =
+module ZestucksPaths =
 
     /// Resolve a template-relative path against the working directory and
     /// reject paths that escape it (path-traversal guard for include/extends).

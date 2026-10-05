@@ -130,7 +130,7 @@ public class DevServer : HttpServerBase
 
             // Reset in-process template caches so layout/include changes
             // are picked up immediately.
-            try { Zest.Compiler.Zealucks.EngineHost.clearCaches(); }
+            try { Zest.Compiler.Zestucks.EngineHost.clearCaches(); }
             catch { /* non-fatal */ }
 
             try

@@ -14,13 +14,13 @@ open System.IO
 /// Conventional directory names, relative to the project root.
 module SiteDirectories =
 
-    /// Content pages (.md, .zest.fsx, .zlk, .html). Falls back to the root.
+    /// Content pages (.md, .zest.fsx, .ztk, .html). Falls back to the root.
     let Content = "content"
 
-    /// Zealucks layouts (.zlk).
+    /// Zestucks layouts (.ztk).
     let Layouts = "_layouts"
 
-    /// Zealucks partials (.zlk).
+    /// Zestucks partials (.ztk).
     let Includes = "_includes"
 
     /// Global data files (.toml).

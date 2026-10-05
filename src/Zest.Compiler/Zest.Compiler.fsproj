@@ -8,10 +8,10 @@
        Two directories are deliberately split across two groups to break
        dependency cycles:
          Build/      — PermalinkRouter / FrontMatterParser / LocaleLoader must
-                       exist before the Zealucks engine, while the pipeline and
+                       exist before the Zestucks engine, while the pipeline and
                        BuildRunner need the engine.
-         Zealucks/   — the engine core must exist before Rendering, while
-                       ZealucksFilters needs both Rendering and the engine. -->
+         Zestucks/   — the engine core must exist before Rendering, while
+                       ZestucksFilters needs both Rendering and the engine. -->
   <ItemGroup>
     <!-- Model: types with no behaviour -->
     <Compile Include="Model/FileTypes.fs" />
@@ -43,15 +43,15 @@
     <Compile Include="Build/FrontMatterParser.fs" />
     <Compile Include="Build/LocaleLoader.fs" />
 
-    <!-- Zealucks: the template engine -->
-    <Compile Include="Zealucks/Tokens.fs" />
-    <Compile Include="Zealucks/Tokenizer.fs" />
-    <Compile Include="Zealucks/ExpressionCompiler.fs" />
-    <Compile Include="Zealucks/Evaluator.fs" />
-    <Compile Include="Zealucks/BlockCollector.fs" />
-    <Compile Include="Zealucks/Renderer.fs" />
-    <Compile Include="Zealucks/Engine.fs" />
-    <Compile Include="Zealucks/EngineHost.fs" />
+    <!-- Zestucks: the template engine -->
+    <Compile Include="Zestucks/Tokens.fs" />
+    <Compile Include="Zestucks/Tokenizer.fs" />
+    <Compile Include="Zestucks/ExpressionCompiler.fs" />
+    <Compile Include="Zestucks/Evaluator.fs" />
+    <Compile Include="Zestucks/BlockCollector.fs" />
+    <Compile Include="Zestucks/Renderer.fs" />
+    <Compile Include="Zestucks/Engine.fs" />
+    <Compile Include="Zestucks/EngineHost.fs" />
 
     <!-- Rendering: nodes, HTML writing, Markdown and page construction -->
     <Compile Include="Rendering/Elements.fs" />
@@ -69,11 +69,11 @@
     <Compile Include="Rendering/PageData.fs" />
     <Compile Include="Rendering/Pjax.fs" />
 
-    <!-- Execution: FSI evaluation, page index and Zealucks filters -->
+    <!-- Execution: FSI evaluation, page index and Zestucks filters -->
     <Compile Include="Execution/FsiSession.fs" />
     <Compile Include="Execution/InitScript.fs" />
     <Compile Include="Execution/PageStore.fs" />
-    <Compile Include="Execution/ZealucksFilters.fs" />
+    <Compile Include="Execution/ZestucksFilters.fs" />
     <Compile Include="Execution/DslAssembly.fs" />
     <Compile Include="Execution/FsiRunner.fs" />
     <Compile Include="Execution/PageEvaluator.fs" />

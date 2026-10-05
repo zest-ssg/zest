@@ -1,4 +1,4 @@
-namespace Zest.Compiler.Zealucks
+namespace Zest.Compiler.Zestucks
 open System
 open System.Collections.Concurrent
 open System.Collections.Generic
@@ -6,7 +6,7 @@ open System.IO
 open Zest.Compiler.Model
 // Engine.fs
 //
-// The Zealucks engine: the only template engine Zest has. It delegates to the
+// The Zestucks engine: the only template engine Zest has. It delegates to the
 // tokenizer, evaluator, block collector, and renderer modules.
 //
 // Threading: Render must stay safe to call from parallel page workers, so no
@@ -18,7 +18,7 @@ open Zest.Compiler.Model
 // Evaluator, FileTypes
 
 /// <summary>
-/// Renders Zealucks templates — Zest's Nunjucks-compatible template language.
+/// Renders Zestucks templates — Zest's Nunjucks-compatible template language.
 /// </summary>
 type Engine() =
 
@@ -40,7 +40,7 @@ type Engine() =
     /// <param name="templateText">Raw template source.</param>
     /// <param name="variables">Flat or nested context bag for interpolation.</param>
     /// <returns>Rendered output, or a typed error with a source location.</returns>
-    member _.Render(templateText: string) (variables: IDictionary<string, obj>) : Result<string, ZealucksError> =
+    member _.Render(templateText: string) (variables: IDictionary<string, obj>) : Result<string, ZestucksError> =
         let lastLine = ref 0
         try
             let tokens = Tokenizer.tokenize templateText
@@ -49,7 +49,7 @@ type Engine() =
                 LoadTemplate = fun (path, depth) ->
                     if depth > 10 then Error("Circular include/extends detected")
                     else
-                        match ZealucksPaths.resolveWithinRoot path with
+                        match ZestucksPaths.resolveWithinRoot path with
                         | Ok fullPath -> loadFileFn fullPath
                         | Error e -> Error e
                 ChildBlocks = dict [] :> IDictionary<_, _>
@@ -65,8 +65,8 @@ type Engine() =
             }
             match Renderer.renderTokens tokens env with
             | Ok s -> Ok s
-            | Error msg -> Error(ZealucksError.RuntimeError(msg, !lastLine))
-        with ex -> Error(ZealucksError.RuntimeError(ex.Message, !lastLine))
+            | Error msg -> Error(ZestucksError.RuntimeError(msg, !lastLine))
+        with ex -> Error(ZestucksError.RuntimeError(ex.Message, !lastLine))
 
     /// <summary>
     /// Renders a template file, caching its contents by last-write time.
@@ -74,7 +74,7 @@ type Engine() =
     /// <param name="filePath">Absolute path to the template file.</param>
     /// <param name="variables">Context bag for interpolation.</param>
     /// <returns>Rendered output, or NotFound for a missing file.</returns>
-    member this.RenderFile(filePath: string) (variables: IDictionary<string, obj>) : Result<string, ZealucksError> =
+    member this.RenderFile(filePath: string) (variables: IDictionary<string, obj>) : Result<string, ZestucksError> =
         try
             let text =
                 match templateCache.TryGetValue filePath with
@@ -84,13 +84,13 @@ type Engine() =
                     templateCache.[filePath] <- struct(File.GetLastWriteTimeUtc(filePath), t)
                     t
             this.Render text variables
-        with :? FileNotFoundException -> Error(ZealucksError.NotFound filePath)
-           | ex -> Error(ZealucksError.RuntimeError(ex.Message, 0))
+        with :? FileNotFoundException -> Error(ZestucksError.NotFound filePath)
+           | ex -> Error(ZestucksError.RuntimeError(ex.Message, 0))
 
     /// <summary>
     /// Registers a custom filter usable as `| name` in templates.
     /// </summary>
-    member _.RegisterFilter(name: string) (fn: ZealucksFilter) =
+    member _.RegisterFilter(name: string) (fn: ZestucksFilter) =
         Evaluator.customFilters.[name] <- fn
 
     /// <summary>Clears every engine-owned cache (templates, tokens, file cache).</summary>

@@ -1,7 +1,7 @@
 // TaxonomyGenerator.fs
 //
 // Auto-generates taxonomy archive pages (e.g. /tags/ and /tags/<term>/) so
-// that adding a tag to a post is enough — no need to hand-author a .zlk file
+// that adding a tag to a post is enough — no need to hand-author a .ztk file
 // per tag. Runs after the content pipeline so PageStore already knows every
 // page and tag.
 //
@@ -18,14 +18,14 @@ open System.IO
 open System.Text.RegularExpressions
 open Zest.Compiler.Model
 open Zest.Compiler.Execution
-open Zest.Compiler.Zealucks
+open Zest.Compiler.Zestucks
 open Zest.Compiler.Rendering
 
 /// Generates listing pages for taxonomy terms (tags by default).
 module TaxonomyGenerator =
 
     /// Built-in fallback for a single term listing, used when the theme does
-    /// not ship `_layouts/<singular>.zlk`. Keeps the generator useful standalone.
+    /// not ship `_layouts/<singular>.ztk`. Keeps the generator useful standalone.
     let private defaultTermTemplate = """
 <div class="posts tag-posts">
   <h2>{{ term }}</h2>
@@ -42,7 +42,7 @@ module TaxonomyGenerator =
 """
 
     /// Built-in fallback for the terms index, used when the theme does not
-    /// ship `_layouts/<plural>.zlk`.
+    /// ship `_layouts/<plural>.ztk`.
     let private defaultIndexTemplate = """
 <div class="terms terms-index">
   <h2>{{ taxonomy.plural | capitalize }}</h2>
@@ -76,7 +76,7 @@ module TaxonomyGenerator =
         match tryFind keys with Some b -> stripFrontMatter b | None -> fallback
 
     /// Build the standard render-context pairs: site.* (mirroring
-    /// PageEvaluator.getZealucksSiteContext) plus the taxonomy extras.
+    /// PageEvaluator.getZestucksSiteContext) plus the taxonomy extras.
     let private buildContext (config: SiteConfig)
                              (globalData: IDictionary<string, obj>)
                              (extras: (string * obj) list)
@@ -93,17 +93,17 @@ module TaxonomyGenerator =
         for kv in globalData do
             pairs.Add("site." + kv.Key, kv.Value)
         // Collection data shared with all templates.
-        pairs.Add("pages", box (PageStore.getPagesForZealucks () |> Array.map box))
-        pairs.Add("tags", box (PageStore.getTagsForZealucks ()))
-        pairs.Add("collections", box (PageStore.getCollectionsForZealucks ()))
+        pairs.Add("pages", box (PageStore.getPagesForZestucks () |> Array.map box))
+        pairs.Add("tags", box (PageStore.getTagsForZestucks ()))
+        pairs.Add("collections", box (PageStore.getCollectionsForZestucks ()))
         for (k, v) in extras do pairs.Add(k, v)
         EngineHost.buildContext pairs
 
-    /// Render a fragment template to inner HTML via the Zealucks engine.
+    /// Render a fragment template to inner HTML via the Zestucks engine.
     let private renderFragment (templateBody: string)
                                (ctx: IDictionary<string, obj>) : string =
         let engine = EngineHost.instance
-        ZealucksFilters.registerAllFilters engine |> ignore
+        ZestucksFilters.registerAllFilters engine |> ignore
         match engine.Render templateBody ctx with
         | Ok html -> html
         | Error err ->
@@ -227,7 +227,7 @@ module TaxonomyGenerator =
                 pages
                 |> List.filter belongs
                 |> List.sortByDescending (fun p -> p.Date |> Option.defaultValue DateTime.MinValue)
-                |> List.map PageStore.pageToZealucksDict
+                |> List.map PageStore.pageToZestucksDict
                 |> Array.ofList
             let taxDict = dict [
                 "name", box tax.Name

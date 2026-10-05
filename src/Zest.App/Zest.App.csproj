@@ -75,9 +75,9 @@
     <EmbeddedResource Include="Starter\content\rss.zest.fsx" LogicalName="Zest.App.Starter.content\rss.zest.fsx" />
     <EmbeddedResource Include="Starter\content\atom.zest.fsx" LogicalName="Zest.App.Starter.content\atom.zest.fsx" />
     <EmbeddedResource Include="Starter\content\sitemap.zest.fsx" LogicalName="Zest.App.Starter.content\sitemap.zest.fsx" />
-    <EmbeddedResource Include="Starter\_layouts\post.zlk" LogicalName="Zest.App.Starter._layouts\post.zlk" />
-    <EmbeddedResource Include="Starter\_includes\head.zlk" LogicalName="Zest.App.Starter._includes\head.zlk" />
-    <EmbeddedResource Include="Starter\_includes\header.zlk" LogicalName="Zest.App.Starter._includes\header.zlk" />
+    <EmbeddedResource Include="Starter\_layouts\post.ztk" LogicalName="Zest.App.Starter._layouts\post.ztk" />
+    <EmbeddedResource Include="Starter\_includes\head.ztk" LogicalName="Zest.App.Starter._includes\head.ztk" />
+    <EmbeddedResource Include="Starter\_includes\header.ztk" LogicalName="Zest.App.Starter._includes\header.ztk" />
     <EmbeddedResource Include="Starter\assets\css\main.zcss" LogicalName="Zest.App.Starter.assets\css\main.zcss" />
   </ItemGroup>
 

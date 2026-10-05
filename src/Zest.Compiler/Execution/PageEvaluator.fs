@@ -7,7 +7,7 @@ open Zest.Compiler.Model
 open Zest.Compiler.Build
 open Zest.Compiler.Build
 open Zest.Compiler.Rendering
-open Zest.Compiler.Zealucks
+open Zest.Compiler.Zestucks
 
 /// Evaluates .zest.fsx / .md files into Page records.
 /// Optimized with content caching, static Regex, and filter/page-data caching.
@@ -38,22 +38,22 @@ module PageEvaluator =
                 m
             | None -> meta
 
-    // ── Zealucks context caching (built once per build, shared across all pages) ──
+    // ── Zestucks context caching (built once per build, shared across all pages) ──
     // Keyed by reference equality: the dictionary is mutated before evaluation
     // begins and never again, so a changed reference always means new content.
-    let mutable private cachedZealucksSiteContext : (string * obj)[] option = None
-    let mutable private cachedZealucksGlobalDataRef : IDictionary<string, obj> = null
-    let mutable private cachedZealucksConfigRef : SiteConfig = Unchecked.defaultof<SiteConfig>
+    let mutable private cachedZestucksSiteContext : (string * obj)[] option = None
+    let mutable private cachedZestucksGlobalDataRef : IDictionary<string, obj> = null
+    let mutable private cachedZestucksConfigRef : SiteConfig = Unchecked.defaultof<SiteConfig>
 
-    let internal resetZealucksCache () =
-        cachedZealucksSiteContext <- None
-        cachedZealucksGlobalDataRef <- null
-        cachedZealucksConfigRef <- Unchecked.defaultof<SiteConfig>
+    let internal resetZestucksCache () =
+        cachedZestucksSiteContext <- None
+        cachedZestucksGlobalDataRef <- null
+        cachedZestucksConfigRef <- Unchecked.defaultof<SiteConfig>
 
-    let private getZealucksSiteContext (config: SiteConfig) (globalData: IDictionary<string, obj>) =
-        match cachedZealucksSiteContext with
-        | Some ctx when Object.ReferenceEquals(cachedZealucksGlobalDataRef, globalData)
-                       && Object.ReferenceEquals(cachedZealucksConfigRef, config) -> ctx
+    let private getZestucksSiteContext (config: SiteConfig) (globalData: IDictionary<string, obj>) =
+        match cachedZestucksSiteContext with
+        | Some ctx when Object.ReferenceEquals(cachedZestucksGlobalDataRef, globalData)
+                       && Object.ReferenceEquals(cachedZestucksConfigRef, config) -> ctx
         | _ ->
             let pairs = ResizeArray<string * obj>()
             pairs.Add("site.title",       box config.Title)
@@ -65,9 +65,9 @@ module PageEvaluator =
             for kv in globalData do
                 pairs.Add("site." + kv.Key, kv.Value)
             let result = pairs |> Seq.toArray
-            cachedZealucksSiteContext <- Some result
-            cachedZealucksGlobalDataRef <- globalData
-            cachedZealucksConfigRef <- config
+            cachedZestucksSiteContext <- Some result
+            cachedZestucksGlobalDataRef <- globalData
+            cachedZestucksConfigRef <- config
             result
 
     // ── Filter registry caching (track registered engines) ─────────
@@ -76,7 +76,7 @@ module PageEvaluator =
     let private ensureFiltersRegistered (engine: Engine) =
         let key = engine.GetHashCode().ToString()
         if registeredEngines.Add(key) then
-            ZealucksFilters.registerAllFilters engine
+            ZestucksFilters.registerAllFilters engine
 
     /// Extract and render content HTML from script text (legacy Markdown fallback mode).
     let private renderContent (ext: string) (bodyText: string) (fullText: string) : string =
@@ -95,9 +95,9 @@ module PageEvaluator =
                 |> Array.skipWhile String.IsNullOrWhiteSpace
             Markdown.toHtml (String.concat "\n" lines)
 
-    /// Render .zlk (and WebC) content pages with the Zealucks engine,
-    /// pre-processing WebC components into Zealucks syntax first.
-    let private renderZealucksContent
+    /// Render .ztk (and WebC) content pages with the Zestucks engine,
+    /// pre-processing WebC components into Zestucks syntax first.
+    let private renderZestucksContent
         (bodyText: string)
         (config: SiteConfig)
         (globalData: IDictionary<string, obj>)
@@ -108,7 +108,7 @@ module PageEvaluator =
         : string =
         let buildPairs () =
             let pairs = ResizeArray<string * obj>()
-            let siteCtx = getZealucksSiteContext config globalData
+            let siteCtx = getZestucksSiteContext config globalData
             pairs.AddRange(siteCtx)
             // ── page.* ──────────────────────────────────────────
             pairs.Add("page.title", box (meta.Title |> Option.defaultValue slug))
@@ -120,12 +120,12 @@ module PageEvaluator =
             for kv in meta.Extra do
                 pairs.Add("page." + kv.Key, box kv.Value)
             // ── Zest collection data ────────────────────────────
-            pairs.Add("pages", box (PageStore.getPagesForZealucks () |> Array.map box))
-            pairs.Add("tags", box (PageStore.getTagsForZealucks ()))
-            pairs.Add("collections", box (PageStore.getCollectionsForZealucks ()))
+            pairs.Add("pages", box (PageStore.getPagesForZestucks () |> Array.map box))
+            pairs.Add("tags", box (PageStore.getTagsForZestucks ()))
+            pairs.Add("collections", box (PageStore.getCollectionsForZestucks ()))
             EngineHost.buildContext pairs
-        // WebC SSR reduces a component to Zealucks syntax; every other
-        // Zealucks-family extension renders as authored.
+        // WebC SSR reduces a component to Zestucks syntax; every other
+        // Zestucks-family extension renders as authored.
         let templateText =
             match ext.ToLowerInvariant() with
             | FileTypes.WebC ->
@@ -139,7 +139,7 @@ module PageEvaluator =
         match engine.Render templateText ctx with
         | Ok html -> html
         | Error err ->
-            eprintfn "[Zest] Zealucks error in content '%s': %O" filePath err
+            eprintfn "[Zest] Zestucks error in content '%s': %O" filePath err
             templateText
 
     let private resolveContentDir (config: SiteConfig) =
@@ -153,7 +153,7 @@ module PageEvaluator =
         relPath, rawSlug
 
     /// Copy front-matter-derived fields into the page data dictionary so
-    /// Zealucks templates can address `page.tags`, `page.categories`,
+    /// Zestucks templates can address `page.tags`, `page.categories`,
     /// `page.author`, and `page.updated` with native array/string values.
     let applyMetaFields (d: IDictionary<string, obj>) (meta: ContentMeta) =
         if not meta.Tags.IsEmpty then d.["tags"] <- box (meta.Tags |> Array.ofList)
@@ -329,7 +329,7 @@ module PageEvaluator =
 
                     let contentHtml =
                         match ext with
-                        | FileTypes.Zealucks | FileTypes.Nunjucks | FileTypes.WebC -> renderZealucksContent bodyText config globalData meta slug filePath ext
+                        | FileTypes.Zestucks | FileTypes.Nunjucks | FileTypes.WebC -> renderZestucksContent bodyText config globalData meta slug filePath ext
                         | _       -> renderContent ext bodyText text
 
                     Ok { ContentPage.empty with
@@ -366,7 +366,7 @@ module PageEvaluator =
 
                 let contentHtml =
                     match ext with
-                    | FileTypes.Zealucks | FileTypes.Nunjucks | FileTypes.WebC -> renderZealucksContent bodyText config globalData meta slug filePath ext
+                    | FileTypes.Zestucks | FileTypes.Nunjucks | FileTypes.WebC -> renderZestucksContent bodyText config globalData meta slug filePath ext
                     | _       -> renderContent ext bodyText text
 
                 Ok { ContentPage.empty with

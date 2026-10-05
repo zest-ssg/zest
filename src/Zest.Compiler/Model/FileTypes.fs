@@ -8,7 +8,7 @@ open System.IO
 // the Zest build pipeline. Replaces scattered hardcoded strings
 // across FrontMatterParser, LayoutChain, PageEvaluator, etc.
 //
-// Usage: reference these constants instead of literal ".zlk" /
+// Usage: reference these constants instead of literal ".ztk" /
 // ".zcss" / etc. to keep extension handling consistent and
 // discoverable. F# [<Literal>] values are usable in pattern matches.
 // ============================================================
@@ -36,7 +36,7 @@ module FileTypes =
     [<Literal>]
     let MarkdownLong = ".markdown"
 
-    /// Plain HTML (Zealucks-preprocessed when template syntax detected).
+    /// Plain HTML (Zestucks-preprocessed when template syntax detected).
     [<Literal>]
     let Html = ".html"
 
@@ -44,17 +44,17 @@ module FileTypes =
     [<Literal>]
     let HtmlLong = ".htm"
 
-    /// Zealucks template. Zealucks is Zest's Zealucks-compatible template
-    /// language; `.zlk` is its file extension (Ze-llucks).
+    /// Zestucks template. Zestucks is Zest's Nunjucks-compatible template
+    /// language; `.ztk` is its file extension (Ze-stucks).
     [<Literal>]
-    let Zealucks = ".zlk"
+    let Zestucks = ".ztk"
 
-    /// Nunjucks-compatible alias for `.zlk`. Same engine, same syntax — files
-    /// ported from Nunjucks keep working without being renamed.
+    /// Nunjucks-compatible counterpart to `.ztk`. Same engine, same syntax —
+    /// files ported from Nunjucks keep working without being renamed.
     [<Literal>]
     let Nunjucks = ".njk"
 
-    /// WebC component (SSR-processed, then rendered by the Zealucks engine).
+    /// WebC component (SSR-processed, then rendered by the Zestucks engine).
     [<Literal>]
     let WebC = ".webc"
 
@@ -110,32 +110,32 @@ module FileTypes =
 
     // ── Aggregate sets ─────────────────────────────────────
 
-    /// Every extension rendered by the Zealucks engine: the native `.zlk`,
+    /// Every extension rendered by the Zestucks engine: the native `.ztk`,
     /// the Nunjucks-compatible `.njk`, and `.webc` (SSR-processed first).
     /// Used by PageEvaluator, FrontMatterParser, PagePipeline, LayoutChain.
-    let ZealucksFamily =
-        [ Zealucks; Nunjucks; WebC ]
+    let ZestucksFamily =
+        [ Zestucks; Nunjucks; WebC ]
 
-    /// Extensions Zealucks reads from disk, in lookup order. Used when a
+    /// Extensions Zestucks reads from disk, in lookup order. Used when a
     /// template refers to another one by bare name (`{% extends "base" %}`).
-    let ZealucksFileExtensions =
-        [ Zealucks; Nunjucks ]
+    let ZestucksFileExtensions =
+        [ Zestucks; Nunjucks ]
 
     /// All content extensions processed by the build pipeline.
-    /// Includes Zest Pages, Markdown, HTML, and Zealucks-family templates.
+    /// Includes Zest Pages, Markdown, HTML, and Zestucks-family templates.
     /// Plain `.fsx` is deliberately absent — those scripts are not content.
     let Content =
         [ ZestScript; Markdown; MarkdownLong; Html ]
-        @ ZealucksFamily
+        @ ZestucksFamily
 
     /// All asset extensions (copied or lightly processed, not rendered as pages).
     let Assets =
         [ Zcss; Css; JavaScript; Png; Jpg; Jpeg; Svg; Gif; Webp ]
 
-    /// <summary>Check if a path has one of the Zealucks-family extensions.</summary>
+    /// <summary>Check if a path has one of the Zestucks-family extensions.</summary>
     /// <param name="path">File path to check (case-insensitive).</param>
-    let isZealucksFamily (path: string) =
-        ZealucksFamily
+    let isZestucksFamily (path: string) =
+        ZestucksFamily
         |> List.exists (fun ext -> path.EndsWith(ext, System.StringComparison.OrdinalIgnoreCase))
 
     /// <summary>Check if a path is a content/template file.</summary>

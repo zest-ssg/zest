@@ -1,10 +1,10 @@
-namespace Zest.Compiler.Zealucks
+namespace Zest.Compiler.Zestucks
 open System
 open System.Text
 
 // ExpressionCompiler.fs
 //
-// Compiles Zealucks expression text into a small tree (CExpr) so a template
+// Compiles Zestucks expression text into a small tree (CExpr) so a template
 // loop does not re-parse the same expression on every iteration.
 //
 // Invariant: the compiler mirrors the evaluator's precedence exactly
@@ -104,7 +104,7 @@ module internal ExpressionCompiler =
     /// leftmost top-level `if` and its matching `else`. Returns None when no
     /// complete conditional is present, so the text falls through to ordinary
     /// expression parsing. Leftmost-splitting makes the conditional
-    /// right-associative, matching Jinja/Zealucks.
+    /// right-associative, matching Jinja/Zestucks.
     let private splitInlineIf (text: string) : (string * string * string) option =
         let n = text.Length
         let isWordAt (k: int) (w: string) =
@@ -243,7 +243,7 @@ module internal ExpressionCompiler =
             CBin(op, compileMul (text.[..i-1]), compileUnary (text.[i+op.Length..]))
         | _ -> compileUnary text
 
-    /// Unary numeric sign (`-5`, `+3`, `-x`). Zealucks has no separate unary
+    /// Unary numeric sign (`-5`, `+3`, `-x`). Zestucks has no separate unary
     /// operator level, so the sign binds tighter than `*` and `/` but looser
     /// than atoms; the prefix marker keeps `-x` distinct from binary `a - x`.
     and compileUnary (text: string) : CExpr =

@@ -70,10 +70,10 @@ type SiteConfig = {
     // Author / social (surfaced from _data but can be inlined in _config)
     Author: string
     Language: string
-    // ── Zealucks compatibility mode ──
+    // ── Zestucks compatibility mode ──
     /// "strict" = match Nunjucks exactly; "zest" = Zest extensions enabled.
-    /// Zest renders with Zealucks either way; only the filter set differs.
-    ZealucksCompatibility: string
+    /// Zest renders with Zestucks either way; only the filter set differs.
+    ZestucksCompatibility: string
     // ── File inclusion / exclusion ──
     /// Glob patterns for files to explicitly include (even if excluded by
     /// the default _-prefix / .-prefix rules). Example: [".domains", "tools/*"]
@@ -130,7 +130,7 @@ module SiteConfigDefaults =
           Language = "en"
           // "zest" mode enables Zest's extended filters/macros on top of the
           // Nunjucks-compatible core.
-          ZealucksCompatibility = "zest"
+          ZestucksCompatibility = "zest"
           // Include / exclude — empty by default
           Include = []
           Exclude = []

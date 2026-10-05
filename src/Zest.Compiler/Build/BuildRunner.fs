@@ -10,7 +10,7 @@ open System.Threading.Tasks
 open Zest.Compiler.Execution
 open Zest.Compiler.Build
 open Zest.Compiler.Rendering
-open Zest.Compiler.Zealucks
+open Zest.Compiler.Zestucks
 open SitePaths
 open IncrementalCache
 open GlobalData
@@ -39,14 +39,14 @@ module BuildRunner =
             progress.Phase <- BuildPhase.Initializing
 
             FsiRunner.resetSession()
-            PageEvaluator.resetZealucksCache()
+            PageEvaluator.resetZestucksCache()
 
             // Strict mode disables Zest extension filters so only the
             // Nunjucks-compatible filter set remains available.
-            let isStrict = config.ZealucksCompatibility = "strict"
-            ZealucksFilters.setStrictMode isStrict
+            let isStrict = config.ZestucksCompatibility = "strict"
+            ZestucksFilters.setStrictMode isStrict
             if isStrict then
-                eprintfn "[Zest] Zealucks strict mode — Zest extension filters disabled."
+                eprintfn "[Zest] Zestucks strict mode — Zest extension filters disabled."
 
             let root        = Directory.GetCurrentDirectory()
             let contentDir  = resolveContentDir root config
@@ -55,7 +55,7 @@ module BuildRunner =
             let dataDir     = resolveSiteDir root SiteDirectories.Data
             let includesDir = resolveSiteDir root SiteDirectories.Includes
 
-            // Native Zealucks `{% include %}` / `{% extends %}` take bare
+            // Native Zestucks `{% include %}` / `{% extends %}` take bare
             // names; register the partial and layout directories on the loader
             // so "head" resolves without leaking absolute paths in templates.
             // Layouts come second so a partial wins over a same-named layout.
@@ -120,7 +120,7 @@ module BuildRunner =
             // _data/params.toml < _config.toml [params] (highest). Deep-merge
             // so nested tables (e.g. [params.colors]) replace only the keys
             // they specify, not the entire sub-table. Both the whole `params`
-            // object and flat `params.<key>` entries are set so Zealucks can
+            // object and flat `params.<key>` entries are set so Zestucks can
             // resolve `site.params` as an object and `site.params.colors.accent`
             // via property traversal.
             let rec deepMergeParams (src: IDictionary<string, obj>) (dst: Dictionary<string, obj>) =
@@ -179,12 +179,12 @@ module BuildRunner =
                 if not (gDict.ContainsKey kv.Key) then
                     gDict.[kv.Key] <- kv.Value
             // Propagate init-declared filters so every engine picks them up.
-            ZealucksFilters.setInitFilters initResult.Filters
+            ZestucksFilters.setInitFilters initResult.Filters
             PageStore.setGlobalData gDict
 
             // ── Load locale files (_locales/{lang}.toml) ────
             let locales = Zest.Compiler.Build.LocaleLoader.loadLocales root
-            ZealucksFilters.setLocales locales config.Language
+            ZestucksFilters.setLocales locales config.Language
             // Expose locales to templates
             for langKv in locales do
                 for transKv in langKv.Value do
