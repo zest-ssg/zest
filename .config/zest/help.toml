@@ -1,7 +1,100 @@
 # ─── Zest CLI Help Text ───────────────────────────────
-# Copy shown under the command list in `zest --help`.
-# Embedded as the manifest resource `zest.help.toml` and read by
-# Zest.App.CommandLine.HelpRenderer, which merges it with meta.toml.
+# Every user-facing string shown by the CLI. Embedded as the manifest
+# resource `zest.help.toml` and read by Zest.App.CommandLine.HelpRenderer,
+# which merges it with meta.toml.
+#
+# Commands and options are arrays so the display order is the order written
+# here. Each command also owns a [build] / [serve] / [preview] table holding
+# its usage line and option rows, printed by `zest <command> --help`.
 
 [suffix]
 help_message = "Run 'zest <command> --help' for command-specific options."
+
+[[command]]
+usage = "build [path]"
+desc  = "Build the site into _site/"
+
+[[command]]
+usage = "serve [path]"
+desc  = "Build and start the dev server with live reload"
+
+[[command]]
+usage = "preview [path]"
+desc  = "Serve _site/ without rebuilding"
+
+[[command]]
+usage = "init [path]"
+desc  = "Scaffold a new site"
+
+[[command]]
+usage = "clean"
+desc  = "Remove build output"
+
+[[command]]
+usage = "help"
+desc  = "Show this help message"
+
+[[option]]
+usage = "-p, --port <port>"
+desc  = "Server port (default: 8080)"
+
+[[option]]
+usage = "-w, --watch"
+desc  = "Watch files and rebuild on change"
+
+[[option]]
+usage = "-v, --verbose"
+desc  = "Enable debug-level logging"
+
+[[option]]
+usage = "-q, --quiet"
+desc  = "Suppress info-level output"
+
+[[option]]
+usage = "--empty"
+desc  = "Scaffold without starter content (zest init)"
+
+[[option]]
+usage = "-h, --help"
+desc  = "Show help"
+
+[[option]]
+usage = "--version"
+desc  = "Show the version"
+
+# ── Per-command pages ─────────────────────────────────
+
+[build]
+usage = "zest build [path] [options]"
+options = [
+  "path              Project directory (default: current directory)",
+  "--watch, -w       Watch for changes and auto-rebuild",
+  "--verbose, -v     Enable Debug-level logging",
+  "--quiet, -q       Suppress Info-level logs"
+]
+
+[serve]
+usage = "zest serve [options]"
+options = [
+  "--port, -p PORT   Dev server port (default: 8080)",
+  "--host HOST       Bind to host (default: localhost)",
+  "--open, -o        Open browser on start",
+  "--spa             Fall back to index.html for every route",
+  "--dir             Enable directory listing",
+  "--verbose, -v     Show detailed FSI output",
+  "--quiet, -q       Suppress Info-level logs"
+]
+
+[preview]
+usage = "zest preview [options]"
+options = [
+  "--port, -p PORT   Preview server port (default: 8080)",
+  "--host HOST       Bind to host (default: localhost)",
+  "--open, -o        Open browser on start",
+  "--watch, -w       Watch files and auto-rebuild",
+  "--livereload, -l  Enable live reload over WebSocket",
+  "--spa             Fall back to index.html for every route",
+  "--dir             Enable directory listing",
+  "--verbose, -v     Enable Debug-level logging",
+  "--quiet, -q       Suppress Info-level logs"
+]

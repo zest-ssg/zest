@@ -6,8 +6,8 @@ open System.Text.RegularExpressions
 // TextMetrics.fs
 //
 // Counts prose in HTML fragments: word counts, reading time, and tag
-// stripping. Zest.Engine uses these for the `wordCount` / `readingTime`
-// template filters; Zest.Dsl exposes the same numbers to page scripts. Both
+// stripping. Zest.Compiler uses these for the `wordCount` / `readingTime`
+// template filters; Zest.Markup exposes the same numbers to page scripts. Both
 // must agree, otherwise a feed and its page report different lengths.
 //
 // Invariant: every count is computed on prose only. Fenced and inline code

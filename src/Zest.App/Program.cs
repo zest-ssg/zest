@@ -1,14 +1,15 @@
 using System.Globalization;
 using System.Text;
 using Zest.App.CommandLine;
-using Zest.App.Controllers;
-using Zest.Infra.Services;
+using Zest.App.Commands;
+using Zest.App.Services;
 
 // Program.cs
 //
 // CLI entry point and command dispatcher. The first argument selects the
 // controller; the remaining arguments pass through unmodified so each
-// controller owns its own option parsing.
+// controller owns its own option parsing. All help copy lives in
+// .config/zest/help.toml so there is one place to edit it.
 namespace Zest.App;
 
 public static class Program
@@ -27,14 +28,11 @@ public static class Program
 
             return command switch
             {
-                "build" => BuildController.Execute(args),
-                "serve" or "dev" => ServeController.Execute(args),
-                "preview" => ServeController.ExecutePreview(args),
-                "init" => InitController.Execute(args),
-                "scaffold" => ScaffoldCommand.Execute(args),
-                "migrate" => MigrateCommand.Execute(args),
-                "convert-config" or "convert_config" => ConfigConverter.Execute(args),
-                "clean" => CleanController.Execute(args),
+                "build" => BuildCommand.Execute(args),
+                "serve" or "dev" => ServeCommand.Execute(args),
+                "preview" => ServeCommand.ExecutePreview(args),
+                "init" => InitCommand.Execute(args),
+                "clean" => CleanCommand.Execute(args),
                 "--version" or "-v" => ShowVersion(),
                 "--help" or "-h" or "help" => PrintHelp(),
                 _ => UnknownCommand(command)
@@ -68,23 +66,12 @@ public static class Program
         WriteRow("zest <command> [options]", null);
 
         WriteSection("Commands");
-        WriteRow("build [path]", "Build the site into _site/");
-        WriteRow("serve [path]", "Build and start the dev server");
-        WriteRow("preview [path]", "Serve _site/ without rebuilding");
-        WriteRow("init [path]", "Scaffold a new project");
-        WriteRow("scaffold <template> [path]", "Generate a project from a preset");
-        WriteRow("migrate <source-ssg>", "Migrate from Jekyll, Hexo, Hugo or 11ty");
-        WriteRow("convert-config <from> <to>", "Convert a config between YAML and TOML");
-        WriteRow("clean", "Clear build artifacts");
-        WriteRow("help", "Show this help message");
+        foreach (var row in HelpRenderer.Commands)
+            WriteRow(row.Usage, row.Description);
 
         WriteSection("Options");
-        WriteRow("-p, --port <port>", "Server port (default: 8080)");
-        WriteRow("-w, --watch", "Watch files and rebuild on change");
-        WriteRow("-v, --verbose", "Enable debug-level logging");
-        WriteRow("-q, --quiet", "Suppress info-level output");
-        WriteRow("-h, --help", "Show help");
-        WriteRow("--version", "Show the version");
+        foreach (var row in HelpRenderer.Options)
+            WriteRow(row.Usage, row.Description);
 
         Console.WriteLine();
         LogWriter.WriteDim($"  {HelpRenderer.HelpSuffix}");

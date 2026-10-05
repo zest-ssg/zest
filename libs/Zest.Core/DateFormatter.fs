@@ -6,8 +6,8 @@ open System.Globalization
 // DateFormatter.fs
 //
 // Parses and formats the date strings that arrive from TOML front matter and
-// the `[params]` table. Zest.Engine formats template dates and RSS/Atom
-// timestamps; Zest.Dsl formats the same values inside page scripts. A single
+// the `[params]` table. Zest.Compiler formats template dates and RSS/Atom
+// timestamps; Zest.Markup formats the same values inside page scripts. A single
 // parser keeps "2026-08-02" from meaning two different things.
 //
 // Invariant: parsing never throws. Unparseable input is returned unchanged so

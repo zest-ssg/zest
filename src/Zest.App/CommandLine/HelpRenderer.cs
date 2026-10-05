@@ -25,6 +25,9 @@ namespace Zest.App.CommandLine;
 /// Loaded once at first access via <see cref="Lazy{T}"/>.
 internal static class HelpRenderer
 {
+    /// One row of the help table: an invocation and what it does.
+    internal sealed record HelpRow(string Usage, string Description);
+
     /// Manifest resource names produced by the EmbeddedResource items in the csproj.
     private static readonly string[] ResourceNames = { "zest.meta.toml", "zest.help.toml" };
 
@@ -161,6 +164,44 @@ internal static class HelpRenderer
     public static string Header => GetMeta("header");
     public static string Ecosystem => GetMeta("ecosystem");
     public static string HelpSuffix => Get("suffix", "help_message");
+
+    /// Commands listed under [[command]] in help.toml, in file order.
+    public static IReadOnlyList<HelpRow> Commands => Rows("command");
+
+    /// Options listed under [[option]] in help.toml, in file order.
+    public static IReadOnlyList<HelpRow> Options => Rows("option");
+
+    private static HelpRow[] Rows(string section)
+    {
+        if (!Config.TryGetValue(section, out var value) || value is not TomlTableArray rows)
+            return Array.Empty<HelpRow>();
+
+        return rows
+            .Select(row => new HelpRow(
+                row.TryGetValue("usage", out var u) ? u?.ToString() ?? "" : "",
+                row.TryGetValue("desc", out var d) ? d?.ToString() ?? "" : ""))
+            .ToArray();
+    }
+
+    /// Usage line of a command-specific help page, e.g. [build] usage.
+    public static string CommandUsage(string command)
+    {
+        if (!Config.TryGetValue(command, out var value) || value is not TomlTable page)
+            return "";
+        return page.TryGetValue("usage", out var u) ? u?.ToString() ?? "" : "";
+    }
+
+    /// Option rows of a command-specific help page, e.g. [build] options.
+    public static IReadOnlyList<string> CommandOptions(string command)
+    {
+        if (!Config.TryGetValue(command, out var value)
+            || value is not TomlTable page
+            || !page.TryGetValue("options", out var raw)
+            || raw is not TomlArray options)
+            return Array.Empty<string>();
+
+        return options.Select(o => o?.ToString() ?? "").ToArray();
+    }
 
     // ── Helpers ────────────────────────────────────────────
 

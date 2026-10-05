@@ -2,7 +2,7 @@
 // @layout none
 // @title RSS Feed
 
-open Zest.Dsl
+open Zest.Markup
 
 let data = Context.get().SiteData
 let opt k = if data.ContainsKey(k) then data.[k].ToString() else ""

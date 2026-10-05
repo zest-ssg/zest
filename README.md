@@ -39,7 +39,7 @@
 
 - **No lock-in.** Zest ships exactly one template language — **Zealucks** (`.zlk`), which is syntax-compatible with Nunjucks — and one script layer, `.zest.fsx`. Output is plain, static HTML that can be hosted anywhere.
 
-- **Quiet by default.** The bundled starter theme ships with no animation, no shadows, and no hover theatrics — typography and whitespace carry the page.
+- **Quiet by default.** The bundled starter ships with no animation, no shadows, and no hover theatrics — typography and whitespace carry the page.
 
 - **A single binary.** One `dotnet` CLI tool handles `init`, `build`, `serve`, `clean`, and `preview`.
 
@@ -139,7 +139,7 @@ The `md` helper renders a Markdown string to an HTML string, so prose and the F#
 ```fsharp
 // @title About
 // @layout default
-open Zest.Dsl
+open Zest.Markup
 
 render [
     divC "about" [
@@ -249,18 +249,34 @@ Template syntax needs no changes.
 
 ```
 .
-├── _config.toml           # site metadata and build options
-├── _init.zest.fsx         # pre-build script (global data, hooks)
+├── _config.toml           # optional: site metadata and build options
+├── _init.zest.fsx         # optional: pre-build script (global data, hooks)
+├── _layouts/              # Zealucks layouts (.zlk)
+├── _includes/             # partials pulled in with {{ include }}
 ├── _data/                 # global data (nav.toml, …)
-├── _themes/<name>/        # self-contained themes
-│   ├── _theme.toml        # theme manifest
-│   ├── _layouts/          # template layouts (.zlk)
-│   ├── _includes/         # partials
-│   ├── _locales/          # i18n string tables
-│   └── assets/            # styles (ZCSS), images, fonts
+├── _locales/              # i18n string tables (en.toml, …)
+├── assets/                # styles (ZCSS), images, fonts
 ├── content/               # pages (.zest.fsx) and posts (.md)
 └── _site/                 # build output
 ```
+
+Every entry above is optional. With no `_config.toml` at all the site still
+builds: the title falls back to a default, and content is read from `content/`
+when it exists and from the project root otherwise. Directory names are
+convention, never configuration.
+
+### Configuration
+
+`_config.toml` recognises exactly two tables.
+
+| Table    | Key                                                                                 |
+|----------|-------------------------------------------------------------------------------------|
+| `[site]` | `title` `url` `description` `language` `author` `version` `content_dir` `default_layout` `permalink_format` `dev_server_port` `live_reload_port` `log_level` `log_to_file` `log_timestamps` |
+| `[build]`| `output` `parallel` `incremental` `minify` `minify_html` `format_html` `format_assets` `cache_busting` |
+
+Anything not listed — `[[taxonomies]]`, `[menu.*]`, `[[defaults]]`,
+`[pagination]`, `[params]`, `include`, `exclude`,
+`[template.zealucks] compatibility` — is read at the top level.
 
 ---
 
@@ -268,33 +284,43 @@ Template syntax needs no changes.
 
 | Command             | Description                                       |
 |---------------------|---------------------------------------------------|
-| `zest init <name>`  | Scaffold a new site from a starter.               |
+| `zest init [path]`  | Scaffold a new site from the bundled starter.     |
+| `zest init --empty` | Scaffold the directory layout only.               |
 | `zest build`        | Build the site into `_site/`.                     |
-| `zest serve`        | Start a dev server with live reload.              |
-| `zest preview`      | Preview the built site.                           |
+| `zest serve`        | Build and start a dev server with live reload.    |
+| `zest preview`      | Serve the built site without rebuilding.          |
 | `zest clean`        | Remove build output.                              |
 
 ---
 
 ## Architecture
 
-| Project        | Language | Responsibility                                                                |
-|----------------|----------|-------------------------------------------------------------------------------|
-| **Zest.App**   | C#       | CLI entry point, command routing, scaffolding, dev server, embedded starters. |
-| **Zest.Engine**| F#       | Build pipeline: content, layouts, ZCSS, data, feeds.                          |
-| **Zest.Dsl**   | F#       | Type-safe HTML DSL for `.zest.fsx` pages.                                     |
-| **Zest.Infra** | C#       | Configuration loading, file watching, logging, hashing, shared infrastructure.|
-| **Zest.Core**  | F#       | Primitives shared by the engine and the DSL: slugs, prose metrics, dates.     |
+| Project           | Language | Responsibility                                                                 |
+|-------------------|----------|----------------------------------------------------------------------------------|
+| **Zest.App**      | C#       | CLI entry point and host: command routing, configuration, dev server, file watching, logging, embedded starters. |
+| **Zest.Compiler** | F#       | Turns sources into a site: content pipeline, Zealucks templates, ZCSS, FSI scripting. |
+| **Zest.Markup**   | F#       | The API surface a page author writes against: the HTML/ZCSS markup builders, SEO and feed helpers, page queries. |
+| **Zest.Core**     | F#       | Dependency-free primitives shared by the compiler and markup: slugs, prose metrics, dates. |
 
 ### Repository Layout
 
-| Path             | Purpose                                                                 |
-|------------------|-------------------------------------------------------------------------|
-| `.config/zest/`  | CLI configuration, split by concern: `meta.toml` (identity, branding) and `help.toml` (help copy). Embedded into the tool as manifest resources. |
-| `.claude/`       | Claude Code settings and permissions. The engineering contract itself lives in `CLAUDE.md` at the root. |
-| `.devcontainer/` | Reproducible development container: `devcontainer.json` plus a .NET SDK `Dockerfile`. |
-| `.husky/`        | Git hooks (`pre-commit`, `commit-msg`) and installers that set `core.hooksPath`. |
-| `libs/`          | Dependency-free shared libraries that are not part of the shipped tool projects. Currently `Zest.Core`. |
+| Path               | Purpose                                                                 |
+|--------------------|-------------------------------------------------------------------------|
+| `src/`             | The three projects that ship in the `zest` tool: `Zest.App` (C#), `Zest.Compiler` (F#), `Zest.Markup` (F#). |
+| `libs/`            | Dependency-free shared libraries that are not part of the shipped tool projects. Currently `Zest.Core`. |
+| `.config/zest/`    | CLI configuration, split by concern: `meta.toml` (identity, branding) and `help.toml` (all help copy). Embedded into the tool as manifest resources. |
+| `.claude/`         | Claude Code settings and permissions. The engineering contract itself lives in `CLAUDE.md` at the root. |
+| `.devcontainer/`   | Reproducible development container: `devcontainer.json` plus a .NET SDK `Dockerfile`. |
+| `.husky/`          | Git hooks (`pre-commit`, `commit-msg`) and installers that set `core.hooksPath`. |
+
+### Source Layout
+
+```
+src/Zest.App/            C#   Program, CommandLine/, Commands/, Configuration/, Services/, Starters/
+src/Zest.Compiler/       F#   Domain/ Style/ Content/ Template/ Html/ Scripting/
+src/Zest.Markup/         F#   Core/ Utility/ Style/ Html/ Data/ Metadata/
+libs/Zest.Core/          F#   SlugFormatter, TextMetrics, DateFormatter
+```
 
 ---
 
@@ -391,7 +417,7 @@ else
 ```bash
 git clone https://github.com/zest-ssg/zest
 cd zest
-dotnet build Zest.sln
+dotnet build zest.sln
 
 # Publish for your platform
 dotnet publish src/Zest.App/Zest.App.csproj -c Release -r win-x64 --self-contained false

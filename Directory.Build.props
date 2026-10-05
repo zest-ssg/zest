@@ -51,7 +51,7 @@
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
 
-    <!-- Library projects (Engine/Dsl/Infra) are not published as separate
+    <!-- Library projects (Engine/Dsl/Core) are not published as separate
          NuGet packages — they ship inside the zest tool package. -->
     <IsPackable>false</IsPackable>
   </PropertyGroup>

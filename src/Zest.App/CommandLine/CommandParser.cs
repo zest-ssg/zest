@@ -1,4 +1,4 @@
-using Zest.Infra.Services;
+using Zest.App.Services;
 
 namespace Zest.App.CommandLine;
 
@@ -126,12 +126,27 @@ internal static class CommandParser
     }
 
     /// <summary>
-    /// Parse `zest init` arguments.
+    /// Parse `zest init` arguments: an optional path plus --empty.
     /// </summary>
     public static InitCommandOptions ParseInit(string[] args)
     {
-        var targetDir = args.Length > 1 ? args[1] : ".";
-        return new InitCommandOptions { TargetDirectory = targetDir };
+        var target = ".";
+        var empty = false;
+
+        for (var i = 1; i < args.Length; i++)
+        {
+            switch (args[i].ToLowerInvariant())
+            {
+                case "--empty":
+                    empty = true;
+                    break;
+                default:
+                    if (target == "." && !args[i].StartsWith('-')) target = args[i];
+                    break;
+            }
+        }
+
+        return new InitCommandOptions { TargetDirectory = target, Empty = empty };
     }
 
     /// <summary>
@@ -160,72 +175,18 @@ internal static class CommandParser
     }
 
     // ── Command-specific help pages ────────────────────────
+    // Copy for every page lives in .config/zest/help.toml under a table named
+    // after the command, so the CLI has exactly one place to edit help text.
 
-    /// <summary>
-    /// Print build command help.
-    /// </summary>
-    public static void PrintBuildHelp()
+    /// <summary>Print the help page of a command, read from help.toml.</summary>
+    public static void PrintCommandHelp(string command)
     {
         LogWriter.WriteSection("Usage");
-        LogWriter.WriteInfo("  zest build [path] [options]");
-        Console.WriteLine();
-
-        LogWriter.WriteSection("Arguments");
-        LogWriter.WriteInfo("  path              Project directory (default: current directory)");
+        LogWriter.WriteInfo($"  {HelpRenderer.CommandUsage(command)}");
         Console.WriteLine();
 
         LogWriter.WriteSection("Options");
-        LogWriter.WriteInfo("  --watch, -w       Watch for changes and auto-rebuild");
-        LogWriter.WriteInfo("  --verbose, -v     Enable Debug-level logging");
-        LogWriter.WriteInfo("  --quiet, -q       Suppress Info-level logs");
-    }
-
-    /// <summary>
-    /// Print serve command help.
-    /// </summary>
-    public static void PrintServeHelp()
-    {
-        LogWriter.WriteSection("Usage");
-        LogWriter.WriteInfo("  zest serve [options]");
-        Console.WriteLine();
-
-        LogWriter.WriteDim("  Start the development server with live reload.");
-        Console.WriteLine();
-
-        LogWriter.WriteSection("Options");
-        LogWriter.WriteInfo("  --port, -p PORT     Dev server port (default: 8080)");
-        LogWriter.WriteInfo("  --host HOST         Bind to host (default: localhost)");
-        LogWriter.WriteInfo("  --open, -o          Open browser on start");
-        LogWriter.WriteInfo("  --spa               SPA mode: fallback to index.html for all routes");
-        LogWriter.WriteInfo("  --dir               Enable directory listing");
-        LogWriter.WriteInfo("  --verbose, -v       Show detailed FSI output");
-        LogWriter.WriteInfo("  --quiet, -q         Suppress INFO logs");
-        LogWriter.WriteInfo("  --help, -h          Show this help");
-    }
-
-    /// <summary>
-    /// Print preview command help.
-    /// </summary>
-    public static void PrintPreviewHelp()
-    {
-        LogWriter.WriteSection("Usage");
-        LogWriter.WriteInfo("  zest preview [options]");
-        Console.WriteLine();
-
-        LogWriter.WriteDim("  Preview the built _site/ directory (no build triggered).");
-        LogWriter.WriteDim("  Use --watch for auto-rebuild or --livereload for live reload.");
-        Console.WriteLine();
-
-        LogWriter.WriteSection("Options");
-        LogWriter.WriteInfo("  --port, -p PORT     Preview server port (default: 8080)");
-        LogWriter.WriteInfo("  --host HOST         Bind to host (default: localhost)");
-        LogWriter.WriteInfo("  --open, -o          Open browser on start");
-        LogWriter.WriteInfo("  --watch, -w         Watch files and auto-rebuild");
-        LogWriter.WriteInfo("  --livereload, -l    Enable live reload (WebSocket)");
-        LogWriter.WriteInfo("  --spa               SPA mode: fallback to index.html for all routes");
-        LogWriter.WriteInfo("  --dir               Enable directory listing");
-        LogWriter.WriteInfo("  --verbose, -v       Enable Debug-level logging");
-        LogWriter.WriteInfo("  --quiet, -q         Suppress Info-level logs");
-        LogWriter.WriteInfo("  --help, -h          Show this help");
+        foreach (var option in HelpRenderer.CommandOptions(command))
+            LogWriter.WriteInfo($"  {option}");
     }
 }

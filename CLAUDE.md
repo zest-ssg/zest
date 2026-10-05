@@ -17,13 +17,15 @@ Every rule below exists to reduce comprehension cost. When a rule fights readabi
 
 ## 1. Architecture Boundary (Non-Negotiable)
 
-| Layer | Language | Responsibility |
-| :--- | :--- | :--- |
-| CLI, infrastructure, I/O, composition root | C# | User-facing entry points, filesystem, processes, configuration loading |
-| Engine, DSL, domain logic, pure functions | F# | Template rendering, parsing, build pipeline, immutable data flow |
+| Layer | Project | Language | Responsibility |
+| :--- | :--- | :--- | :--- |
+| CLI, infrastructure, I/O, composition root | `Zest.App` | C# | User-facing entry points, filesystem, processes, configuration loading |
+| Site compilation, domain logic, pure functions | `Zest.Compiler` | F# | Template rendering, parsing, build pipeline, immutable data flow |
+| Author-facing markup API | `Zest.Markup` | F# | HTML/ZCSS builders, SEO and feed helpers, page queries |
+| Dependency-free primitives | `Zest.Core` (`libs/`) | F# | Slugs, prose metrics, date formatting |
 
 Rules:
-- No cross-layer calls. F# must not reference C# CLI types, and C# must not reference F# engine internals.
+- No cross-layer calls. F# must not reference C# CLI types, and C# must not reference F# compiler internals.
 - Cross-boundary data uses explicit DTOs. Never use anonymous types or `dynamic` across the boundary.
 - Prefer LINQ in C#. Prefer `|>`, `List`, and `Seq` in F#. Avoid `for` and `while` unless performance evidence demands otherwise.
 
@@ -98,7 +100,7 @@ Every non-trivial file must state its responsibility, dependencies, and any non-
 // Invariant: cache keys are absolute, normalized paths.
 // Callers must pass paths produced by PathResolver.
 //
-// Dependencies: Zest.Engine.Domain, System.IO
+// Dependencies: Zest.Compiler.Domain, System.IO
 ```
 
 ### 3.2 Public API: XML Documentation

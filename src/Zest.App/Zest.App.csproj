@@ -43,9 +43,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Zest.Engine\Zest.Engine.fsproj" />
-    <ProjectReference Include="..\Zest.Infra\Zest.Infra.csproj" />
-    <ProjectReference Include="..\Zest.Dsl\Zest.Dsl.fsproj" />
+    <ProjectReference Include="..\Zest.Compiler\Zest.Compiler.fsproj" />
+    <ProjectReference Include="..\Zest.Markup\Zest.Markup.fsproj" />
   </ItemGroup>
 
   <!-- CLI branding and help text live in .config/zest/, split by concern:
@@ -63,14 +62,11 @@
     </EmbeddedResource>
   </ItemGroup>
 
-  <!-- Bundled `zest init` default starter site (mirrors the zest.toml
-       embedding above). Every file is listed explicitly so the shipped
-       manifest is self-documenting; LogicalName preserves the relative
-       path (using backslashes) so InitController can reconstruct file
-       paths at runtime. `_site` is build output and stays out. `Starters`
-       holds the starter-project definitions copied out by init (the
-       default blog preset); it is NOT the runtime template engine
-       (which lives in Zest.Engine/Template). -->
+  <!-- Bundled `zest init` starter site. Every file is listed explicitly so the
+       shipped manifest is self-documenting; LogicalName preserves the relative
+       path (using backslashes) so InitCommand can reconstruct file paths at
+       runtime. `Starters` is the scaffold copied out by init; it is not the
+       runtime template engine (which lives in Zest.Compiler/Template). -->
   <ItemGroup>
     <None Remove="Starters\**\*" />
     <EmbeddedResource Include="Starters\_config.toml" LogicalName="Zest.App.Starters._config.toml" />
@@ -79,11 +75,10 @@
     <EmbeddedResource Include="Starters\content\rss.zest.fsx" LogicalName="Zest.App.Starters.content\rss.zest.fsx" />
     <EmbeddedResource Include="Starters\content\atom.zest.fsx" LogicalName="Zest.App.Starters.content\atom.zest.fsx" />
     <EmbeddedResource Include="Starters\content\sitemap.zest.fsx" LogicalName="Zest.App.Starters.content\sitemap.zest.fsx" />
-    <EmbeddedResource Include="Starters\_themes\oxygen\_theme.toml" LogicalName="Zest.App.Starters._themes\oxygen\_theme.toml" />
-    <EmbeddedResource Include="Starters\_themes\oxygen\_includes\head.zlk" LogicalName="Zest.App.Starters._themes\oxygen\_includes\head.zlk" />
-    <EmbeddedResource Include="Starters\_themes\oxygen\_includes\header.zlk" LogicalName="Zest.App.Starters._themes\oxygen\_includes\header.zlk" />
-    <EmbeddedResource Include="Starters\_themes\oxygen\_layouts\post.zlk" LogicalName="Zest.App.Starters._themes\oxygen\_layouts\post.zlk" />
-    <EmbeddedResource Include="Starters\_themes\oxygen\assets\css\main.zcss" LogicalName="Zest.App.Starters._themes\oxygen\assets\css\main.zcss" />
+    <EmbeddedResource Include="Starters\_layouts\post.zlk" LogicalName="Zest.App.Starters._layouts\post.zlk" />
+    <EmbeddedResource Include="Starters\_includes\head.zlk" LogicalName="Zest.App.Starters._includes\head.zlk" />
+    <EmbeddedResource Include="Starters\_includes\header.zlk" LogicalName="Zest.App.Starters._includes\header.zlk" />
+    <EmbeddedResource Include="Starters\assets\css\main.zcss" LogicalName="Zest.App.Starters.assets\css\main.zcss" />
   </ItemGroup>
 
   <!-- Package icon + README at the nupkg root (NuGet metadata convention). -->

@@ -1,23 +1,10 @@
 [site]
-title = "My Zest Blog"
-description = "A fast, minimal blog built with Zest SSG."
+title = "My Zest Site"
+description = "A minimal blog built with Zest."
 url = "https://example.com"
 author = "Zest User"
 language = "en"
 
-enable_html_formatting = true
-enable_asset_formatting = true
-
-[theme]
-name = "oxygen"
-source = "local"
-
 [build]
-output = "_site"
-
-# The engine only auto-generates archive pages for the "tag" taxonomy.
-# Declaring another taxonomy here keeps this single-page starter free of
-# generated /tags/ pages.
-[[taxonomies]]
-name = "series"
-plural = "series"
+format_html = true
+format_assets = true

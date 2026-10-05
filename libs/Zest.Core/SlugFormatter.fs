@@ -6,7 +6,7 @@ open System.Text.RegularExpressions
 // SlugFormatter.fs
 //
 // Turns arbitrary text into a URL-safe slug. Both the build pipeline
-// (Zest.Engine.Routing) and the authoring DSL (Zest.Dsl) need slugs, and a
+// (Zest.Compiler.Content) and the authoring DSL (Zest.Markup) need slugs, and a
 // permalink that differs between the two would silently 404, so the rule
 // lives here once.
 //

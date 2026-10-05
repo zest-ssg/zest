@@ -46,9 +46,12 @@ public record PreviewCommandOptions : CommandOptions
 }
 
 /// <summary>
-/// Options for `zest init [path]`
+/// Options for `zest init [path] [--empty]`
 /// </summary>
 public record InitCommandOptions
 {
     public string TargetDirectory { get; init; } = ".";
+
+    /// Scaffold the conventional empty directory layout instead of starter content.
+    public bool Empty { get; init; }
 }

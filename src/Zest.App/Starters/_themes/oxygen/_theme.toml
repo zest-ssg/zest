@@ -1,1 +1,0 @@
-name = "oxygen"version = "1.0.0"description = "The default theme for Zest SSG."[theme]author = "exyone"license = "BSD-2-Clause"

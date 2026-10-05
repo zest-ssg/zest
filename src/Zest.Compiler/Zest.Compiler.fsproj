@@ -1,0 +1,98 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- F# compiles top-down: a file may only reference symbols declared in
+       earlier files, so the list below is ordered by dependency. Each group
+       maps to one directory, and the namespace of every file matches it. -->
+  <ItemGroup>
+    <!-- Domain: types with no behaviour -->
+    <Compile Include="Domain/FileExtensions.fs" />
+    <Compile Include="Domain/ContentPage.fs" />
+    <Compile Include="Domain/ContentMeta.fs" />
+    <Compile Include="Domain/ContentTypes.fs" />
+    <Compile Include="Domain/SiteConfig.fs" />
+    <Compile Include="Domain/PathResolver.fs" />
+
+    <!-- Style: the ZCSS compiler (syntax → evaluation → parsing → builtins → compilation) -->
+    <Compile Include="Style/StyleAst.fs" />
+    <Compile Include="Style/CoreParser.fs" />
+    <Compile Include="Style/BuiltinFunctions.fs" />
+    <Compile Include="Style/ColorPipeline.fs" />
+    <Compile Include="Style/MathEvaluator.fs" />
+    <Compile Include="Style/Evaluator.fs" />
+    <Compile Include="Style/BraceParser.fs" />
+    <Compile Include="Style/IndentParser.fs" />
+    <Compile Include="Style/Parser.fs" />
+    <Compile Include="Style/BuiltinStyles.fs" />
+    <Compile Include="Style/StyleHelpers.fs" />
+    <Compile Include="Style/Modules.fs" />
+    <Compile Include="Style/StyleCache.fs" />
+    <Compile Include="Style/Compiler.fs" />
+    <Compile Include="Style/Processor.fs" />
+
+    <!-- Content: frontmatter parsing, permalinks and locale tables -->
+    <Compile Include="Content/PermalinkRouter.fs" />
+    <Compile Include="Content/MetaParser.fs" />
+    <Compile Include="Content/LocaleLoader.fs" />
+
+    <!-- Template: the Zealucks engine and its registry -->
+    <Compile Include="Template/ITemplateEngine.fs" />
+    <Compile Include="Template/ZealucksTypes.fs" />
+    <Compile Include="Template/ZealucksTokenizer.fs" />
+    <Compile Include="Template/ZealucksCompiler.fs" />
+    <Compile Include="Template/ZealucksEvaluator.fs" />
+    <Compile Include="Template/ZealucksBlocks.fs" />
+    <Compile Include="Template/ZealucksRenderer.fs" />
+    <Compile Include="Template/ZealucksEntry.fs" />
+    <Compile Include="Template/TemplateManager.fs" />
+
+    <!-- Html: elements, rendering, Markdown and page construction -->
+    <Compile Include="Html/HtmlElements.fs" />
+    <Compile Include="Html/HtmlAttributes.fs" />
+    <Compile Include="Html/HtmlModifiers.fs" />
+    <Compile Include="Html/HtmlComponents.fs" />
+    <Compile Include="Html/HtmlRenderer.fs" />
+    <Compile Include="Html/HtmlFormatter.fs" />
+    <Compile Include="Html/MarkdownEngine.fs" />
+    <Compile Include="Html/PageBuilder.fs" />
+    <Compile Include="Html/TemplateDsl.fs" />
+    <Compile Include="Html/HtmlHelpers.fs" />
+    <Compile Include="Html/ShortcodeRegistry.fs" />
+    <Compile Include="Html/PagedResult.fs" />
+    <Compile Include="Html/TemplateData.fs" />
+    <Compile Include="Html/ZestPjax.fs" />
+
+    <!-- Scripting: FSI evaluation, filters and page queries -->
+    <Compile Include="Scripting/FsiSession.fs" />
+    <Compile Include="Scripting/InitEngine.fs" />
+    <Compile Include="Scripting/PageQuery.fs" />
+    <Compile Include="Scripting/FilterRegistry.fs" />
+    <Compile Include="Scripting/ScriptDiscovery.fs" />
+    <Compile Include="Scripting/ScriptRunner.fs" />
+    <Compile Include="Scripting/ScriptEvaluator.fs" />
+
+    <!-- Content pipeline: discovery → render → write, plus generated pages -->
+    <Compile Include="Content/BuildProgress.fs" />
+    <Compile Include="Content/BuildCache.fs" />
+    <Compile Include="Content/AtomicFile.fs" />
+    <Compile Include="Content/BuildData.fs" />
+    <Compile Include="Content/BuildAssets.fs" />
+    <Compile Include="Content/LayoutEngine.fs" />
+    <Compile Include="Content/ContentPipeline.fs" />
+    <Compile Include="Content/TaxonomyGenerator.fs" />
+    <Compile Include="Content/PaginationGenerator.fs" />
+    <Compile Include="Content/BuildEngine.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Zest.Core lives in libs/: it has no dependencies of its own, so it
+         stays outside src/ next to the shipped projects. Keeping the shared
+         primitives there lets the DSL depend on them without depending on the
+         whole build pipeline. -->
+    <ProjectReference Include="..\..\libs\Zest.Core\Zest.Core.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Tomlyn" Version="0.17.0" />
+  </ItemGroup>
+
+</Project>
