@@ -39,7 +39,9 @@ public static class BuildAnimator
     private static Timer? _timer;
     private static int _frame;
     private static Stopwatch _sw = new();
-    private static bool _enabled;
+
+    // Written by the caller thread and read by the timer thread.
+    private static volatile bool _enabled;
 
     // Length (in console columns) of the widest frame currently on screen.
     // Each new frame pads to at least this width so shrinking text
@@ -106,6 +108,10 @@ public static class BuildAnimator
     {
         if (!_enabled)
         {
+            // Restore defensively: the animation may have been disabled by a
+            // painting failure, which restores the writers itself, but any
+            // other path that clears _enabled must not leave a proxy installed.
+            RestoreWritersIfNeeded();
             // Even without animation, print a clean summary.
             PrintPlainSummary(result);
             return;
@@ -490,6 +496,26 @@ public static class BuildAnimator
         catch (IOException) { /* Use the frame-length fallback. */ }
         catch (InvalidOperationException) { /* No window is available. */ }
         return width;
+    }
+
+    /// <summary>
+    /// Restore the original console writers unconditionally. Safe to call at
+    /// any time — the top-level error handler uses it so a fatal error is
+    /// never written through an animation proxy that was left installed.
+    /// </summary>
+    public static void Restore()
+    {
+        lock (_consoleLock)
+        {
+            RestoreWritersIfNeeded();
+        }
+    }
+
+    /// <summary>Restore writers only when a proxy is currently installed.</summary>
+    private static void RestoreWritersIfNeeded()
+    {
+        if (_rawOut is null && _rawError is null) return;
+        RestoreWriters();
     }
 
     /// <summary>Restore the original console streams captured in Start.</summary>

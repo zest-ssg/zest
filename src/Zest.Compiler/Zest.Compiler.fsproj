@@ -71,10 +71,14 @@
 
     <!-- Execution: FSI evaluation, page index and Zestucks filters -->
     <Compile Include="Execution/FsiSession.fs" />
-    <Compile Include="Execution/InitScript.fs" />
+    <!-- DslAssembly must precede the hook scripts: they reuse its isolated
+         assembly folder to reference the output-shaping helpers. -->
+    <Compile Include="Execution/DslAssembly.fs" />
+    <Compile Include="Execution/ScriptHost.fs" />
+    <Compile Include="Execution/PrebuildScript.fs" />
+    <Compile Include="Execution/FinalizeScript.fs" />
     <Compile Include="Execution/PageStore.fs" />
     <Compile Include="Execution/ZestucksFilters.fs" />
-    <Compile Include="Execution/DslAssembly.fs" />
     <Compile Include="Execution/FsiRunner.fs" />
     <Compile Include="Execution/PageEvaluator.fs" />
 

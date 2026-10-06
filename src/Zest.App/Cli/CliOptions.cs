@@ -8,6 +8,13 @@ public abstract record CliOptions
     public bool Verbose { get; init; }
     public bool Quiet { get; init; }
     public bool ShowHelp { get; init; }
+
+    /// <summary>
+    /// Return a copy with the given common options applied. Each command
+    /// overrides this with a covariant return type, so the parser applies
+    /// --verbose/--quiet/--help without a generic cast or reflection.
+    /// </summary>
+    public abstract CliOptions WithCommon(bool? verbose = null, bool? quiet = null, bool? showHelp = null);
 }
 
 /// <summary>
@@ -17,6 +24,17 @@ public record BuildCommandOptions : CliOptions
 {
     public string? ProjectPath { get; init; }
     public bool Watch { get; init; }
+
+    /// Disable incremental builds for this run (force a full rebuild).
+    public bool NoIncremental { get; init; }
+
+    public override BuildCommandOptions WithCommon(bool? verbose = null, bool? quiet = null, bool? showHelp = null) =>
+        this with
+        {
+            Verbose = verbose ?? Verbose,
+            Quiet = quiet ?? Quiet,
+            ShowHelp = showHelp ?? ShowHelp
+        };
 }
 
 /// <summary>
@@ -29,6 +47,14 @@ public record ServeCommandOptions : CliOptions
     public bool OpenBrowser { get; init; }
     public bool SPA { get; init; }
     public bool DirectoryListing { get; init; }
+
+    public override ServeCommandOptions WithCommon(bool? verbose = null, bool? quiet = null, bool? showHelp = null) =>
+        this with
+        {
+            Verbose = verbose ?? Verbose,
+            Quiet = quiet ?? Quiet,
+            ShowHelp = showHelp ?? ShowHelp
+        };
 }
 
 /// <summary>
@@ -43,15 +69,31 @@ public record PreviewCommandOptions : CliOptions
     public bool LiveReload { get; init; }
     public bool SPA { get; init; }
     public bool DirectoryListing { get; init; }
+
+    public override PreviewCommandOptions WithCommon(bool? verbose = null, bool? quiet = null, bool? showHelp = null) =>
+        this with
+        {
+            Verbose = verbose ?? Verbose,
+            Quiet = quiet ?? Quiet,
+            ShowHelp = showHelp ?? ShowHelp
+        };
 }
 
 /// <summary>
 /// Options for `zest init [path] [--empty]`
 /// </summary>
-public record InitCommandOptions
+public record InitCommandOptions : CliOptions
 {
     public string TargetDirectory { get; init; } = ".";
 
     /// Scaffold the conventional empty directory layout instead of starter content.
     public bool Empty { get; init; }
+
+    public override InitCommandOptions WithCommon(bool? verbose = null, bool? quiet = null, bool? showHelp = null) =>
+        this with
+        {
+            Verbose = verbose ?? Verbose,
+            Quiet = quiet ?? Quiet,
+            ShowHelp = showHelp ?? ShowHelp
+        };
 }

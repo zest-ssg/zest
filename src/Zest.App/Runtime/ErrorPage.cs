@@ -12,27 +12,33 @@ namespace Zest.App.Runtime;
 /// </summary>
 internal static class ErrorPage
 {
-    private const string DarkBg    = "rgb(6 11 16)";
-    private const string DarkCard  = "rgb(15 22 30)";
+    private const string DarkBg     = "rgb(6 11 16)";
+    private const string DarkCard   = "rgb(15 22 30)";
     private const string DarkBorder = "rgb(36 47 54)";
-    private const string DarkText  = "rgb(233 235 237)";
-    private const string DarkMuted = "rgb(139 148 158)";
-    private const string DarkLink  = "rgb(88 166 255)";
+    private const string DarkText   = "rgb(233 235 237)";
+    private const string DarkMuted  = "rgb(139 148 158)";
+    private const string DarkLink   = "rgb(88 166 255)";
+
+    /// <summary>Maximum suggestions shown on a 404 page.</summary>
+    private const int MaxSuggestions = 5;
+
+    /// <summary>Upper bound on indexed pages, so a huge site cannot blow up memory.</summary>
+    private const int MaxIndexedPages = 20_000;
 
     /// <summary>
     /// Write a styled 404 response. Uses custom 404.html if present,
     /// otherwise renders a clean card-based page with optional suggestions.
     /// </summary>
-    public static async Task WriteNotFound(HttpListenerContext ctx, string outputDir, string? requestedPath = null)
+    public static async Task WriteNotFound(HttpListenerContext ctx, string outputDir, string? requestedPath = null,
+        bool wildcardOrigin = true)
     {
         ctx.Response.StatusCode = 404;
-        HttpResponses.AddCorsHeaders(ctx.Response);
 
         // User-provided custom 404 page takes priority.
         var custom404 = Path.Combine(outputDir, "404.html");
         if (File.Exists(custom404))
         {
-            await HttpResponses.WriteFileResponseAsync(ctx, custom404);
+            await HttpResponses.WriteFileResponseAsync(ctx, custom404, wildcardOrigin);
             return;
         }
 
@@ -65,7 +71,7 @@ internal static class ErrorPage
         sb.AppendLine(".back{display:inline-block;margin-top:16px;font-weight:500}");
         sb.AppendLine("</style>");
         sb.AppendLine("<div class=main><div class=card>");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"<h1>Page not found</h1>");
+        sb.AppendLine("<h1>Page not found</h1>");
         sb.AppendLine(CultureInfo.InvariantCulture, $"<p>The path <code>{displayPath}</code> doesn't exist on this preview server.</p>");
 
         if (suggestions.Count > 0)
@@ -73,7 +79,12 @@ internal static class ErrorPage
             sb.AppendLine("<div class=suggestions>");
             sb.AppendLine("<h2>Did you mean:</h2><ul>");
             foreach (var s in suggestions)
-                sb.AppendLine(CultureInfo.InvariantCulture, $"<li><a href=\"{s.Url}\">{WebUtility.HtmlEncode(s.Title)}</a></li>");
+            {
+                // Both the URL and the label are attribute/text content and
+                // must be escaped: page names come from the file system.
+                sb.AppendLine(CultureInfo.InvariantCulture,
+                    $"<li><a href=\"{WebUtility.HtmlEncode(s.Url)}\">{WebUtility.HtmlEncode(s.Title)}</a></li>");
+            }
             sb.AppendLine("</ul></div>");
         }
 
@@ -83,42 +94,95 @@ internal static class ErrorPage
         sb.AppendLine("<p class=footnote style=margin-top:16px>Zest SSG &mdash; Preview Server</p>");
         sb.AppendLine("</div></div>");
 
-        await HttpResponses.WriteStringResponse(ctx, 404, sb.ToString());
+        await HttpResponses.WriteStringResponse(ctx, 404, sb.ToString(), wildcardOrigin: wildcardOrigin);
     }
+
+    // ── Suggestion index ───────────────────────────────────────
+
+    /// <summary>One routable page in the output directory.</summary>
+    /// <param name="Url">Site-relative URL with a trailing slash.</param>
+    /// <param name="Title">Label shown in the suggestion list.</param>
+    /// <param name="Key">Lower-case match key derived from the relative path.</param>
+    private readonly record struct PageRef(string Url, string Title, string Key);
+
+    // A 404 storm (a broken link in a live-reload loop) would otherwise walk
+    // the whole output tree per request. The index is rebuilt at most once per
+    // TTL, and bounded in size.
+    private static readonly object _indexLock = new();
+    private static readonly TimeSpan _indexTtl = TimeSpan.FromSeconds(3);
+    private static string? _indexedRoot;
+    private static DateTime _indexBuiltAtUtc;
+    private static PageRef[] _index = Array.Empty<PageRef>();
 
     /// <summary>
     /// Find similar paths in the output directory for 404 suggestions.
     /// </summary>
-    private static List<(string Url, string Title)> FindSimilarPaths(string outputDir, string? requestedPath)
+    private static List<PageRef> FindSimilarPaths(string outputDir, string? requestedPath)
     {
-        var result = new List<(string, string)>();
+        var result = new List<PageRef>();
         if (string.IsNullOrEmpty(requestedPath) || requestedPath == "/")
             return result;
 
         var requested = requestedPath.Trim('/').ToLowerInvariant();
-        var htmlFiles = Directory.GetFiles(outputDir, "*.html", SearchOption.AllDirectories);
+        if (requested.Length == 0) return result;
 
-        foreach (var file in htmlFiles)
+        foreach (var page in GetIndex(outputDir))
         {
-            var relPath = Path.GetRelativePath(outputDir, file)
-                .Replace('\\', '/')
-                .Replace("index.html", "")
-                .TrimEnd('/');
-            if (string.IsNullOrEmpty(relPath)) relPath = "/";
-
-            var relLower = relPath.ToLowerInvariant();
-            if (relLower.Contains(requested) || requested.Contains(relLower))
+            if (page.Key.Contains(requested, StringComparison.Ordinal) ||
+                requested.Contains(page.Key, StringComparison.Ordinal))
             {
-                var title = Path.GetFileNameWithoutExtension(file);
-                if (title == "index")
-                    title = Path.GetFileName(Path.GetDirectoryName(file)!) ?? relPath;
-                var url = "/" + relPath.TrimStart('/') + (relPath.EndsWith('/') ? "" : "/");
-                if (url == "//") url = "/";
-                result.Add((url, title));
+                result.Add(page);
+                if (result.Count >= MaxSuggestions) break;
             }
-            if (result.Count >= 5) break;
         }
 
         return result;
+    }
+
+    private static PageRef[] GetIndex(string outputDir)
+    {
+        lock (_indexLock)
+        {
+            if (_indexedRoot == outputDir && DateTime.UtcNow - _indexBuiltAtUtc < _indexTtl)
+                return _index;
+
+            _index = BuildIndex(outputDir);
+            _indexedRoot = outputDir;
+            _indexBuiltAtUtc = DateTime.UtcNow;
+            return _index;
+        }
+    }
+
+    private static PageRef[] BuildIndex(string outputDir)
+    {
+        var pages = new List<PageRef>();
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(outputDir, "*.html", SearchOption.AllDirectories))
+            {
+                if (pages.Count >= MaxIndexedPages) break;
+
+                var relPath = Path.GetRelativePath(outputDir, file)
+                    .Replace('\\', '/')
+                    .Replace("index.html", "")
+                    .TrimEnd('/');
+                if (string.IsNullOrEmpty(relPath)) relPath = "/";
+
+                var title = Path.GetFileNameWithoutExtension(file);
+                if (title == "index")
+                    title = Path.GetFileName(Path.GetDirectoryName(file)!) ?? relPath;
+
+                var url = "/" + relPath.TrimStart('/') + (relPath.EndsWith('/') ? "" : "/");
+                if (url == "//") url = "/";
+
+                pages.Add(new PageRef(url, title, relPath.Trim('/').ToLowerInvariant()));
+            }
+        }
+        catch (Exception ex)
+        {
+            LogWriter.VerboseLog($"404 suggestions unavailable: {ex.Message}");
+        }
+
+        return pages.ToArray();
     }
 }

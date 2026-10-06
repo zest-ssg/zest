@@ -1,357 +1,204 @@
-# Zest SSG Engineering Contract
-**Version**: 3.1
-**Scope**: A binding contract for both AI Agents and human maintainers working on the `zest-ssg/zest` repository (.NET 10+).
-**Goal**: Preserve the C#/F# architecture boundary while producing code that is strictly conventional, grammatically precise, and genuinely readable.
-
+# Zest SSG — Engineering Guidelines
+**Scope**: This document governs AI agents and human maintainers working in the `zest-ssg/zest` repository.
+**Purpose**: Keep the C#/F# architecture boundaries clean and the code simple, correct, and readable. Rules serve readers, not ceremony.
 ---
-
-## 0. Prime Directive: Readability Serves the Reader
-
-Every rule below exists to reduce comprehension cost. When a rule fights readability, readability wins, and the deviation must be justified in a single comment.
-
-- Consistency is a means, not an end.
-- Never rename something that is already clear merely to satisfy a pattern.
-- Test: can a new maintainer understand this unit within 30 seconds? If not, fix clarity before enforcing style.
-
+## 1. Philosophy
+Every rule below exists to serve one goal: **a competent engineer should be able to open any file and understand it quickly.**
+### 1.1 Principles
+- **Readability first.** Code is read by humans far more often than it is written.
+- **Simplicity over cleverness.** Direct implementation beats abstraction. Fewer layers beat more layers.
+- **Minimal change.** Fix the problem at hand. Do not refactor unrelated code in passing.
+- **Validate at boundaries, trust the interior.** Defend at the edges of the system; inside, trust types and call contracts.
+- **No speculative design.** Do not introduce abstractions for requirements that do not exist yet.
+### 1.2 Rule tiers
+- **MUST** — always applies. Violations block merge: architecture boundaries, security, tests passing, reversible commits.
+- **SHOULD** — the default. Deviate only with a clear, stated reason.
+- **MAY** — context-dependent; use judgment.
+### 1.3 Conflict resolution
+When rules conflict, resolve in this order:
+1. Correctness and security
+2. Architecture boundaries
+3. Readability
+4. Consistency with surrounding code
+5. Everything else
+If readability conflicts with any stylistic rule, choose readability and note the reason in the PR or a code comment. If this document conflicts with a pattern already established in the codebase, follow the codebase and flag the conflict rather than silently diverging.
 ---
-
-## 1. Architecture Boundary (Non-Negotiable)
-
+## 2. Architecture
+### 2.1 Layers
 | Layer | Project | Language | Responsibility |
 | :--- | :--- | :--- | :--- |
-| CLI, infrastructure, I/O, composition root | `Zest.App` | C# | User-facing entry points, filesystem, processes, configuration loading |
+| CLI, infrastructure, I/O, composition root | `Zest.App` | C# | Entry point, file system, processes, config loading |
 | Site compilation, domain logic, pure functions | `Zest.Compiler` | F# | Template rendering, parsing, build pipeline, immutable data flow |
-| Author-facing markup API | `Zest.Markup` | F# | HTML/ZCSS builders, SEO and feed helpers, page queries |
-| Dependency-free primitives | `Zest.Core` (`libs/`) | F# | Slugs, prose metrics, date formatting |
-
-Rules:
-- No cross-layer calls. F# must not reference C# CLI types, and C# must not reference F# compiler internals.
-- Cross-boundary data uses explicit DTOs. Never use anonymous types or `dynamic` across the boundary.
-- Prefer LINQ in C#. Prefer `|>`, `List`, and `Seq` in F#. Avoid `for` and `while` unless performance evidence demands otherwise.
-
+| Author-facing markup API | `Zest.Markup` | F# | HTML/ZCSS builders, SEO, Feed, page queries |
+| Dependency-free primitives | `Zest.Core` | F# | Slugs, text metrics, date formatting |
+### 2.2 Rules
+- **MUST**: Dependencies point in one direction only. C# CLI types never leak into F# compiler code; C# never depends on F# internals.
+- **MUST**: Cross-boundary data uses explicit DTOs, records, or interfaces. Never pass anonymous types or `dynamic` across a boundary.
+- **MUST**: F# owns pure logic and domain models; C# owns I/O, processes, configuration, and composition.
+- **MUST**: Cross-layer calls go through explicit interfaces. No reverse dependencies.
+- **MUST**: Zest recognises exactly three special files, all at the project root: `_config.toml` (configuration), `_prebuild.fsx` (before the build) and `_finalize.fsx` (after the site is written). None of them is routed. Adding a fourth reserved name, or an alias for an existing one, is an escalated change (§8.3).
+**Why**: F# excels at expressing domain logic as immutable pipelines; C# excels at interop and I/O. Blurring this split produces the worst of both languages and makes each layer harder to test in isolation.
+Architectural boundary changes are **escalated changes** — see §8.3.
 ---
-
-## 2. Naming Convention
-
-### 2.1 Canonical Form: Two Words
-- File, directory, type: `PascalCase` → `TemplateRenderer`, `PageBuilder`
-- Method, variable: `camelCase` → `renderTemplate`, `cacheBuffer`
-
-### 2.2 Semantic Structure
-- First word: the domain object (`Template`, `Config`, `Build`, `Style`).
-- Second word: the action or role (`Renderer`, `Parser`, `Compiler`, `Loader`).
-
-### 2.3 Permitted Exceptions
-Only **framework-mandated names** may violate the two-word rule. Every other exception is rejected.
-
-Allowed:
-- `Program.fs`, `Startup.cs`, `App.razor`, `Main`, `Index` — dictated by .NET, ASP.NET, or build tooling.
-- Language-mandated constructs: `module`, `namespace` keywords aside, F# `Program` entry module.
-
-Rejected:
-- Community-convenient single words (`Router`, `Lexer`, `Parser`) are **not** exceptions. Rename them.
-  - `Router` → `RequestRouter`
-  - `Lexer` → `TokenScanner`
-  - `Parser` → `TemplateParser`
-- "It's already used elsewhere" is not an exception. Fix the usage.
-
-Each permitted exception **must** carry a one-line justification:
-
+## 3. Naming
+**Goal**: A name expresses intent. A reader should never have to guess.
+### 3.1 Conventions
+- **MUST**: Types, files, directories use `PascalCase`; methods, variables, parameters use `camelCase`.
+- **MUST**: Use domain vocabulary. No meaningless abbreviations.
+- **SHOULD**: A single clear word is fine — `Parser`, `Router`, `Compiler`, `Renderer`. Two-word names like `TemplateParser` are equally fine. Context decides.
+- **SHOULD**: Use specific verbs: `parseContent`, `fetchMetadata`, `compileStyle`. Use `get`/`handle`/`process`/`run` only when the meaning is unambiguous.
+### 3.2 Banned names
+Avoid vague catch-alls: `Utils`, `Helper`, `Manager`, `Common`, `Misc`, `Data`.
+Avoid arbitrary abbreviations: `Tmp`, `Cfg`, `Req`, `Mgr`, `Svc`, `Impl`.
+**Why**: Names like `Utils` and `Helper` become gravity wells — every unrelated function eventually lands there, and the name stops telling you anything. A specific name forces a specific responsibility.
+### 3.3 Renaming
+- Renaming requires a reason. **If you cannot state the reason in one sentence, do not rename.**
+- Small-scope renames may proceed directly; renames spanning more than three files are escalated (§8.3).
+- **MUST**: Pure renames live in their own commit, never mixed with logic changes.
+- **SHOULD**: Do not rename existing, already-clear names just to match style.
+---
+## 4. Comments & Documentation
+**Goal**: Comments carry the context that code cannot. Documentation carries the contract that signatures cannot.
+### 4.1 Comments
+- Comments explain **why**, not what. If a comment restates the code, delete it.
+- **MUST**: Comments stay current. If the code changes, the comment changes or dies.
+- **SHOULD**: Comments are concise and complete. No filler words (`simply`, `just`, `basically`, `obviously`).
+### 4.2 File headers
+- **MAY**: Complex, stateful, or cross-boundary files carry a short header: responsibility, key dependencies, critical invariants.
+- Simple files do not need decorative headers.
+### 4.3 Public API documentation
+- **SHOULD**: Document public packages, cross-module APIs, and non-obvious behavior. Cover: intent, contract, failure modes, thread-safety requirements.
+- Simple getters and obvious members do not need full XML docs. Private members usually need none.
+- Write documentation where a caller could otherwise misuse the API — not everywhere by default.
+### 4.4 Markers
 ```csharp
-// Framework-mandated: ASP.NET Core requires the Startup class name.
-public sealed class Startup { ... }
+// TODO: [goal]. [trigger condition for resolving it].
+// HACK: [why this is necessary]. [external constraint forcing it].
+// NOTE: [non-obvious context a reader would need].
+// LEGAL: [legally required text].
 ```
-
-### 2.4 Forbidden Patterns
-- Vague nouns: `Utils`, `Helper`, `Manager`, `Data`, `Common`, `Misc`, `Core`.
-- Casual abbreviations: `Tmp`, `Cfg`, `Req`, `Mgr`, `Svc`, `Impl`.
-- Vague verbs: `process`, `handle`, `get`, `do`, `run`. Use specific verbs: `parseContent`, `fetchMetadata`, `compileStyle`.
-- Three-word-or-longer combinations: `TemplateRenderEngine` → `TemplateRenderer`.
-
-### 2.5 Rename Discipline
-- **New code**: fully compliant.
-- **Touched files**: rename only when the current name is genuinely harmful. A clear legacy name beats an awkward new one.
-- **Pure renames**: one dedicated commit. Never mixed with logic changes.
-- **No rename without a reason.** If you cannot articulate the reason in one sentence, do not rename.
-
-### 2.6 Reference Table
-
-| Context | Forbidden | Required | Framework Exception |
-| :--- | :--- | :--- | :--- |
-| File | `Render.fs` | `TemplateRenderer.fs` | `Program.fs` |
-| Type | `Builder.cs` | `PageBuilder.cs` | `Startup`, `Main` |
-| Directory | `Zcss/` | `StyleCompiler/` | `Properties/` |
-| Variable | `temp` | `cacheBuffer` | `i` (short loop index) |
-| Module | `Utils` | `PathResolver` | — |
-
+### 4.5 Language
+- **MUST**: Comments and commit messages are in English (this repository's default).
 ---
-
-## 3. Documentation and Comments
-
-### 3.1 File Header
-Every non-trivial file must state its responsibility, dependencies, and any non-obvious invariant. Do not write a decorative one-liner.
-
-```fsharp
-// TemplateRenderer.fs
-//
-// Compiles Zestucks templates and caches parsed results in memory.
-// Caching prevents redundant disk reads on every page render.
-//
-// Invariant: cache keys are absolute, normalized paths.
-// Callers must pass paths produced by PathResolver.
-//
-// Dependencies: Zest.Compiler.Domain, System.IO
-```
-
-### 3.2 Public API: XML Documentation
-Required for every public type and member in both C# and F#.
-
-Cover:
-- **Intent**: what the caller achieves, not how it is implemented.
-- **Contract**: preconditions, postconditions, invariants.
-- **Failure modes**: what happens on invalid input, and why that behavior was chosen.
-- **Thread safety**: state it explicitly when relevant.
-
-```fsharp
-/// <summary>
-/// Renders a template with the supplied context data.
-/// Returns an empty string for invalid paths so a single
-/// broken template cannot fail the whole build pipeline.
-/// </summary>
-/// <param name="templatePath">Absolute, normalized path to the .ztk file.</param>
-/// <param name="context">Data bag used for variable interpolation.</param>
-/// <returns>The rendered output, or an empty string on path failure.</returns>
-let renderTemplate templatePath context = ...
-```
-
-Private members do not require XML documentation. Add a comment only when the code is not self-evident.
-
-### 3.3 Inline Comments: Explain *Why*, Never *What*
-- ✅ `// Offset by 1 to match the 1-based page numbers shown in the UI.`
-- ❌ `// Add 1.`
-- ✅ `// HACK: Zestucks caches by relative path; keying on absolute path survives cwd changes.`
-- ❌ `// Loop through templates.`
-
-Rule of thumb: if the comment restates the code, delete it.
-
-### 3.4 Comment Quality Standard
-High-quality comments share these traits:
-
-1. **They answer a question the code cannot.**
-   - Why this approach over an obvious alternative.
-   - Why this edge case matters.
-   - Why a surprising value was chosen.
-
-2. **They are grammatically complete sentences.**
-   - Capitalize the first word.
-   - End with a period.
-   - Use `that` and `which` correctly.
-   - No sentence fragments, no telegraphic style.
-
-3. **They are concise.**
-   - One idea per comment.
-   - If a comment needs a paragraph, the code likely needs refactoring.
-
-4. **They age well.**
-   - Reference stable facts (specs, RFCs, tickets), not transient state ("currently", "for now").
-   - If the code changes, the comment must change with it. A stale comment is worse than no comment.
-
-5. **They avoid hedging and filler.**
-   - Ban `simply`, `just`, `basically`, `obviously`, `of course`, `note that`.
-   - Ban jokes, sarcasm, and personal remarks.
-
-6. **They use correct technical English.**
-   - Prefer active voice: "the parser rejects X" over "X is rejected by the parser".
-   - Use present tense for behavior: "Returns an empty string" not "Will return an empty string".
-   - Define domain terms on first use.
-
-**Examples:**
-
-Bad:
-```csharp
-// increment counter because we need to count
-counter++;
-```
-
-Good:
-```csharp
-// Track parsed files to detect duplicate includes across templates.
-counter++;
-```
-
-Bad:
-```fsharp
-// loop and check
-for page in pages do
-    validate page
-```
-
-Good:
-```fsharp
-// Fail fast on the first invalid page so the build log points to a single source.
-for page in pages do
-    validate page
-```
-
-### 3.5 Special Markers
-- `// TODO: [Goal]. [Trigger or condition].`
-  Example: `// TODO: Replace regex with a parser once nested brackets are supported.`
-- `// HACK: [Why necessary]. [External constraint].`
-  Example: `// HACK: Legacy API returns null instead of an empty list; guard at the boundary.`
-- `// NOTE: [Non-obvious context].`
-  Example: `// NOTE: Order matters here; later overrides depend on earlier defaults.`
-
-### 3.6 Language
-- All comments, documentation, and commit messages are written in English.
-- Non-English text is permitted only when legally required, prefixed with `// LEGAL:`.
-
+## 5. Errors & Validation
+**Core rule: validate at boundaries, trust the interior.**
+### 5.1 Validate at boundaries
+- **SHOULD**: Check user input, config files, file system results, network responses, and external API payloads at the point they enter the system.
+- **MUST**: Failure is explicit. No silent degradation unless the product explicitly requires it.
+### 5.2 Trust the interior
+- Internal functions trust their callers. Do not re-check nulls, types, or state at every layer.
+- **Do not** write defensive branches for states that cannot occur.
+- **Do not** wrap every layer in `try/catch`. Catch only exceptions you can actually handle; let the rest propagate.
+### 5.3 Expressing constraints with types
+- C#: nullable reference types, `record`, `enum`.
+- F#: `Option` over `null`; `Result` at boundaries.
+**Why**: Duplicated checks bury the main logic under noise and hide real design problems. A type-level constraint (`Option<T>`, a non-null record) is checked by the compiler on every call, forever, for free.
+### 5.4 Error messages
+- **SHOULD**: Error messages carry enough context (what was attempted, what failed, relevant values) to locate the problem without a debugger.
 ---
-
-## 4. Refactoring Workflow
-
-AI Agents must proceed in explicit steps and **wait for confirmation between them**:
-
-1. **Scan and report**: list naming, comment, and structural issues without editing.
-2. **Scope**: state exactly which files are in scope. Do not touch anything else.
-3. **Propose**: outline renames, splits, and documentation additions, with risks.
-4. **Execute incrementally**: one class of change per commit (rename / comment / structure) so each is reviewable and revertible.
-5. **Verify**: `dotnet build` passes with zero warnings; `dotnet test` is fully green.
-
-Forbidden:
-- Repo-wide bulk renames without confirmation.
-- Unrelated refactors smuggled into a functional fix.
-- Deleting existing comments without justification.
-
+## 6. Code Style
+### 6.1 C#
+- Clarity first. LINQ is welcome where it reads naturally, but is never mandatory.
+- **SHOULD**: Immutable data uses `record`.
+- **MUST**: Async methods end with `Async` and return `Task` or `ValueTask`.
+- **MUST NOT**: Use `dynamic`; pass anonymous types across boundaries; accept pointless `object` parameters.
+### 6.2 F#
+- **SHOULD**: Pipelines (`|>`) over deeply nested calls.
+- **SHOULD**: `Option` over `null`; `Result` at boundaries.
+- **MUST**: `mutable` appears only in measured hot paths, with a comment explaining why.
+- **SHOULD**: Modules stay small and single-purpose. Prefer pure functions and immutable data.
+### 6.3 Shared
+- **SHOULD**: Functions stay short. Split when they grow — but there is **no hard line count**. A 60-line function that reads linearly can beat five fragmented helpers.
+- **SHOULD**: Many parameters → introduce a configuration record. Deep nesting → early returns or extracted functions.
+- **MUST**: No dead code, commented-out code, unused parameters, or unused usings.
+- **SHOULD**: No abstraction before two real use cases exist. Simple and direct beats clever.
+- **MUST NOT**: Delete tests or comments to make checks pass.
 ---
-
-## 5. Code Style
-
-### C#
-- Prefer LINQ over explicit loops unless profiling justifies otherwise.
-- Use `record` for immutable data.
-- Suffix asynchronous methods with `Async` and return `Task` or `ValueTask`.
-- Avoid `dynamic`. Avoid `object` parameters unless the boundary is documented.
-
-### F#
-- Prefer pipelines (`|>`) over nested calls.
-- Prefer `Option` over `null`. Use `Result` across boundaries.
-- Keep modules small and single-purpose.
-- Avoid `mutable` except on measured hot paths, and document the reason.
-
-### Shared
-- Functions stay under 40 lines. Split when longer.
-- Parameters stay under 5. Beyond that, introduce a configuration record.
-- Nesting stays under 4 levels. Use early returns or extracted functions.
-
+## 7. Testing
+- **MUST**: New behavior comes with tests. Bug fixes come with a regression test first when practical.
+- **MUST**: Refactoring keeps all tests green.
+- Test naming: `[Subject]_[Condition]_[Expectation]` — e.g. `renderTemplate_InvalidPath_ReturnsEmpty`.
+- Test files mirror source structure under `tests/`.
+- **SHOULD**: Prefer fakes and in-memory implementations over mocking concrete types.
+- **SHOULD**: Cover critical paths and boundaries. Do not chase a formal coverage number.
+**Gates**: `dotnet build` introduces no new warnings. `dotnet test` passes. Both **MUST** hold before delivery.
 ---
-
-## 6. Testing
-
-- New behavior requires tests. Refactors must keep the suite green.
-- Test naming: `[Subject]_[Condition]_[Expectation]`.
-  Example: `renderTemplate_InvalidPath_ReturnsEmpty`.
-- Test files mirror the source layout under `tests/`.
-- Prefer fakes or in-memory implementations over mocks of concrete types.
-
----
-
-## 7. Git Commit Convention
-
-### 7.1 Style
-Write commit messages in natural English, as if briefing a colleague.
-
-- Capitalize the first word.
-- End with a period.
-- Do not use prefixes: no `feat:`, `fix:`, `chore:`, `refactor:`, `style:`.
-- Keep the subject line under 72 characters.
-
-### 7.2 Reference Table
-
-| Forbidden | Required |
-| :--- | :--- |
-| `feat(theme): add git source` | `Theme supports Git sources now.` |
-| `fix(cache): resolve TOCTOU race` | `Fix race condition when writing cache files.` |
-| `refactor(core): clean utils` | `Split the monolithic Utils module into focused resolvers.` |
-| `chore(deps): bump xunit` | `Update xUnit to 2.9.3.` |
-| `style: format` | `Format code to match style guidelines.` |
-
-### 7.3 Body
-Optional. Separate from the subject by a blank line. Explain the reason and any side effects.
-
+## 8. Change Protocol
+### 8.1 Workflow
+1. Read the code and existing patterns first.
+2. State scope, risk, and plan — briefly.
+3. Change in small steps; each step builds, tests, and reverts cleanly.
+4. Never mix unrelated refactoring into a feature fix or bug fix.
+5. Run build and tests before delivering.
+### 8.2 Commit rules
+- **MUST**: One commit does one thing. Pure renames get their own commit.
+- Commit messages read like you're explaining the change to a colleague: natural sentences, capitalized first letter, ending period.
+- Subject line ≤ 72 characters. Body optional — use it for reasons and side effects.
+- No conventional-commit prefixes (`feat:`, `fix:`) unless the repo has already converged on them; consistency wins.
 ```
 Fix race condition when writing cache files.
-
-Switch from 'lock' to 'Monitor.Enter' to avoid a compiler error
+Switch from lock to Monitor.Enter to avoid a compiler error
 in F#. The cache stays thread-safe without breaking the build.
 ```
-
-### 7.4 Granularity
-- One concern per commit.
-- Pure renames stand alone.
-- Large refactors are split into reviewable steps.
-
----
-
-## 8. AI Agent Behavior
-
-The agent collaborates; it does not rewrite the repository unsupervised.
-
-### 8.1 Require Confirmation Before
-- Renaming across more than three files.
-- Deleting or rewriting existing comments.
-- Changing a public API signature.
-- Adding a new dependency.
-- Touching architecture-boundary code.
-
-### 8.2 When Uncertain
-- Ask rather than guess.
-- Offer two options with a recommendation and rationale.
-- Preserve the status quo and mark it: `// TODO: [Issue]. [Suggested action].`
-
-### 8.3 Every Delivery Includes
-1. Change summary (what and why).
-2. Impact scope (affected modules and callers).
-3. Verification results (build, test, lint).
-4. Proposed commit message following Section 7.
-
-### 8.4 Hard Limits
-- No repository-wide renames without confirmation.
-- No deleting tests or comments to make checks pass.
-- No introducing paradigms that conflict with existing style.
-- No skipping build and test verification.
-
----
-
-## 9. Pre-Commit Checklist
-
-- [ ] **Naming**: new and touched identifiers follow the two-word rule, or carry a framework-exception comment.
-- [ ] **Comments**: no restating comments; file headers complete; public APIs documented.
-- [ ] **Comment quality**: complete sentences, capitalized, punctuated, no filler, correct grammar.
-- [ ] **Architecture**: C#/F# boundary intact; cross-layer data uses DTOs.
-- [ ] **Style**: F# uses pipelines, C# uses LINQ; no deep nesting; functions stay short.
-- [ ] **Tests**: new behavior covered; refactors green.
-- [ ] **Build**: `dotnet build` reports zero warnings; `dotnet test` passes.
-- [ ] **Commit**: natural sentence, capitalized, ends with a period, no prefix.
-- [ ] **Scope**: no unrelated refactors bundled in.
-
----
-
-## 10. Quick Reference
-
-| Scenario | Rule |
+### 8.3 Escalated changes — confirm before acting
+The following require explicit confirmation from the maintainer before execution:
+| Change | Threshold |
 | :--- | :--- |
-| New file name | Two words, PascalCase. |
-| Existing clear single word | Rename unless framework-mandated. |
-| Framework exception | Allowed only for `Program`, `Startup`, `Main`, `Index`, and equivalents. Justify in one line. |
-| Public API | XML documentation covering intent, contract, and failure modes. |
-| Inline comment | Explains *why*. Complete sentence. No filler. |
-| Comment grammar | Capitalize, punctuate, use active voice, present tense. |
-| F# control flow | Pipelines first. |
-| C# control flow | LINQ first. |
-| Rename | Independent commit, minimal scope. |
-| Commit message | Natural English, ends with a period, no prefix. |
-| Uncertainty | Ask; do not guess. |
-
+| Renaming across files | More than 3 files |
+| Public API breaking change | Any |
+| Architecture boundary change | Any |
+| Deleting or rewriting existing comments in bulk | Any |
+| New dependency | Any |
+| Large-scale refactor / rewrite | Any |
+Everything not on this list: proceed with the normal workflow, deliver, and report.
 ---
-
-**One-line principle**: Write as if handing the code to your future self — rules exist so humans can read, not so machines can look tidy.
+## 9. AI Agent Behavior
+### 9.1 Operating rules
+- Read code and context before writing anything.
+- Follow the patterns already present in the file/module; do not introduce a competing paradigm.
+- Make the minimal change that solves the stated problem.
+- **When uncertain, ask. Do not guess.** Asking costs a minute; a wrong guess costs a review cycle.
+- When alternatives exist, offer up to two options with a recommendation and the reason for it.
+### 9.2 Hard limits — never do these
+- Never delete tests or comments to make a check pass.
+- Never skip build/test verification.
+- Never perform an escalated change (§8.3) without confirmation.
+- Never introduce a paradigm that conflicts with the existing codebase style.
+### 9.3 Delivery format
+Every delivered change includes:
+1. **Summary** — what changed and why.
+2. **Impact** — affected modules and callers.
+3. **Verification** — build / test / lint results.
+4. **Suggested commit message** — ready to use.
+---
+## 10. Pre-Commit Checklist
+- [ ] Names are clear — no vague catch-alls, no arbitrary abbreviations.
+- [ ] Comments explain why; none restate code; none are stale.
+- [ ] Complex files and public APIs carry necessary documentation.
+- [ ] Architecture boundaries intact; cross-boundary data uses DTOs.
+- [ ] Validation at boundaries only; no defensive noise inside.
+- [ ] No dead code, duplicate checks, or speculative abstractions.
+- [ ] New behavior tested; all tests pass after refactoring.
+- [ ] `dotnet build` — no new warnings. `dotnet test` — green.
+- [ ] Commit message is natural, clear, single-scope.
+- [ ] No unrelated refactoring mixed in.
+---
+## 11. Quick Reference
+| Situation | Rule |
+| :--- | :--- |
+| Naming | Clarity over form. `Parser` is as good as `TemplateParser`. |
+| Vague names | Banned: `Utils`, `Helper`, `Manager`, `Common`, `Tmp`, `Mgr`. |
+| Comments | Why, not what. Concise. Always current. |
+| Public API docs | Where a caller could misuse it — not everywhere. |
+| Errors | Validate at boundaries, trust the interior. |
+| Defensive code | Use types (`Option`, `Result`, nullable) instead of layers of checks. |
+| C# | Clarity first, `record`, `Async` suffix, no `dynamic`. |
+| F# | Pipelines, `Option`/`Result`, `mutable` only in measured hot paths. |
+| Function length | No hard limit; split when it stops reading linearly. |
+| Abstraction | Only after two real use cases. |
+| Refactoring | Small steps, each verifiable. |
+| Renames | One-sentence reason or don't. Pure renames: own commit. |
+| Commits | Natural sentence, capitalized, period, ≤ 72 chars subject. |
+| Bigger than 3 files / API break / new dep / bulk comment deletion | Confirm first (§8.3). |
+| Uncertain | Ask. Don't guess. |
+**One-line principle**: Keep code simple, clean, and reliable. Rules serve readers, not form.

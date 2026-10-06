@@ -19,10 +19,14 @@ namespace Zest.App.Config;
 /// is never configured here — see SitePaths.
 ///
 /// The parsed result is cached and re-parsed only when the file's write time
-/// changes, so repeated loads during a watch loop cost nothing.
+/// changes, so repeated loads during a watch loop cost nothing. A file that
+/// exists but cannot be used throws <see cref="ConfigException"/>: configuration
+/// enters the system at this boundary, and a silently defaulted site is worse
+/// than a stopped one.
 /// </summary>
 public static class ConfigLoader
 {
+    private static readonly object _cacheLock = new();
     private static SiteConfig? _cachedConfig;
     private static DateTime _lastLoadTimeUtc;
     private static string? _lastConfigPath;
@@ -31,40 +35,70 @@ public static class ConfigLoader
     /// Load site configuration from the given project root, or auto-detect it.
     /// Returns defaults when no _config.toml exists.
     /// </summary>
+    /// <exception cref="ConfigException">
+    /// The config file exists but is unreadable, malformed, or declares an
+    /// output directory outside the project root.
+    /// </exception>
     public static SiteConfig Load(string? projectPath = null)
     {
-        var root = RootFinder.Find(projectPath) ?? Directory.GetCurrentDirectory();
+        var root = RootFinder.Find(projectPath);
         var configPath = Path.Combine(root, "_config.toml");
 
         var currentWriteTime = File.Exists(configPath)
             ? File.GetLastWriteTimeUtc(configPath)
             : DateTime.MinValue;
 
-        // Serve the cache only when the path and the write time are unchanged.
-        if (_cachedConfig != null && _lastConfigPath == configPath && _lastLoadTimeUtc == currentWriteTime)
-            return _cachedConfig;
-
-        _lastConfigPath = configPath;
-        _lastLoadTimeUtc = currentWriteTime;
-
-        if (!File.Exists(configPath))
-            return _cachedConfig = SiteConfigDefaults.create();
-
-        try
+        lock (_cacheLock)
         {
-            var model = Toml.ToModel(File.ReadAllText(configPath));
-            return _cachedConfig = model is null
-                ? SiteConfigDefaults.create()
-                : Parse(SiteConfigDefaults.create(), model);
-        }
-        catch (Exception ex)
-        {
-            LogWriter.Error("Config", $"Failed to parse '{configPath}': {ex.Message}", ex);
-            return _cachedConfig = SiteConfigDefaults.create();
+            // Serve the cache only when the path and the write time are unchanged.
+            if (_cachedConfig != null && _lastConfigPath == configPath && _lastLoadTimeUtc == currentWriteTime)
+                return _cachedConfig;
+
+            if (!File.Exists(configPath))
+                return Cache(SiteConfigDefaults.create(), configPath, currentWriteTime);
+
+            SiteConfig parsed;
+            try
+            {
+                var model = Toml.ToModel(File.ReadAllText(configPath));
+                parsed = model is null
+                    ? SiteConfigDefaults.create()
+                    : Parse(SiteConfigDefaults.create(), model, root);
+            }
+            catch (ConfigException)
+            {
+                ResetCache();
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Never cache a failure: a corrected file must take effect on
+                // the next call without restarting the process.
+                ResetCache();
+                throw new ConfigException($"Failed to load '{configPath}': {ex.Message}", ex);
+            }
+
+            return Cache(parsed, configPath, currentWriteTime);
         }
     }
 
-    private static SiteConfig Parse(SiteConfig config, TomlTable model)
+    private static SiteConfig Cache(SiteConfig config, string path, DateTime writeTimeUtc)
+    {
+        _cachedConfig = config;
+        _lastConfigPath = path;
+        _lastLoadTimeUtc = writeTimeUtc;
+        return config;
+    }
+
+    /// <summary>Callers must hold <see cref="_cacheLock"/>.</summary>
+    private static void ResetCache()
+    {
+        _cachedConfig = null;
+        _lastLoadTimeUtc = DateTime.MinValue;
+        _lastConfigPath = null;
+    }
+
+    private static SiteConfig Parse(SiteConfig config, TomlTable model, string projectRoot)
     {
         var site = Table(model, "site");
         var build = Table(model, "build");
@@ -82,19 +116,16 @@ public static class ConfigLoader
             baseUrl: baseUrl,
             description: Str(site, "description", config.Description),
             contentDir: Str(site, "content_dir", config.ContentDir),
-            outputDir: Str(build, "output", config.OutputDir),
+            outputDir: ValidatedOutputDir(projectRoot, Str(build, "output", config.OutputDir)),
             defaultLayout: Str(site, "default_layout", config.DefaultLayout),
             permalinkFormat: Str(site, "permalink_format", config.PermalinkFormat),
             devServerPort: Int(site, "dev_server_port", config.DevServerPort),
             liveReloadPort: Int(site, "live_reload_port", config.LiveReloadPort),
-            enableMinification: Bool(build, "minify", config.EnableMinification),
-            enableAssetFormatting: Bool(build, "format_assets", config.EnableAssetFormatting),
-            enableHtmlFormatting: Bool(build, "format_html", config.EnableHtmlFormatting),
-            enableHtmlMinification: Bool(build, "minify_html", config.EnableHtmlMinification),
             enableCacheBusting: Bool(build, "cache_busting", config.EnableCacheBusting),
             siteVersion: Str(site, "version", config.SiteVersion),
             enableParallelBuild: Bool(build, "parallel", config.EnableParallelBuild),
             enableIncrementalBuild: Bool(build, "incremental", config.EnableIncrementalBuild),
+            finalizeOnError: Bool(build, "finalize_on_error", config.FinalizeOnError),
             taxonomies: ParseTaxonomies(model, config.Taxonomies),
             menus: ParseMenus(model),
             author: Str(site, "author", config.Author),
@@ -109,6 +140,51 @@ public static class ConfigLoader
             pageDefaults: ParsePageDefaults(model),
             @params: ParseParams(model));
     }
+
+    // ── Boundary validation ────────────────────────────────────
+
+    /// <summary>
+    /// Verify that the configured output directory resolves inside the project
+    /// root. Everything the build writes, and everything <c>zest clean</c>
+    /// deletes, lives here, so an escaping path (absolute, or a chain of
+    /// <c>..</c>) must be rejected at the boundary rather than acted on.
+    /// </summary>
+    private static string ValidatedOutputDir(string projectRoot, string outputDir)
+    {
+        if (string.IsNullOrWhiteSpace(outputDir))
+            throw new ConfigException("Config key [build] output must not be empty.");
+
+        var rootFull = Path.GetFullPath(projectRoot);
+        var outputFull = Path.GetFullPath(Path.Combine(rootFull, outputDir));
+
+        if (!IsWithin(rootFull, outputFull))
+            throw new ConfigException(
+                $"Config key [build] output must stay inside the project root. " +
+                $"'{outputDir}' resolves to '{outputFull}', outside '{rootFull}'.");
+
+        if (PathsEqual(rootFull, outputFull))
+            throw new ConfigException(
+                "Config key [build] output must not be the project root itself.");
+
+        return outputDir;
+    }
+
+    private static bool IsWithin(string rootFull, string candidateFull)
+    {
+        var rootWithSeparator = rootFull.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                                + Path.DirectorySeparatorChar;
+        return candidateFull.StartsWith(rootWithSeparator, PathComparison);
+    }
+
+    private static bool PathsEqual(string a, string b) =>
+        string.Equals(
+            a.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            b.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            PathComparison);
+
+    // Windows and macOS use case-insensitive file systems; Linux does not.
+    private static StringComparison PathComparison =>
+        OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
     // ── Table accessors ────────────────────────────────────────
 
@@ -240,8 +316,9 @@ public static class ConfigLoader
     /// </summary>
     public static void ClearCache()
     {
-        _cachedConfig = null;
-        _lastLoadTimeUtc = DateTime.MinValue;
-        _lastConfigPath = null;
+        lock (_cacheLock)
+        {
+            ResetCache();
+        }
     }
 }

@@ -52,9 +52,9 @@ module SitePaths =
         resolvePath root name
 
     let internal isExcluded (contentDir: string) (filePath: string) =
-        // Config entry scripts sit next to content but are entry points,
-        // not pages — they must never receive a route.
-        if FileTypes.isConfigEntry filePath then true
+        // The two reserved files (_config.toml / _prebuild.fsx) sit next to
+        // content but are entry points, not pages — they never receive a route.
+        if FileTypes.isReservedFile filePath then true
         else
             let segments =
                 Path.GetRelativePath(contentDir, filePath)

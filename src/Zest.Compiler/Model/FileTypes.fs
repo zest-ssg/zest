@@ -54,10 +54,6 @@ module FileTypes =
     [<Literal>]
     let Nunjucks = ".njk"
 
-    /// WebC component (SSR-processed, then rendered by the Zestucks engine).
-    [<Literal>]
-    let WebC = ".webc"
-
     // ── Style extensions ───────────────────────────────────
 
     /// Zest Stylesheet (CSS superset with nesting/vars).
@@ -110,11 +106,11 @@ module FileTypes =
 
     // ── Aggregate sets ─────────────────────────────────────
 
-    /// Every extension rendered by the Zestucks engine: the native `.ztk`,
-    /// the Nunjucks-compatible `.njk`, and `.webc` (SSR-processed first).
+    /// Every extension rendered by the Zestucks engine: the native `.ztk`
+    /// and the Nunjucks-compatible `.njk`.
     /// Used by PageEvaluator, FrontMatterParser, PagePipeline, LayoutChain.
     let ZestucksFamily =
-        [ Zestucks; Nunjucks; WebC ]
+        [ Zestucks; Nunjucks ]
 
     /// Extensions Zestucks reads from disk, in lookup order. Used when a
     /// template refers to another one by bare name (`{% extends "base" %}`).
@@ -152,9 +148,28 @@ module FileTypes =
 
     // ── Routing guards ──────────────────────────────────────
 
-    /// Reserved config-entry scripts. They are read directly by the CLI/build
-    /// engine and must never be discovered, evaluated, or routed as pages.
-    let ConfigEntryFileNames = set [ "zest.config.fsx"; "zest.fsx" ]
+    /// Site configuration file name (project root).
+    [<Literal>]
+    let ConfigFileName = "_config.toml"
+
+    /// Pre-build script file name (project root, exact match).
+    [<Literal>]
+    let PrebuildScriptFileName = "_prebuild.fsx"
+
+    /// Post-build script file name (project root, exact match).
+    [<Literal>]
+    let FinalizeScriptFileName = "_finalize.fsx"
+
+    /// The only three special files Zest recognises. All live at the project
+    /// root, are read directly by the CLI/build engine, and must never be
+    /// discovered, evaluated, or routed as pages.
+    ///
+    ///   `_config.toml`   — declarative site configuration
+    ///   `_prebuild.fsx`  — dynamic pre-build script (global data, hooks)
+    ///   `_finalize.fsx`  — dynamic post-build script (validate, index)
+    ///
+    /// There is no other reserved name and no compatibility alias.
+    let ReservedFileNames = set [ ConfigFileName; PrebuildScriptFileName; FinalizeScriptFileName ]
 
     /// <summary>True when the file is a Zest Page (<c>*.zest.fsx</c>).</summary>
     /// <remarks>
@@ -173,8 +188,8 @@ module FileTypes =
         path.EndsWith(FSharpScript, System.StringComparison.OrdinalIgnoreCase) &&
         not (isZestPage path)
 
-    /// <summary>True when the file is a reserved config entry
-    /// (<c>zest.config.fsx</c> or <c>zest.fsx</c>). Never routed.</summary>
-    let isConfigEntry (path: string) =
+    /// <summary>True when the file is one of the two reserved special files
+    /// (<c>_config.toml</c> or <c>_prebuild.fsx</c>). Never routed.</summary>
+    let isReservedFile (path: string) =
         not (isNull path) &&
-        ConfigEntryFileNames.Contains(Path.GetFileName(path).ToLowerInvariant())
+        ReservedFileNames.Contains(Path.GetFileName(path).ToLowerInvariant())

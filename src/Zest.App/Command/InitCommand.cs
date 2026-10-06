@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text;
 using Zest.App.Cli;
 using Zest.App.Runtime;
 
@@ -16,27 +17,60 @@ public static class InitCommand
     // LogicalName prefix produced by the EmbeddedResource items in the csproj.
     private const string ResourcePrefix = "Zest.App.Starter.";
 
+    /// <summary>Directory names never copied out of an on-disk starter.</summary>
+    private static readonly HashSet<string> SkipDirectoryNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".git", ".svn", ".hg", "bin", "obj", "node_modules"
+    };
+
+    // Writing a BOM into Markdown/HTML files would surface as a stray
+    // character in rendered output and diffs.
+    private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
+
     public static int Execute(string[] args)
     {
-        var opts = CliParser.ParseInit(args);
-        var targetDir = opts.TargetDirectory;
-
-        if (targetDir == "." && Directory.GetFiles(targetDir).Length > 0)
+        InitCommandOptions opts;
+        try
         {
-            LogWriter.WriteWarning("  Warning: Current directory is not empty.");
+            opts = CliParser.ParseInit(args);
+        }
+        catch (ArgumentException ex)
+        {
+            LogWriter.WriteError($"  Error: {ex.Message}");
+            return 1;
+        }
+
+        if (opts.ShowHelp)
+        {
+            CliParser.PrintCommandHelp("init");
+            return 0;
+        }
+
+        LogWriter.SetQuiet(opts.Quiet);
+
+        var targetDir = opts.TargetDirectory;
+        var targetFull = Path.GetFullPath(targetDir);
+
+        // Warn about any non-empty target, not just ".": the previous check
+        // compared strings, so `zest init ./` skipped the prompt entirely.
+        if (Directory.Exists(targetFull) && Directory.EnumerateFileSystemEntries(targetFull).Any())
+        {
+            LogWriter.WriteWarning($"  Warning: '{targetDir}' is not empty.");
             Console.Write("  Continue anyway? (y/N): ");
             var resp = Console.ReadLine()?.Trim().ToLowerInvariant();
-            if (resp != "y" && resp != "yes")
+            if (resp is not ("y" or "yes"))
             {
                 LogWriter.WriteDim("  Aborted.");
                 return 1;
             }
         }
 
-        if (opts.Empty)
-            GenerateEmptyLayout(targetDir);
-        else
-            ExtractBundledStarter(targetDir);
+        var created = opts.Empty
+            ? GenerateEmptyLayout(targetDir)
+            : ExtractBundledStarter(targetDir);
+
+        if (!created)
+            return 1;
 
         LogWriter.WriteSuccess($"  [Zest] Created new project at '{targetDir}'");
         Console.WriteLine();
@@ -49,7 +83,7 @@ public static class InitCommand
 
     /// <summary>Write the conventional empty site layout: content/, _layouts/,
     /// _includes/ and assets/, each with a placeholder file.</summary>
-    private static void GenerateEmptyLayout(string target)
+    private static bool GenerateEmptyLayout(string target)
     {
         Directory.CreateDirectory(Path.Combine(target, "content"));
         Directory.CreateDirectory(Path.Combine(target, "_layouts"));
@@ -81,42 +115,62 @@ public static class InitCommand
             </body>
             </html>
             """);
+
+        return true;
     }
 
     private static void Write(string path, string content) =>
-        File.WriteAllText(path, content.ReplaceLineEndings(Environment.NewLine), System.Text.Encoding.UTF8);
+        File.WriteAllText(path, content.ReplaceLineEndings(Environment.NewLine), Utf8NoBom);
 
     /// <summary>Write the bundled starter site to <paramref name="targetDir"/>,
     /// using the embedded resources when present and falling back to the on-disk
-    /// <c>Starters</c> folder during local development.</summary>
-    private static void ExtractBundledStarter(string targetDir)
+    /// <c>Starter</c> folder during local development.</summary>
+    private static bool ExtractBundledStarter(string targetDir)
     {
         var asm = typeof(InitCommand).Assembly;
         var resourceNames = asm.GetManifestResourceNames()
             .Where(n => n.StartsWith(ResourcePrefix, StringComparison.Ordinal))
             .ToArray();
 
-        if (resourceNames.Length == 0)
-        {
-            // Fall back to the starter on disk (convenient during local dev
-            // when the preset lives outside the assembly).
-            var templateDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
-                "..", "..", "..", "..", "Starters");
-            if (!Directory.Exists(templateDir))
-                templateDir = Path.Combine(Directory.GetCurrentDirectory(), "Starters");
-
-            if (!Directory.Exists(templateDir))
-            {
-                LogWriter.WriteError("  Error: Could not locate the starter site (embedded resources missing).");
-                return;
-            }
-
-            CopyDirectory(templateDir, targetDir);
-        }
-        else
+        if (resourceNames.Length > 0)
         {
             ExtractEmbeddedTemplate(asm, resourceNames, targetDir);
+            return true;
         }
+
+        // Fall back to the starter on disk (convenient during local dev when
+        // the preset lives outside the assembly).
+        var templateDir = FindStarterDirectory();
+        if (templateDir is null)
+        {
+            LogWriter.WriteError("  Error: Could not locate the starter site (embedded resources missing).");
+            return false;
+        }
+
+        CopyDirectory(templateDir, targetDir);
+        return true;
+    }
+
+    /// <summary>
+    /// Locate a starter directory by walking up from the executable towards the
+    /// repository root. Replaces the previous fixed <c>../../../../</c> hop,
+    /// which broke as soon as the output layout changed (RID folders, TFMs).
+    /// </summary>
+    private static string? FindStarterDirectory()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        for (var i = 0; i < 8 && dir is not null; i++, dir = dir.Parent)
+        {
+            foreach (var name in new[] { "Starter", "Starters" })
+            {
+                var candidate = Path.Combine(dir.FullName, name);
+                if (Directory.Exists(candidate) && File.Exists(Path.Combine(candidate, "_config.toml")))
+                    return candidate;
+            }
+        }
+
+        var local = Path.Combine(Directory.GetCurrentDirectory(), "Starter");
+        return Directory.Exists(local) ? local : null;
     }
 
     /// <summary>Write the embedded preset resources to <paramref name="target"/>,
@@ -144,10 +198,22 @@ public static class InitCommand
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
             var rel = Path.GetRelativePath(source, file);
+            if (IsInSkippedDirectory(rel)) continue;
+
             var tgt = Path.Combine(target, rel);
             var dir = Path.GetDirectoryName(tgt);
             if (dir is not null) Directory.CreateDirectory(dir);
             File.Copy(file, tgt, overwrite: true);
         }
+    }
+
+    private static bool IsInSkippedDirectory(string relativePath)
+    {
+        var parts = relativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        for (var i = 0; i < parts.Length - 1; i++)
+        {
+            if (SkipDirectoryNames.Contains(parts[i])) return true;
+        }
+        return false;
     }
 }

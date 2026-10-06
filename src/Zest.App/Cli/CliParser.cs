@@ -5,28 +5,43 @@ namespace Zest.App.Cli;
 /// <summary>
 /// Unified CLI argument parser for Zest commands.
 /// Eliminates duplicate inline parsing across controllers.
+///
+/// Every command rejects unknown options with <see cref="ArgumentException"/>
+/// rather than ignoring them: a silently dropped flag is indistinguishable
+/// from a flag that did nothing, which hides typos and unimplemented switches.
 /// </summary>
 internal static class CliParser
 {
     /// <summary>
-    /// Parse `zest build` arguments.
+    /// Parse `zest build [path] [--watch] [--no-incremental]`.
     /// </summary>
     public static BuildCommandOptions ParseBuild(string[] args)
     {
         var opts = new BuildCommandOptions();
-        for (int i = 1; i < args.Length; i++)
+        for (var i = 1; i < args.Length; i++)
         {
-            if (TryApplyCommonOption(ref opts, args[i])) continue;
+            var arg = args[i];
+            if (TryReadCommonOption(arg, out var common))
+            {
+                opts = opts.WithCommon(common.Verbose, common.Quiet, common.ShowHelp);
+                continue;
+            }
 
-            switch (args[i].ToLowerInvariant())
+            switch (arg.ToLowerInvariant())
             {
                 case "--watch":
                 case "-w":
                     opts = opts with { Watch = true };
                     break;
+                case "--no-incremental":
+                    opts = opts with { NoIncremental = true };
+                    break;
                 default:
-                    if (opts.ProjectPath == null && !args[i].StartsWith('-'))
-                        opts = opts with { ProjectPath = args[i] };
+                    if (arg.StartsWith('-'))
+                        throw new ArgumentException($"Unknown option: {arg}");
+                    if (opts.ProjectPath != null)
+                        throw new ArgumentException($"Unexpected argument: {arg}");
+                    opts = opts with { ProjectPath = arg };
                     break;
             }
         }
@@ -34,21 +49,26 @@ internal static class CliParser
     }
 
     /// <summary>
-    /// Parse `zest serve` arguments.
+    /// Parse `zest serve [options]`.
     /// </summary>
     public static ServeCommandOptions ParseServe(string[] args)
     {
         var opts = new ServeCommandOptions();
-        for (int i = 1; i < args.Length; i++)
+        for (var i = 1; i < args.Length; i++)
         {
-            if (TryApplyCommonOption(ref opts, args[i])) continue;
+            var arg = args[i];
+            if (TryReadCommonOption(arg, out var common))
+            {
+                opts = opts.WithCommon(common.Verbose, common.Quiet, common.ShowHelp);
+                continue;
+            }
 
-            switch (args[i].ToLowerInvariant())
+            switch (arg.ToLowerInvariant())
             {
                 case "--port":
                 case "-p":
-                    if (i + 1 < args.Length && int.TryParse(args[++i], out var p))
-                        opts = opts with { PortOverride = p };
+                    if (i + 1 < args.Length && int.TryParse(args[++i], out var port))
+                        opts = opts with { PortOverride = port };
                     else
                         throw new ArgumentException("--port requires a numeric value");
                     break;
@@ -69,28 +89,33 @@ internal static class CliParser
                     opts = opts with { DirectoryListing = true };
                     break;
                 default:
-                    throw new ArgumentException($"Unknown option: {args[i]}");
+                    throw new ArgumentException($"Unknown option: {arg}");
             }
         }
         return opts;
     }
 
     /// <summary>
-    /// Parse `zest preview` arguments.
+    /// Parse `zest preview [options]`.
     /// </summary>
     public static PreviewCommandOptions ParsePreview(string[] args)
     {
         var opts = new PreviewCommandOptions();
-        for (int i = 1; i < args.Length; i++)
+        for (var i = 1; i < args.Length; i++)
         {
-            if (TryApplyCommonOption(ref opts, args[i])) continue;
+            var arg = args[i];
+            if (TryReadCommonOption(arg, out var common))
+            {
+                opts = opts.WithCommon(common.Verbose, common.Quiet, common.ShowHelp);
+                continue;
+            }
 
-            switch (args[i].ToLowerInvariant())
+            switch (arg.ToLowerInvariant())
             {
                 case "--port":
                 case "-p":
-                    if (i + 1 < args.Length && int.TryParse(args[++i], out var p))
-                        opts = opts with { Port = p };
+                    if (i + 1 < args.Length && int.TryParse(args[++i], out var port))
+                        opts = opts with { Port = port };
                     else
                         throw new ArgumentException("--port requires a numeric value");
                     break;
@@ -119,57 +144,69 @@ internal static class CliParser
                     opts = opts with { DirectoryListing = true };
                     break;
                 default:
-                    throw new ArgumentException($"Unknown option: {args[i]}");
+                    throw new ArgumentException($"Unknown option: {arg}");
             }
         }
         return opts;
     }
 
     /// <summary>
-    /// Parse `zest init` arguments: an optional path plus --empty.
+    /// Parse `zest init [path] [--empty]`.
     /// </summary>
     public static InitCommandOptions ParseInit(string[] args)
     {
-        var target = ".";
-        var empty = false;
+        var opts = new InitCommandOptions();
+        string? target = null;
 
         for (var i = 1; i < args.Length; i++)
         {
-            switch (args[i].ToLowerInvariant())
+            var arg = args[i];
+            if (TryReadCommonOption(arg, out var common))
+            {
+                opts = opts.WithCommon(common.Verbose, common.Quiet, common.ShowHelp);
+                continue;
+            }
+
+            switch (arg.ToLowerInvariant())
             {
                 case "--empty":
-                    empty = true;
+                    opts = opts with { Empty = true };
                     break;
                 default:
-                    if (target == "." && !args[i].StartsWith('-')) target = args[i];
+                    if (arg.StartsWith('-'))
+                        throw new ArgumentException($"Unknown option: {arg}");
+                    if (target != null)
+                        throw new ArgumentException($"Unexpected argument: {arg}");
+                    target = arg;
                     break;
             }
         }
 
-        return new InitCommandOptions { TargetDirectory = target, Empty = empty };
+        return target is null ? opts : opts with { TargetDirectory = target };
     }
 
     /// <summary>
-    /// Apply common options (--verbose, --quiet, --help) to any command options record.
-    /// Returns true if the argument was a recognized common option.
+    /// Recognise a common option and report which one it was. Only the
+    /// matching field is non-null, so the others keep their current value.
     /// </summary>
-    private static bool TryApplyCommonOption<T>(ref T opts, string arg) where T : CliOptions
+    private static bool TryReadCommonOption(string arg, out (bool? Verbose, bool? Quiet, bool? ShowHelp) common)
     {
         switch (arg.ToLowerInvariant())
         {
             case "--verbose":
             case "-v":
-                opts = (T)opts with { Verbose = true };
+                common = (Verbose: true, Quiet: null, ShowHelp: null);
                 return true;
             case "--quiet":
             case "-q":
-                opts = (T)opts with { Quiet = true };
+                common = (Verbose: null, Quiet: true, ShowHelp: null);
                 return true;
             case "--help":
             case "-h":
-                opts = (T)opts with { ShowHelp = true };
+                common = (Verbose: null, Quiet: null, ShowHelp: true);
                 return true;
             default:
+                common = default;
                 return false;
         }
     }

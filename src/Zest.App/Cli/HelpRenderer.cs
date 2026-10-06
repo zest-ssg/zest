@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text;
 using Tomlyn;
 using Tomlyn.Model;
+using Zest.App.Runtime;
 
 namespace Zest.App.Cli;
 
@@ -75,7 +76,12 @@ internal static class HelpRenderer
                 var table = Toml.ToModel(reader.ReadToEnd());
                 merged = Merge(merged, table);
             }
-            catch { /* skip a malformed fragment, keep the rest */ }
+            catch (Exception ex)
+            {
+                // Keep the other fragments, but surface the problem: a silently
+                // ignored fragment makes missing help text impossible to explain.
+                LogWriter.Warn("Help", $"Ignoring malformed embedded CLI config '{name}': {ex.Message}");
+            }
         }
         return merged;
     }
@@ -97,7 +103,10 @@ internal static class HelpRenderer
                 var table = Toml.ToModel(File.ReadAllText(path, Encoding.UTF8));
                 merged = Merge(merged, table);
             }
-            catch { /* skip a malformed fragment, keep the rest */ }
+            catch (Exception ex)
+            {
+                LogWriter.Warn("Help", $"Ignoring malformed CLI config '{path}': {ex.Message}");
+            }
         }
         return merged;
     }

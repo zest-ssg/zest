@@ -20,8 +20,20 @@ open ProgressTracker
 /// Core build pipeline with parallel content processing and optimised I/O.
 module BuildRunner =
 
+    /// Total size of every file below `dir`, in bytes. Used for the build
+    /// report handed to _finalize.fsx; an unreadable file counts as zero
+    /// rather than failing the build.
+    let private directorySize (dir: string) : int64 =
+        if not (Directory.Exists dir) then 0L
+        else
+            try
+                Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
+                |> Seq.sumBy (fun f -> (FileInfo f).Length)
+            with _ -> 0L
+
     let execute (config: SiteConfig) : BuildResult =
         let sw = Stopwatch.StartNew()
+        let startedAt = DateTimeOffset.UtcNow
         let errors = ConcurrentBag<string>()
         let mutable processed = 0
         let mutable cached    = 0
@@ -165,21 +177,21 @@ module BuildRunner =
 
             PageStore.setGlobalData gDict
 
-            // ── Execute _init.zest.fsx (project root init script) ────
-            let initResult = InitScript.run root gDict
-            if initResult.HasErrors then
-                for err in initResult.Errors do
-                    eprintfn "[Zest] _init.zest.fsx: %s" err
+            // ── Execute _prebuild.fsx (project root pre-build script) ────
+            let prebuildResult = PrebuildScript.run root gDict
+            if prebuildResult.HasErrors then
+                for err in prebuildResult.Errors do
+                    eprintfn "[Zest] _prebuild.fsx: %s" err
                     errors.Add err
-            for kv in initResult.GlobalData do
+            for kv in prebuildResult.GlobalData do
                 if not (gDict.ContainsKey kv.Key) then
                     gDict.[kv.Key] <- kv.Value
-            // Merge init-declared global functions as template-accessible values.
-            for kv in initResult.GlobalFunctions do
+            // Merge prebuild-declared global functions as template-accessible values.
+            for kv in prebuildResult.GlobalFunctions do
                 if not (gDict.ContainsKey kv.Key) then
                     gDict.[kv.Key] <- kv.Value
-            // Propagate init-declared filters so every engine picks them up.
-            ZestucksFilters.setInitFilters initResult.Filters
+            // Propagate prebuild-declared filters so every engine picks them up.
+            ZestucksFilters.setPrebuildFilters prebuildResult.Filters
             PageStore.setGlobalData gDict
 
             // ── Load locale files (_locales/{lang}.toml) ────
@@ -190,9 +202,6 @@ module BuildRunner =
                 for transKv in langKv.Value do
                     gDict.["locale." + langKv.Key + "." + transKv.Key] <- box transKv.Value
             PageStore.setGlobalData gDict
-
-            // ── Collect afterBuild commands declared by _init.zest.fsx ──
-            let afterBuildCmds = initResult.AfterBuildCommands
 
             // ── Content pipeline: discover → evaluate → write output ──
             markPhase "setup"
@@ -233,63 +242,39 @@ module BuildRunner =
             if config.EnableIncrementalBuild then saveCache outputDir
 
             // ── CSS/JS post-processing ──
-            // Two independent modes, matching the HTML formatting approach:
-            //   enable_asset_formatting → pretty-print with indentation
-            //   enable_minification     → compress (whitespace stripped)
-            // When both are enabled, formatting takes priority.
-            let mutable assetsProcessed = 0
-            if (config.EnableAssetFormatting || config.EnableMinification) && Directory.Exists outputDir then
-                let processExts = set [ ".css"; ".js" ]
-                // Enumerate once, then process files in parallel — formatting is
-                // CPU-bound and independent per file.
-                let assetFiles =
-                    Directory.EnumerateFiles(outputDir, "*.*", SearchOption.AllDirectories)
-                    |> Seq.filter (fun f -> processExts.Contains(Path.GetExtension(f).ToLowerInvariant()))
-                    |> Seq.toArray
-                Parallel.ForEach(assetFiles, fun file ->
-                    try
-                        let content = File.ReadAllText(file, System.Text.Encoding.UTF8)
-                        let processed =
-                            if config.EnableAssetFormatting then
-                                if Path.GetExtension(file).ToLowerInvariant() = ".css" then Formatting.formatCss 2 content
-                                else Formatting.formatJs 2 content
-                            elif config.EnableMinification then
-                                if Path.GetExtension(file).ToLowerInvariant() = ".css" then Formatting.minifyCss content
-                                else Formatting.minifyJs content
-                            else content
-                        if processed <> content then
-                            AtomicFile.write file (System.Text.Encoding.UTF8.GetBytes processed)
-                            Interlocked.Increment(&assetsProcessed) |> ignore
-                    with ex ->
-                        eprintfn "[Zest] Asset processing failed for '%s': %s" file ex.Message) |> ignore
-
+            // Deliberately not a build stage: pretty-printing and minification
+            // are post-build work the author performs in _finalize.fsx with
+            // rewriteFiles / formatCss / minifyCss / formatJs / minifyJs.
             progress.Phase <- BuildPhase.Finalizing
             markPhase "assets"
-            if config.EnableAssetFormatting || config.EnableMinification then
-                eprintfn "[Zest] Asset post-process: %s %d file(s)"
-                    (if config.EnableAssetFormatting then "formatted" else "minified")
-                    assetsProcessed
 
-            // ── Execute afterBuild commands (e.g. sitemap, search index) ──
-            for (cmd, args) in afterBuildCmds do
-                try
-                    let psi = ProcessStartInfo(cmd, args)
-                    psi.UseShellExecute <- false
-                    psi.RedirectStandardOutput <- true
-                    psi.RedirectStandardError <- true
-                    psi.CreateNoWindow <- true
-                    use proc = Process.Start(psi)
-                    let stdout = proc.StandardOutput.ReadToEnd()
-                    let stderr = proc.StandardError.ReadToEnd()
-                    if not (proc.WaitForExit(30_000)) then
-                        try proc.Kill() with _ -> ()
-                        eprintfn "[Zest] afterBuild '%s %s' timed out" cmd args
-                    elif proc.ExitCode <> 0 then
-                        eprintfn "[Zest] afterBuild '%s %s' failed (exit %d): %s" cmd args proc.ExitCode (stderr.Trim())
-                    elif !PageStore.verboseRef && stdout.Trim() <> "" then
-                        eprintfn "[Zest] afterBuild '%s %s': %s" cmd args (stdout.Trim())
-                with ex ->
-                    eprintfn "[Zest] afterBuild '%s %s' threw: %s" cmd args ex.Message
+            // ── Execute _finalize.fsx (post-build hook) ──
+            // Last step of the pipeline: the output tree is complete, so the
+            // hook may index it, validate it, or reshape it (pretty-print,
+            // minify). Every write is confined to the output directory.
+            // `finalize_on_error = false` skips the hook when the build already
+            // failed; the default keeps it running so "check what was written"
+            // hooks still fire on a broken build.
+            if config.FinalizeOnError || errors.IsEmpty then
+                let renderedPages =
+                    PageStore.getPages ()
+                    |> List.map (fun p ->
+                        { Route    = p.Url
+                          Output   = Path.GetFullPath(Path.Combine(outputDir, p.OutputPath))
+                          Title    = (if String.IsNullOrEmpty p.Title then None else Some p.Title)
+                          Source   = p.SourcePath })
+                let buildInfo =
+                    { DurationMs  = int sw.ElapsedMilliseconds
+                      PageCount   = renderedPages.Length
+                      AssetCount  = assets
+                      OutputBytes = directorySize outputDir
+                      StartedAt   = startedAt }
+
+                let finalizeResult = FinalizeScript.run root outputDir config renderedPages buildInfo
+                // A hook that asked for leniency logs its error but must not
+                // fail the build; FinalizeScript already printed it.
+                if finalizeResult.HasErrors && finalizeResult.FailOnError then
+                    for err in finalizeResult.Errors do errors.Add err
 
             sw.Stop()
             ProgressTracker.clear ()
@@ -297,7 +282,6 @@ module BuildRunner =
               ProcessedPages = processed
               CachedPages    = cached
               AssetsCopied   = assets
-              AssetsProcessed = assetsProcessed
               DurationMs     = sw.ElapsedMilliseconds
               OutputDir      = outputDir
               Errors         = errors |> Seq.toList }
@@ -309,7 +293,6 @@ module BuildRunner =
               ProcessedPages = processed
               CachedPages    = cached
               AssetsCopied   = assets
-              AssetsProcessed = 0
               DurationMs     = sw.ElapsedMilliseconds
               OutputDir      = ""
               Errors         = errors |> Seq.toList }

@@ -126,32 +126,15 @@ module TaxonomyGenerator =
             let batchedHtml =
                 LayoutChain.applyLayoutsBatched tasks layouts includes config globalData
 
-            // Post-processing (format or minify) is pulled out of the write loop.
-            // Formatting takes priority over minification.
-            let htmlPostProcess =
-                if config.EnableHtmlFormatting then Formatting.formatDefault
-                else Formatting.minifySafe
-            let needsHtmlPostProcess = config.EnableHtmlFormatting || config.EnableHtmlMinification
-            let processedHtml =
-                if needsHtmlPostProcess then
-                    pages
-                    |> Seq.map (fun (page: ContentPage) ->
-                        let raw =
-                            match batchedHtml.TryFind page.SourcePath with
-                            | Some html -> html
-                            | None -> page.Content
-                        page.SourcePath, htmlPostProcess raw)
-                    |> Map.ofSeq
-                else Map.empty
+            // Output shaping lives in _finalize.fsx now; the generator writes
+            // exactly what the layout chain produced.
 
             System.Threading.Tasks.Parallel.ForEach(pages, fun (page: ContentPage) ->
                 try
                     let finalHtml =
-                        if needsHtmlPostProcess then processedHtml.[page.SourcePath]
-                        else
-                            match batchedHtml.TryFind page.SourcePath with
-                            | Some html -> html
-                            | None -> page.Content
+                        match batchedHtml.TryFind page.SourcePath with
+                        | Some html -> html
+                        | None -> page.Content
                     let outPath = Path.Combine(outputDir, page.OutputPath)
                     let dir = Path.GetDirectoryName outPath
                     if dir <> null then Directory.CreateDirectory(dir) |> ignore

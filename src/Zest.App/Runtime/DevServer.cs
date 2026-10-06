@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using Zest.Compiler.Model;
 using Zest.Compiler.Build;
+using Zest.App.Config;
 
 #nullable enable
 
@@ -21,12 +22,11 @@ public class DevServer : HttpServerBase
     private long _rebuildCount;
     private readonly object _rebuildLock = new();
 
-    // SSE fallback for environments where WebSocket is blocked
-    private readonly List<Stream> _sseClients = new();
-    private readonly object _sseLock = new();
-
     protected override string ServerName => "Development";
     protected override int Port => _config.DevServerPort;
+
+    /// <summary>Live reload always has the SSE fallback available.</summary>
+    protected override bool EnableSse => true;
 
     public DevServer(SiteConfig config, string host = "localhost", bool openBrowser = false,
         bool spaFallback = false, bool dirListing = false)
@@ -57,18 +57,12 @@ public class DevServer : HttpServerBase
         var result = _buildDriver.Execute(_config, forceRefresh: true);
         BuildDriver.PrintResult(result, _config);
 
-        // WebSocket server for live reload
+        // WebSocket server for live reload. A busy port is not fatal: the
+        // injected script falls back to the SSE endpoint above.
         _wsServer.Start(Cts!);
     }
 
     protected override string? GetLiveReloadScript() => _wsServer.GetLiveReloadScript();
-
-    protected override async Task<bool> TryHandleVirtualPath(HttpListenerContext ctx, string urlPath)
-    {
-        if (urlPath != "/__zest_livereload_events") return false;
-        await HandleSseConnection(ctx);
-        return true;
-    }
 
     protected override async Task<bool> TryHandleSpecialFile(HttpListenerContext ctx, string filePath, string ext)
     {
@@ -77,24 +71,13 @@ public class DevServer : HttpServerBase
         return true;
     }
 
-    public override void Shutdown()
+    protected override void OnShutdown()
     {
-        // Base cancels the listener and waits for in-flight requests.
-        base.Shutdown();
         _wsServer.Stop();
         _fileWatcher?.Dispose();
         // Kill the long-running FSI child so it cannot keep the terminal
         // open after the serve process exits.
         Zest.Compiler.Execution.FsiSession.shutdown();
-
-        lock (_sseLock)
-        {
-            foreach (var s in _sseClients)
-            {
-                try { s.Close(); } catch { }
-            }
-            _sseClients.Clear();
-        }
 
         LogWriter.Info($"Rebuilds: {_rebuildCount}");
     }
@@ -135,7 +118,7 @@ public class DevServer : HttpServerBase
 
             try
             {
-                var result = _buildDriver.Execute(_config);
+                var result = _buildDriver.Execute(ReloadedConfig());
                 // PrintResult stops the animator and prints summary + errors.
                 BuildDriver.PrintResult(result, _config);
 
@@ -162,6 +145,24 @@ public class DevServer : HttpServerBase
         }
     }
 
+    /// <summary>
+    /// Re-read <c>_config.toml</c> so edits take effect without a restart.
+    /// A broken config must not stop the server, so the previous instance is
+    /// kept and the problem is reported on the next rebuild.
+    /// </summary>
+    private SiteConfig ReloadedConfig()
+    {
+        try
+        {
+            return ConfigLoader.Load();
+        }
+        catch (ConfigException ex)
+        {
+            LogWriter.Error("DevServer", $"Ignoring invalid _config.toml: {ex.Message}");
+            return _config;
+        }
+    }
+
     private static async Task ServeZcssFile(HttpListenerContext ctx, string filePath)
     {
         try
@@ -179,81 +180,5 @@ public class DevServer : HttpServerBase
             LogWriter.Error("ZCSS", $"Failed to compile {filePath}: {ex.Message}");
             await HttpResponses.WriteFileResponseAsync(ctx, filePath);
         }
-    }
-
-    // ── SSE (Server-Sent Events) fallback ──
-
-    private async Task HandleSseConnection(HttpListenerContext ctx)
-    {
-        var response = ctx.Response;
-        response.ContentType = "text/event-stream; charset=utf-8";
-        response.Headers["Cache-Control"] = "no-cache";
-        response.Headers["Connection"] = "keep-alive";
-        HttpResponses.AddCorsHeaders(response);
-        response.SendChunked = true;
-
-        var stream = response.OutputStream;
-        lock (_sseLock) _sseClients.Add(stream);
-        LogWriter.VerboseLog($"SSE client connected (total: {_sseClients.Count})");
-
-        try
-        {
-            var initBytes = Encoding.UTF8.GetBytes(": connected\n\n");
-            await stream.WriteAsync(initBytes);
-            await stream.FlushAsync();
-
-            while (Cts is { IsCancellationRequested: false })
-            {
-                await Task.Delay(15_000, Cts.Token);
-                var keepalive = Encoding.UTF8.GetBytes(": keepalive\n\n");
-                await stream.WriteAsync(keepalive);
-                await stream.FlushAsync();
-            }
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            LogWriter.VerboseLog($"SSE client disconnected: {ex.Message}");
-        }
-        finally
-        {
-            lock (_sseLock) _sseClients.Remove(stream);
-            try { stream.Close(); } catch { }
-        }
-    }
-
-    private void BroadcastSse(string jsonData)
-    {
-        // Snapshot under the lock, write outside it — a stalled SSE client
-        // must never block the rebuild loop.
-        Stream[] snapshot;
-        lock (_sseLock)
-        {
-            if (_sseClients.Count == 0) return;
-            snapshot = _sseClients.ToArray();
-        }
-
-        var payload = Encoding.UTF8.GetBytes($"data: {jsonData}\n\n");
-        _ = Task.Run(() =>
-        {
-            var dead = new List<Stream>();
-            foreach (var s in snapshot)
-            {
-                try
-                {
-                    s.Write(payload, 0, payload.Length);
-                    s.Flush();
-                }
-                catch { dead.Add(s); }
-            }
-
-            if (dead.Count > 0)
-            {
-                lock (_sseLock)
-                {
-                    foreach (var s in dead) _sseClients.Remove(s);
-                }
-            }
-        });
     }
 }

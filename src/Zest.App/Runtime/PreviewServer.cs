@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using Zest.Compiler.Model;
 using Zest.Compiler.Build;
+using Zest.App.Config;
 
 #nullable enable
 
@@ -25,12 +26,11 @@ public class PreviewServer : HttpServerBase
     private readonly object _rebuildLock = new();
     private long _rebuildCount;
 
-    // SSE fallback for environments where WebSocket is blocked
-    private readonly List<Stream> _sseClients = new();
-    private readonly object _sseLock = new();
-
     protected override string ServerName => "Preview";
     protected override int Port => _port;
+
+    /// <summary>SSE is only exposed when live reload is requested.</summary>
+    protected override bool EnableSse => _liveReload;
 
     public PreviewServer(SiteConfig config, int port, string host = "localhost", bool openBrowser = false,
         bool watch = false, bool liveReload = false, bool spaFallback = false, bool dirListing = false)
@@ -45,23 +45,24 @@ public class PreviewServer : HttpServerBase
         EnableDirectoryListing = dirListing;
     }
 
+    /// <summary>
+    /// Resolve the output directory. Pure: creating it here would be a side
+    /// effect hidden inside a getter, and the banner reads this before the
+    /// server is really up.
+    /// </summary>
     protected override string GetOutputDir()
     {
-        if (_outputDir != null) return _outputDir;
-
-        _outputDir = Path.GetFullPath(Path.Combine(
+        _outputDir ??= Path.GetFullPath(Path.Combine(
             Directory.GetCurrentDirectory(),
             _config.OutputDir.TrimStart('.', '\\', '/')));
-
-        if (!Directory.Exists(_outputDir))
-            Directory.CreateDirectory(_outputDir);
-
         return _outputDir;
     }
 
     protected override void OnStarted()
     {
         var outputDir = GetOutputDir();
+        if (!Directory.Exists(outputDir))
+            Directory.CreateDirectory(outputDir);
 
         // Verify output directory has content
         if (!Directory.EnumerateFileSystemEntries(outputDir).Any())
@@ -69,7 +70,8 @@ public class PreviewServer : HttpServerBase
             LogWriter.Warn("Preview", $"Output directory '{outputDir}' is empty. Run 'zest build' first.");
         }
 
-        // Set up live reload WebSocket server
+        // Set up live reload WebSocket server. A busy port is not fatal — the
+        // injected script falls back to the SSE endpoint.
         if (_liveReload)
         {
             _wsServer = new LiveReloadHub(_config.LiveReloadPort);
@@ -93,13 +95,6 @@ public class PreviewServer : HttpServerBase
 
     protected override string? GetLiveReloadScript() => _wsServer?.GetLiveReloadScript();
 
-    protected override async Task<bool> TryHandleVirtualPath(HttpListenerContext ctx, string urlPath)
-    {
-        if (urlPath != "/__zest_livereload_events" || !_liveReload) return false;
-        await HandleSseConnection(ctx);
-        return true;
-    }
-
     protected override async Task<bool> TryHandleSpecialFile(HttpListenerContext ctx, string filePath, string ext)
     {
         if (ext != FileTypes.Zcss) return false;
@@ -122,24 +117,13 @@ public class PreviewServer : HttpServerBase
         return true;
     }
 
-    public override void Shutdown()
+    protected override void OnShutdown()
     {
-        // Base cancels the listener and waits for in-flight requests.
-        base.Shutdown();
         _wsServer?.Stop();
         _fileWatcher?.Dispose();
         // Kill the long-running FSI child so it cannot keep the terminal
         // open after the preview process exits.
         Zest.Compiler.Execution.FsiSession.shutdown();
-
-        lock (_sseLock)
-        {
-            foreach (var s in _sseClients)
-            {
-                try { s.Close(); } catch { }
-            }
-            _sseClients.Clear();
-        }
 
         LogWriter.Info($"Rebuilds: {_rebuildCount}");
     }
@@ -176,7 +160,7 @@ public class PreviewServer : HttpServerBase
 
             try
             {
-                var result = _buildDriver.Execute(_config);
+                var result = _buildDriver.Execute(ReloadedConfig());
                 // PrintResult stops the animator and prints summary + errors.
                 BuildDriver.PrintResult(result, _config);
 
@@ -205,79 +189,21 @@ public class PreviewServer : HttpServerBase
         }
     }
 
-    // ── SSE (Server-Sent Events) fallback ──
-
-    private async Task HandleSseConnection(HttpListenerContext ctx)
+    /// <summary>
+    /// Re-read <c>_config.toml</c> so edits take effect without a restart.
+    /// A broken config must not stop the server, so the previous instance is
+    /// kept and the problem is reported on the next rebuild.
+    /// </summary>
+    private SiteConfig ReloadedConfig()
     {
-        var response = ctx.Response;
-        response.ContentType = "text/event-stream; charset=utf-8";
-        response.Headers["Cache-Control"] = "no-cache";
-        response.Headers["Connection"] = "keep-alive";
-        HttpResponses.AddCorsHeaders(response);
-        response.SendChunked = true;
-
-        var stream = response.OutputStream;
-        lock (_sseLock) _sseClients.Add(stream);
-        LogWriter.VerboseLog($"SSE client connected (total: {_sseClients.Count})");
-
         try
         {
-            var initBytes = Encoding.UTF8.GetBytes(": connected\n\n");
-            await stream.WriteAsync(initBytes);
-            await stream.FlushAsync();
-
-            while (Cts is { IsCancellationRequested: false })
-            {
-                await Task.Delay(15_000, Cts.Token);
-                var keepalive = Encoding.UTF8.GetBytes(": keepalive\n\n");
-                await stream.WriteAsync(keepalive);
-                await stream.FlushAsync();
-            }
+            return ConfigLoader.Load();
         }
-        catch (OperationCanceledException) { }
-        catch (Exception ex)
+        catch (ConfigException ex)
         {
-            LogWriter.VerboseLog($"SSE client disconnected: {ex.Message}");
+            LogWriter.Error("PreviewServer", $"Ignoring invalid _config.toml: {ex.Message}");
+            return _config;
         }
-        finally
-        {
-            lock (_sseLock) _sseClients.Remove(stream);
-            try { stream.Close(); } catch { }
-        }
-    }
-
-    private void BroadcastSse(string jsonData)
-    {
-        // Snapshot under the lock, write outside it — a stalled SSE client
-        // must never block the rebuild loop.
-        Stream[] snapshot;
-        lock (_sseLock)
-        {
-            if (_sseClients.Count == 0) return;
-            snapshot = _sseClients.ToArray();
-        }
-
-        var payload = Encoding.UTF8.GetBytes($"data: {jsonData}\n\n");
-        _ = Task.Run(() =>
-        {
-            var dead = new List<Stream>();
-            foreach (var s in snapshot)
-            {
-                try
-                {
-                    s.Write(payload, 0, payload.Length);
-                    s.Flush();
-                }
-                catch { dead.Add(s); }
-            }
-
-            if (dead.Count > 0)
-            {
-                lock (_sseLock)
-                {
-                    foreach (var s in dead) _sseClients.Remove(s);
-                }
-            }
-        });
     }
 }

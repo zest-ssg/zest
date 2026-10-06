@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Text;
 
 #nullable enable
@@ -13,7 +14,9 @@ internal static class DirectoryListing
     /// <summary>
     /// Render a directory listing HTML page.
     /// </summary>
-    public static string Render(string dirPath, string requestPath, string outputDir)
+    /// <param name="dirPath">Physical directory to list (already validated to be inside the output root).</param>
+    /// <param name="requestPath">URL path being requested, used for links and the heading.</param>
+    public static string Render(string dirPath, string requestPath)
     {
         var sb = new StringBuilder();
         sb.AppendLine("<!DOCTYPE html>");
@@ -35,6 +38,7 @@ internal static class DirectoryListing
         sb.AppendLine("  .dir { color: #a78bfa; }");
         sb.AppendLine("  .size { color: #888; text-align: right; }");
         sb.AppendLine("  .date { color: #666; font-size: 0.8rem; }");
+        sb.AppendLine("  .error { color: #f87171; }");
         sb.AppendLine("</style>");
         sb.AppendLine("</head>");
         sb.AppendLine("<body>");
@@ -55,11 +59,11 @@ internal static class DirectoryListing
         {
             var dirs = Directory.GetDirectories(dirPath)
                 .Select(d => new { Name = Path.GetFileName(d), IsDir = true, Info = (FileSystemInfo)new DirectoryInfo(d) })
-                .OrderBy(d => d.Name);
+                .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase);
 
             var files = Directory.GetFiles(dirPath)
                 .Select(f => new { Name = Path.GetFileName(f), IsDir = false, Info = (FileSystemInfo)new FileInfo(f) })
-                .OrderBy(f => f.Name);
+                .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase);
 
             foreach (var entry in dirs.Concat(files))
             {
@@ -72,12 +76,19 @@ internal static class DirectoryListing
                 var dateStr = entry.Info.LastWriteTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
 
                 var cssClass = isDir ? "dir" : "";
-                sb.AppendLine(CultureInfo.InvariantCulture, $"<tr><td><a href=\"{href}\" class=\"{cssClass}\">{Escape(name)}</a></td>");
+                sb.AppendLine(CultureInfo.InvariantCulture, $"<tr><td><a href=\"{Escape(href)}\" class=\"{cssClass}\">{Escape(name)}</a></td>");
                 sb.AppendLine(CultureInfo.InvariantCulture, $"<td class=\"size\">{sizeStr}</td>");
                 sb.AppendLine(CultureInfo.InvariantCulture, $"<td class=\"date\">{dateStr}</td></tr>");
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // Showing an empty table would look like an empty directory; say
+            // what actually happened instead.
+            LogWriter.Warn("DirectoryListing", $"Could not list '{dirPath}': {ex.Message}");
+            sb.AppendLine(CultureInfo.InvariantCulture,
+                $"<tr><td colspan=\"3\" class=\"error\">Could not read this directory: {Escape(ex.Message)}</td></tr>");
+        }
 
         sb.AppendLine("</table>");
         sb.AppendLine("</body>");
@@ -86,5 +97,5 @@ internal static class DirectoryListing
         return sb.ToString();
     }
 
-    private static string Escape(string s) => System.Net.WebUtility.HtmlEncode(s);
+    private static string Escape(string s) => WebUtility.HtmlEncode(s);
 }

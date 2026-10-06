@@ -7,12 +7,16 @@ The site produced by `zest init`.
 ```
 .
 ├── _config.toml          # optional: site metadata and build options
+├── _prebuild.fsx         # optional: pre-build script (global data, hooks)
 ├── _layouts/             # Zestucks layouts (.ztk)
 ├── _includes/            # partials pulled in with {{ include }}
 ├── assets/css/main.zcss  # ZCSS stylesheet, compiled to CSS at build time
 ├── content/              # pages (.md, .zest.fsx, .ztk)
 └── _site/                # build output
 ```
+
+`_config.toml` and `_prebuild.fsx` are the only two special files Zest
+recognises, and both live at the project root. Everything else is convention.
 
 Every directory is optional. Delete `_config.toml` and the site still builds —
 the title falls back to "My Zest Site" and content is read from `content/`
@@ -24,6 +28,8 @@ when it exists, otherwise from the project root.
 - `post.ztk` is the Zestucks layout: it renders title, author, date and body.
 - `main.zcss` is ZCSS, a CSS superset compiled to plain CSS at build time.
 - The feeds and sitemap are `.zest.fsx` pages built with `Zest.Markup.Feeds`.
+- `_prebuild.fsx` runs before every build to inject dynamic data. It ships
+  commented out; uncomment an example to see it take effect.
 
 ## Workflow
 

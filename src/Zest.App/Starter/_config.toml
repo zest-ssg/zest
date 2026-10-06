@@ -4,7 +4,3 @@ description = "A minimal blog built with Zest."
 url = "https://example.com"
 author = "Zest User"
 language = "en"
-
-[build]
-format_html = true
-format_assets = true

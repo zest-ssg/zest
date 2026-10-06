@@ -70,6 +70,7 @@
   <ItemGroup>
     <None Remove="Starter\**\*" />
     <EmbeddedResource Include="Starter\_config.toml" LogicalName="Zest.App.Starter._config.toml" />
+    <EmbeddedResource Include="Starter\_prebuild.fsx" LogicalName="Zest.App.Starter._prebuild.fsx" />
     <EmbeddedResource Include="Starter\README.md" LogicalName="Zest.App.Starter.README.md" />
     <EmbeddedResource Include="Starter\content\index.md" LogicalName="Zest.App.Starter.content\index.md" />
     <EmbeddedResource Include="Starter\content\rss.zest.fsx" LogicalName="Zest.App.Starter.content\rss.zest.fsx" />

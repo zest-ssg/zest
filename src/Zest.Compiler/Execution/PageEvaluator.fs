@@ -95,8 +95,7 @@ module PageEvaluator =
                 |> Array.skipWhile String.IsNullOrWhiteSpace
             Markdown.toHtml (String.concat "\n" lines)
 
-    /// Render .ztk (and WebC) content pages with the Zestucks engine,
-    /// pre-processing WebC components into Zestucks syntax first.
+    /// Render .ztk / .njk content pages with the Zestucks engine.
     let private renderZestucksContent
         (bodyText: string)
         (config: SiteConfig)
@@ -124,15 +123,7 @@ module PageEvaluator =
             pairs.Add("tags", box (PageStore.getTagsForZestucks ()))
             pairs.Add("collections", box (PageStore.getCollectionsForZestucks ()))
             EngineHost.buildContext pairs
-        // WebC SSR reduces a component to Zestucks syntax; every other
-        // Zestucks-family extension renders as authored.
-        let templateText =
-            match ext.ToLowerInvariant() with
-            | FileTypes.WebC ->
-                let step1 = Regex.Replace(bodyText, @"<script[^>]*webc:setup[^>]*>.*?</script>", "", RegexOptions.Singleline)
-                let step2 = Regex.Replace(step1, @"<template[^>]*webc:nocss[^>]*>", "<!-- webc:nocss -->")
-                step2.Replace("</template>", "<!-- /webc -->")
-            | _ -> bodyText
+        let templateText = bodyText
         let engine = EngineHost.instance
         ensureFiltersRegistered engine
         let ctx = buildPairs ()
@@ -329,7 +320,7 @@ module PageEvaluator =
 
                     let contentHtml =
                         match ext with
-                        | FileTypes.Zestucks | FileTypes.Nunjucks | FileTypes.WebC -> renderZestucksContent bodyText config globalData meta slug filePath ext
+                        | FileTypes.Zestucks | FileTypes.Nunjucks -> renderZestucksContent bodyText config globalData meta slug filePath ext
                         | _       -> renderContent ext bodyText text
 
                     Ok { ContentPage.empty with
@@ -366,7 +357,7 @@ module PageEvaluator =
 
                 let contentHtml =
                     match ext with
-                    | FileTypes.Zestucks | FileTypes.Nunjucks | FileTypes.WebC -> renderZestucksContent bodyText config globalData meta slug filePath ext
+                    | FileTypes.Zestucks | FileTypes.Nunjucks -> renderZestucksContent bodyText config globalData meta slug filePath ext
                     | _       -> renderContent ext bodyText text
 
                 Ok { ContentPage.empty with

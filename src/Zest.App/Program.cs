@@ -40,6 +40,9 @@ public static class Program
         }
         catch (Exception ex)
         {
+            // The build animation temporarily replaces Console.Out/Error with
+            // proxies; a fatal error must not be written through one of them.
+            BuildAnimator.Restore();
             LogWriter.Error("Program", $"Fatal error: {ex.Message}", ex);
             return 1;
         }
@@ -115,9 +118,36 @@ public static class Program
             return;
         }
 
-        var pad = RowWidth - invocation.Length;
+        // Pad by display columns, not by UTF-16 code units: a CJK character
+        // occupies two terminal columns and would otherwise skew the column.
+        var pad = RowWidth - DisplayWidth(invocation);
         Console.Write(pad > 0 ? new string(' ', pad) : "  ");
         LogWriter.WriteDim(description);
+    }
+
+    /// <summary>Number of terminal columns the text occupies.</summary>
+    private static int DisplayWidth(string text)
+    {
+        var width = 0;
+        foreach (var ch in text)
+            width += IsWideCharacter(ch) ? 2 : 1;
+        return width;
+    }
+
+    /// <summary>
+    /// Approximate East-Asian Wide/Fullwidth test, which is all the help table
+    /// needs to keep descriptions aligned.
+    /// </summary>
+    private static bool IsWideCharacter(char c)
+    {
+        if (c < 0x1100) return false;
+        return c <= 0x115F                       // Hangul Jamo
+            || (c >= 0x2E80 && c <= 0xA4CF)      // CJK radicals … Yi
+            || (c >= 0xAC00 && c <= 0xD7A3)      // Hangul syllables
+            || (c >= 0xF900 && c <= 0xFAFF)      // CJK compatibility ideographs
+            || (c >= 0xFE30 && c <= 0xFE6F)      // CJK compatibility forms
+            || (c >= 0xFF00 && c <= 0xFF60)      // Fullwidth forms
+            || (c >= 0xFFE0 && c <= 0xFFE6);
     }
 
     private static int UnknownCommand(string cmd)

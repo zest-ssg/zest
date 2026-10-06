@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO.Compression;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using Zest.Compiler.Model;
 using Zest.Compiler.Build;
@@ -12,10 +14,14 @@ namespace Zest.App.Runtime;
 /// <summary>
 /// Abstract base class for HTTP servers (development server and preview server).
 /// Encapsulates common HTTP handling: listener lifecycle, CORS, 404/500, request
-/// logging, path traversal protection, ETag caching, compression, and statistics.
+/// logging, path traversal protection, ETag caching, compression, SSE fallback
+/// and statistics.
 /// </summary>
 public abstract class HttpServerBase : IDisposable
 {
+    /// <summary>SSE fallback endpoint used when WebSocket is unavailable.</summary>
+    protected const string SsePath = "/__zest_livereload_events";
+
     protected string Host { get; }
     protected bool OpenBrowser { get; }
     protected bool EnableSpaFallback { get; set; }
@@ -39,6 +45,13 @@ public abstract class HttpServerBase : IDisposable
     private readonly HashSet<Task> _inflightTasks = new();
     private readonly object _inflightLock = new();
 
+    // SSE fallback clients. Included here rather than duplicated in each
+    // server: the two servers differ only in when they broadcast.
+    private readonly List<Stream> _sseClients = new();
+    private readonly object _sseLock = new();
+
+    private bool _shutdown;
+
     /// <summary>Directories whose contents should NOT trigger rebuilds.</summary>
     protected HashSet<string>? IgnoredDirNames { get; set; }
 
@@ -59,6 +72,9 @@ public abstract class HttpServerBase : IDisposable
     /// <summary>Resolve the output/content directory for serving files.</summary>
     protected abstract string GetOutputDir();
 
+    /// <summary>Whether this server exposes the SSE fallback endpoint.</summary>
+    protected virtual bool EnableSse => false;
+
     /// <summary>Hook for handling special file types (e.g., .zcss compilation).</summary>
     protected virtual Task<bool> TryHandleSpecialFile(HttpListenerContext ctx, string filePath, string ext)
         => Task.FromResult(false);
@@ -66,9 +82,32 @@ public abstract class HttpServerBase : IDisposable
     /// <summary>Hook for providing a live-reload script snippet for HTML injection.</summary>
     protected virtual string? GetLiveReloadScript() => null;
 
-    /// <summary>Hook for handling virtual paths (e.g., SSE endpoints, status).</summary>
+    /// <summary>Hook for handling virtual paths (e.g., status endpoints).</summary>
     protected virtual Task<bool> TryHandleVirtualPath(HttpListenerContext ctx, string urlPath)
         => Task.FromResult(false);
+
+    // ── Host handling ──
+
+    /// <summary>
+    /// Map a user-facing host into an <see cref="HttpListener"/> prefix host.
+    /// <c>0.0.0.0</c>, <c>*</c> and <c>+</c> all mean "every interface", and
+    /// HTTP.sys only accepts <c>+</c> or <c>*</c> spelled that way.
+    /// </summary>
+    protected static string ListenHost(string host) =>
+        host is "0.0.0.0" or "*" or "+" ? "+" : host;
+
+    /// <summary>Host to put in a browser URL (a wildcard bind is not browsable).</summary>
+    protected static string BrowserHost(string host) =>
+        host is "0.0.0.0" or "*" or "+" ? "localhost" : host;
+
+    /// <summary>
+    /// True when the server is only reachable from this machine, which is the
+    /// condition under which wildcard CORS is safe.
+    /// </summary>
+    protected static bool IsLoopbackHost(string host) =>
+        host is "localhost" or "127.0.0.1" or "::1" or "[::1]";
+
+    private bool AllowWildcardOrigin => IsLoopbackHost(Host);
 
     // ── Debug / status endpoint ──
 
@@ -78,17 +117,23 @@ public abstract class HttpServerBase : IDisposable
     /// </summary>
     protected virtual string GetStatusJson()
     {
-        var ci = System.Globalization.CultureInfo.InvariantCulture;
-        var sb = new System.Text.StringBuilder();
+        var ci = CultureInfo.InvariantCulture;
+        var sb = new StringBuilder();
         sb.Append('{');
         sb.Append(ci, $"\"server\":\"{ServerName}\",");
         sb.Append(ci, $"\"port\":{Port},");
         sb.Append(ci, $"\"requests\":{TotalRequests},");
         sb.Append(ci, $"\"cacheHits\":{CacheHits},");
         sb.Append(ci, $"\"bytesServed\":{TotalBytesServed},");
-        sb.Append(ci, $"\"uptime\":\"{DateTime.UtcNow - System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime():c}\"");
+        sb.Append(ci, $"\"sseClients\":{SseClientCount},");
+        sb.Append(ci, $"\"uptimeSeconds\":{(int)(DateTime.UtcNow - Process.GetCurrentProcess().StartTime.ToUniversalTime()).TotalSeconds}");
         sb.Append('}');
         return sb.ToString();
+    }
+
+    private int SseClientCount
+    {
+        get { lock (_sseLock) return _sseClients.Count; }
     }
 
     /// <summary>
@@ -97,12 +142,7 @@ public abstract class HttpServerBase : IDisposable
     protected async Task HandleStatusEndpoint(HttpListenerContext ctx)
     {
         var json = GetStatusJson();
-        var bytes = Encoding.UTF8.GetBytes(json);
-        ctx.Response.ContentType = "application/json; charset=utf-8";
-        AddStandardHeaders(ctx.Response);
-        ctx.Response.ContentLength64 = bytes.Length;
-        await ctx.Response.OutputStream.WriteAsync(bytes);
-        await ctx.Response.OutputStream.FlushAsync();
+        await WriteTextResponse(ctx, 200, json, "application/json; charset=utf-8");
     }
 
     // ── Lifecycle ──
@@ -112,22 +152,43 @@ public abstract class HttpServerBase : IDisposable
     /// <see cref="OnStarted"/> so the user sees server info immediately,
     /// even when the initial build takes several seconds.
     /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// The port is already in use, or the prefix cannot be bound.
+    /// </exception>
     public void Start()
     {
-        Cts = new CancellationTokenSource();
-        Listener = new HttpListener();
-        Listener.Prefixes.Add($"http://{Host}:{Port}/");
-        Listener.Start();
-        _ = Task.Run(() => ServeHttp(Cts.Token));
+        var cts = new CancellationTokenSource();
+        Cts = cts;
+        var listener = new HttpListener();
+        Listener = listener;
+        var prefix = $"http://{ListenHost(Host)}:{Port}/";
+        listener.Prefixes.Add(prefix);
+
+        try
+        {
+            listener.Start();
+        }
+        catch (Exception ex) when (ex is HttpListenerException or SocketException or InvalidOperationException or AccessViolationException)
+        {
+            Listener = null;
+            Cts = null;
+            cts.Dispose();
+            throw new InvalidOperationException(
+                $"Could not listen on {prefix} — {ex.Message}. " +
+                "Check that the port is free and that the host is permitted to bind " +
+                "(binding a non-localhost host usually requires elevated rights).", ex);
+        }
+
+        _ = Task.Run(() => ServeHttp(cts.Token));
 
         var outputDir = GetOutputDir();
 
         // Show banner BEFORE OnStarted so long builds don't hide server info.
         LogWriter.Banner(
             $"Zest {ServerName} Server",
-            $"http://{Host}:{Port}/",
+            $"http://{BrowserHost(Host)}:{Port}/",
             ("Host", Host),
-            ("Port", Port.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            ("Port", Port.ToString(CultureInfo.InvariantCulture)),
             ("Output", outputDir),
             ("Verbose", LogWriter.Verbose ? "ON" : "off")
         );
@@ -143,10 +204,38 @@ public abstract class HttpServerBase : IDisposable
     /// <summary>Called after the banner is displayed. Override for setup.</summary>
     protected virtual void OnStarted() { }
 
+    /// <summary>
+    /// Called exactly once during <see cref="Shutdown"/>, after the listener is
+    /// stopped and SSE clients are closed. Override for server-specific cleanup
+    /// (watchers, WebSocket hub, child processes).
+    /// </summary>
+    protected virtual void OnShutdown() { }
+
+    /// <summary>
+    /// Stop serving and release the listener. Idempotent: a Ctrl+C handler and
+    /// a <c>using</c> block both run it, and the second call must be a no-op
+    /// rather than a second round of statistics.
+    /// </summary>
     public virtual void Shutdown()
     {
+        if (_shutdown) return;
+        _shutdown = true;
+
         Cts?.Cancel();
-        Listener?.Stop();
+
+        try
+        {
+            Listener?.Stop();
+            Listener?.Close();
+        }
+        catch (ObjectDisposedException) { /* already closed */ }
+        finally
+        {
+            Listener = null;
+        }
+
+        CloseSseClients();
+        OnShutdown();
 
         // Give in-flight requests a moment to finish cleanly. SSE/keep-alive
         // loops exit on their own once the CTS is cancelled above.
@@ -156,6 +245,9 @@ public abstract class HttpServerBase : IDisposable
         {
             try { Task.WaitAll(pending, TimeSpan.FromSeconds(5)); } catch { }
         }
+
+        Cts?.Dispose();
+        Cts = null;
 
         LogWriter.Info($"Total requests: {TotalRequests}, cache hits: {CacheHits}, bytes served: {TotalBytesServed:N0}");
     }
@@ -170,7 +262,7 @@ public abstract class HttpServerBase : IDisposable
 
     private async Task ServeHttp(CancellationToken ct)
     {
-        while (!ct.IsCancellationRequested && Listener!.IsListening)
+        while (!ct.IsCancellationRequested && Listener is { IsListening: true })
         {
             try
             {
@@ -181,8 +273,16 @@ public abstract class HttpServerBase : IDisposable
                 TrackRequest(task);
             }
             catch (OperationCanceledException) { break; }
-            catch (HttpListenerException) { break; }
             catch (ObjectDisposedException) { break; }
+            catch (HttpListenerException) { break; }
+            catch (InvalidOperationException) { break; }
+            catch (Exception ex)
+            {
+                // A transient failure must not silently stop the server; log it
+                // and pause briefly so a persistent error cannot spin.
+                LogWriter.Error("Server", $"Accept loop error: {ex.Message}");
+                try { await Task.Delay(200, ct); } catch { break; }
+            }
         }
     }
 
@@ -208,11 +308,16 @@ public abstract class HttpServerBase : IDisposable
 
     private async Task HandleRequest(HttpListenerContext ctx)
     {
+        // NOTE: every early return in this method must call LogWriter.Request so
+        // the request line and the statistics stay in step.
         var sw = Stopwatch.StartNew();
         var urlPath = ctx.Request.Url?.AbsolutePath ?? "/";
         var method = ctx.Request.HttpMethod;
         var bytesBefore = Interlocked.Read(ref _totalBytesServed);
-        var isCacheHit = false;
+
+        // Count every request that reaches us, once. Previously only a few
+        // branches incremented this, so /__zest_status under-reported badly.
+        Interlocked.Increment(ref _totalRequests);
 
         try
         {
@@ -230,8 +335,8 @@ public abstract class HttpServerBase : IDisposable
             // Only GET and HEAD
             if (method != "GET" && method != "HEAD")
             {
-                await WriteErrorResponse(ctx, 405, "<h1>405 — Method Not Allowed</h1>");
                 ctx.Response.Headers["Allow"] = "GET, HEAD, OPTIONS";
+                await WriteTextResponse(ctx, 405, "<h1>405 — Method Not Allowed</h1>");
                 sw.Stop();
                 LogWriter.Request(method, urlPath, 405, sw.ElapsedMilliseconds);
                 return;
@@ -243,17 +348,25 @@ public abstract class HttpServerBase : IDisposable
             if (urlPath == "/__zest_status")
             {
                 await HandleStatusEndpoint(ctx);
-                Interlocked.Increment(ref _totalRequests);
                 sw.Stop();
                 LogWriter.Request(method, urlPath, 200, sw.ElapsedMilliseconds);
                 return;
             }
 
-            // Virtual paths (SSE endpoints, etc.)
+            // SSE fallback for live reload
+            if (EnableSse && urlPath == SsePath)
+            {
+                await HandleSseConnection(ctx);
+                sw.Stop();
+                LogWriter.Request(method, urlPath, 200, sw.ElapsedMilliseconds);
+                return;
+            }
+
+            // Virtual paths (status endpoints, etc.)
             if (await TryHandleVirtualPath(ctx, urlPath))
             {
                 sw.Stop();
-                LogWriter.Request(method, urlPath, 200, sw.ElapsedMilliseconds);
+                LogWriter.Request(method, urlPath, ctx.Response.StatusCode, sw.ElapsedMilliseconds);
                 return;
             }
 
@@ -265,7 +378,7 @@ public abstract class HttpServerBase : IDisposable
             }
             catch (UnauthorizedAccessException)
             {
-                await WriteErrorResponse(ctx, 403, "<h1>403 — Forbidden</h1>");
+                await WriteTextResponse(ctx, 403, "<h1>403 — Forbidden</h1>");
                 sw.Stop();
                 LogWriter.Request(method, urlPath, 403, sw.ElapsedMilliseconds);
                 LogWriter.Warn("Security", $"Path traversal blocked: {urlPath}");
@@ -280,9 +393,8 @@ public abstract class HttpServerBase : IDisposable
                     var dirCheckPath = PathMapper.ResolveDirPath(outputDir, urlPath);
                     if (dirCheckPath != null && Directory.Exists(dirCheckPath))
                     {
-                        var html = DirectoryListing.Render(dirCheckPath, urlPath, outputDir);
+                        var html = DirectoryListing.Render(dirCheckPath, urlPath);
                         await WriteHtmlResponse(ctx.Response, html);
-                        Interlocked.Increment(ref _totalRequests);
                         sw.Stop();
                         LogWriter.Request(method, urlPath, 200, sw.ElapsedMilliseconds);
                         return;
@@ -296,14 +408,13 @@ public abstract class HttpServerBase : IDisposable
                     if (File.Exists(indexPath))
                     {
                         await ServeFile(ctx, indexPath, FileTypes.Html, method);
-                        Interlocked.Increment(ref _totalRequests);
                         sw.Stop();
                         LogWriter.Request(method, urlPath, ctx.Response.StatusCode, sw.ElapsedMilliseconds);
                         return;
                     }
                 }
 
-                await ErrorPage.WriteNotFound(ctx, outputDir, urlPath);
+                await ErrorPage.WriteNotFound(ctx, outputDir, urlPath, AllowWildcardOrigin);
                 sw.Stop();
                 LogWriter.Request(method, urlPath, 404, sw.ElapsedMilliseconds);
                 return;
@@ -315,15 +426,14 @@ public abstract class HttpServerBase : IDisposable
             if (await TryHandleSpecialFile(ctx, filePath, ext))
             {
                 sw.Stop();
-                LogWriter.Request(method, urlPath, 200, sw.ElapsedMilliseconds);
+                LogWriter.Request(method, urlPath, ctx.Response.StatusCode, sw.ElapsedMilliseconds);
                 return;
             }
 
             // Serve the file
             await ServeFile(ctx, filePath, ext, method);
 
-            Interlocked.Increment(ref _totalRequests);
-            isCacheHit = ctx.Response.StatusCode == 304;
+            var isCacheHit = ctx.Response.StatusCode == 304;
             sw.Stop();
 
             var bytesServed = Interlocked.Read(ref _totalBytesServed) - bytesBefore;
@@ -335,7 +445,7 @@ public abstract class HttpServerBase : IDisposable
             try
             {
                 var diagnosticHtml = BuildErrorPage(500, "Internal Server Error", ex, urlPath);
-                await WriteErrorResponse(ctx, 500, diagnosticHtml);
+                await WriteTextResponse(ctx, 500, diagnosticHtml);
             }
             catch { /* response may already be sent */ }
             sw.Stop();
@@ -364,14 +474,24 @@ public abstract class HttpServerBase : IDisposable
 
         // Compute ETag once and reuse the FileInfo for Last-Modified
         var fileInfo = new FileInfo(filePath);
-        var etag = ComputeETag(fileInfo);
+        var etag = HttpResponses.ComputeETag(filePath, fileInfo.Length, fileInfo.LastWriteTimeUtc);
         response.Headers["ETag"] = etag;
-        response.Headers["Last-Modified"] = fileInfo.LastWriteTimeUtc.ToString("R");
+        response.Headers["Last-Modified"] = fileInfo.LastWriteTimeUtc.ToString("R", CultureInfo.InvariantCulture);
 
-        if (IsETagMatch(request, etag))
+        var compressionMethod = GetCompressionMethod(
+            request.Headers["Accept-Encoding"], response.ContentType, fileInfo.Length);
+
+        // Advertise encoding negotiation whenever we might compress, so caches
+        // never hand a compressed body to a client that cannot read it.
+        if (compressionMethod != null)
+            response.Headers["Vary"] = "Accept-Encoding";
+
+        if (HttpResponses.IsETagMatch(request, etag))
         {
             response.StatusCode = 304;
             response.ContentLength64 = 0;
+            if (compressionMethod != null)
+                response.Headers["Vary"] = "Accept-Encoding";
             Interlocked.Increment(ref _cacheHits);
             return;
         }
@@ -384,15 +504,14 @@ public abstract class HttpServerBase : IDisposable
         }
 
         var script = GetCachedLiveReloadScript();
-        var compressionMethod = GetCompressionMethod(
-            request.Headers["Accept-Encoding"], response.ContentType, fileInfo.Length);
 
         // HTML with live-reload injection
         if (ext == FileTypes.Html && script != null)
         {
             var html = await ReadAllTextWithDeleteShareAsync(filePath);
-            html = html.Replace("</body>", script + "\n</body>");
-            if (!html.Contains("</body>"))
+            if (html.Contains("</body>", StringComparison.OrdinalIgnoreCase))
+                html = html.Replace("</body>", script + Environment.NewLine + "</body>", StringComparison.OrdinalIgnoreCase);
+            else
                 html += script;
 
             var bytes = Encoding.UTF8.GetBytes(html);
@@ -435,23 +554,6 @@ public abstract class HttpServerBase : IDisposable
         return ms.ToArray();
     }
 
-    /// <summary>
-    /// Compute ETag from file metadata (path + size + mtime).
-    /// Uses the same FileInfo instance already obtained during request handling.
-    /// </summary>
-    private static string ComputeETag(FileInfo fileInfo)
-    {
-        var raw = $"{fileInfo.FullName}:{fileInfo.Length}:{fileInfo.LastWriteTimeUtc.Ticks}";
-        var hash = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(raw));
-        return "\"" + Convert.ToHexString(hash) + "\"";
-    }
-
-    private static bool IsETagMatch(HttpListenerRequest request, string etag)
-    {
-        var ifNoneMatch = request.Headers["If-None-Match"];
-        return !string.IsNullOrEmpty(ifNoneMatch) && ifNoneMatch == etag;
-    }
-
     // ── Compression ──
 
     /// <summary>
@@ -466,15 +568,44 @@ public abstract class HttpServerBase : IDisposable
         // Only compress text-based content types
         if (!IsCompressibleContentType(contentType)) return null;
 
-        if (string.IsNullOrEmpty(acceptEncoding)) return null;
+        var accepted = ParseAcceptEncoding(acceptEncoding);
+        if (accepted.Count == 0) return null;
 
-        // Prefer Brotli, fallback to Gzip
-        if (acceptEncoding.Contains("br", StringComparison.OrdinalIgnoreCase))
-            return "br";
-        if (acceptEncoding.Contains("gzip", StringComparison.OrdinalIgnoreCase))
-            return "gzip";
+        // Prefer Brotli, fallback to Gzip. A quality value of 0 means "not
+        // acceptable", so a plain Contains('br') test is not enough.
+        if (accepted.GetValueOrDefault("br", 0) > 0) return "br";
+        if (accepted.GetValueOrDefault("gzip", 0) > 0) return "gzip";
 
         return null;
+    }
+
+    /// <summary>
+    /// Parse an Accept-Encoding header into token → quality pairs, honouring
+    /// <c>q=0</c> exclusions such as <c>gzip;q=0</c>.
+    /// </summary>
+    private static Dictionary<string, double> ParseAcceptEncoding(string? header)
+    {
+        var result = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(header)) return result;
+
+        foreach (var part in header.Split(','))
+        {
+            var segments = part.Split(';');
+            var token = segments[0].Trim();
+            if (token.Length == 0) continue;
+
+            var quality = 1.0;
+            for (var i = 1; i < segments.Length; i++)
+            {
+                var parameter = segments[i].Trim();
+                if (!parameter.StartsWith("q=", StringComparison.OrdinalIgnoreCase)) continue;
+                if (double.TryParse(parameter[2..], NumberStyles.Float, CultureInfo.InvariantCulture, out var q))
+                    quality = q;
+            }
+
+            result[token] = quality;
+        }
+        return result;
     }
 
     private static bool IsCompressibleContentType(string contentType)
@@ -519,32 +650,124 @@ public abstract class HttpServerBase : IDisposable
             : new GZipStream(output, CompressionLevel.Fastest);
     }
 
+    // ── SSE (Server-Sent Events) fallback ──
+
+    /// <summary>
+    /// Hold a server-sent-events connection open. Used when WebSocket is
+    /// blocked by the environment. Runs until shutdown or client disconnect.
+    /// </summary>
+    protected async Task HandleSseConnection(HttpListenerContext ctx)
+    {
+        var token = Cts?.Token ?? CancellationToken.None;
+        var response = ctx.Response;
+        response.ContentType = "text/event-stream; charset=utf-8";
+        response.Headers["Cache-Control"] = "no-cache";
+        response.Headers["Connection"] = "keep-alive";
+        HttpResponses.AddCorsHeaders(response, AllowWildcardOrigin);
+        response.SendChunked = true;
+
+        var stream = response.OutputStream;
+        lock (_sseLock) _sseClients.Add(stream);
+        LogWriter.VerboseLog($"SSE client connected (total: {SseClientCount})");
+
+        try
+        {
+            var initBytes = Encoding.UTF8.GetBytes(": connected\n\n");
+            await stream.WriteAsync(initBytes, token);
+            await stream.FlushAsync(token);
+
+            while (!token.IsCancellationRequested)
+            {
+                await Task.Delay(15_000, token);
+                var keepalive = Encoding.UTF8.GetBytes(": keepalive\n\n");
+                await stream.WriteAsync(keepalive, token);
+                await stream.FlushAsync(token);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            LogWriter.VerboseLog($"SSE client disconnected: {ex.Message}");
+        }
+        finally
+        {
+            lock (_sseLock) _sseClients.Remove(stream);
+            try { stream.Close(); } catch { }
+        }
+    }
+
+    /// <summary>Push one SSE data frame to every connected client.</summary>
+    protected void BroadcastSse(string jsonData)
+    {
+        // Snapshot under the lock, write outside it — a stalled SSE client
+        // must never block the rebuild loop.
+        Stream[] snapshot;
+        lock (_sseLock)
+        {
+            if (_sseClients.Count == 0) return;
+            snapshot = _sseClients.ToArray();
+        }
+
+        var payload = Encoding.UTF8.GetBytes($"data: {jsonData}\n\n");
+        _ = Task.Run(() =>
+        {
+            var dead = new List<Stream>();
+            foreach (var s in snapshot)
+            {
+                try
+                {
+                    s.Write(payload, 0, payload.Length);
+                    s.Flush();
+                }
+                catch { dead.Add(s); }
+            }
+
+            if (dead.Count > 0)
+            {
+                lock (_sseLock)
+                {
+                    foreach (var s in dead) _sseClients.Remove(s);
+                }
+            }
+        });
+    }
+
+    private void CloseSseClients()
+    {
+        lock (_sseLock)
+        {
+            foreach (var s in _sseClients)
+            {
+                try { s.Close(); } catch { }
+            }
+            _sseClients.Clear();
+        }
+    }
+
     // ── Response helpers ──
 
     /// <summary>Add CORS and security headers to every response.</summary>
-    private static void AddStandardHeaders(HttpListenerResponse response)
-    {
-        // CORS for local development
-        response.Headers["Access-Control-Allow-Origin"] = "*";
-        response.Headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS";
-        response.Headers["Access-Control-Allow-Headers"] = "Content-Type, If-None-Match";
+    private void AddStandardHeaders(HttpListenerResponse response) =>
+        HttpResponses.AddCorsHeaders(response, AllowWildcardOrigin);
 
-        // Security headers
-        response.Headers["X-Content-Type-Options"] = "nosniff";
-    }
-
-    private static async Task WriteErrorResponse(HttpListenerContext ctx, int statusCode, string html)
+    /// <summary>
+    /// Write a body response honouring HEAD semantics: headers only, no body.
+    /// </summary>
+    private async Task WriteTextResponse(HttpListenerContext ctx, int statusCode, string html,
+        string contentType = "text/html; charset=utf-8")
     {
         ctx.Response.StatusCode = statusCode;
-        ctx.Response.ContentType = "text/html; charset=utf-8";
+        ctx.Response.ContentType = contentType;
         AddStandardHeaders(ctx.Response);
         var bytes = Encoding.UTF8.GetBytes(html);
         ctx.Response.ContentLength64 = bytes.Length;
+        if (HttpResponses.IsHead(ctx)) return;
+
         await ctx.Response.OutputStream.WriteAsync(bytes);
         await ctx.Response.OutputStream.FlushAsync();
     }
 
-    private static async Task WriteHtmlResponse(HttpListenerResponse response, string html)
+    private async Task WriteHtmlResponse(HttpListenerResponse response, string html)
     {
         response.ContentType = "text/html; charset=utf-8";
         AddStandardHeaders(response);
@@ -566,7 +789,7 @@ public abstract class HttpServerBase : IDisposable
         var sb = new StringBuilder();
         sb.AppendLine("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\">");
         sb.AppendLine("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
-        sb.AppendLine(CultureInfo_Invariant($"<title>{status} — {title} · Zest</title>"));
+        sb.AppendLine(Invariant($"<title>{status} — {title} · Zest</title>"));
         sb.AppendLine("<style>");
         sb.AppendLine("body{font-family:system-ui,sans-serif;max-width:720px;margin:60px auto;padding:0 24px;color:#1a1a2e;line-height:1.6}");
         sb.AppendLine("h1{color:#e74c3c;font-size:2em;margin-bottom:4px}");
@@ -577,13 +800,13 @@ public abstract class HttpServerBase : IDisposable
         sb.AppendLine("code{font-family:'JetBrains Mono',monospace}");
         sb.AppendLine(".tag{display:inline-block;margin-top:24px;padding:4px 12px;background:#1a1a2e;color:#fff;border-radius:20px;font-size:.75em}");
         sb.AppendLine("</style></head><body>");
-        sb.AppendLine(CultureInfo_Invariant($"<h1>{status}</h1>"));
-        sb.AppendLine(CultureInfo_Invariant($"<p class=\"path\"><code>{WebUtility.HtmlEncode(urlPath)}</code></p>"));
-        sb.AppendLine(CultureInfo_Invariant($"<p>{WebUtility.HtmlEncode(title)}</p>"));
+        sb.AppendLine(Invariant($"<h1>{status}</h1>"));
+        sb.AppendLine(Invariant($"<p class=\"path\"><code>{WebUtility.HtmlEncode(urlPath)}</code></p>"));
+        sb.AppendLine(Invariant($"<p>{WebUtility.HtmlEncode(title)}</p>"));
 
         sb.AppendLine("<div class=\"details\">");
-        sb.AppendLine(CultureInfo_Invariant($"<h2>{WebUtility.HtmlEncode(ex.GetType().Name)}</h2>"));
-        sb.AppendLine(CultureInfo_Invariant($"<p>{WebUtility.HtmlEncode(ex.Message)}</p>"));
+        sb.AppendLine(Invariant($"<h2>{WebUtility.HtmlEncode(ex.GetType().Name)}</h2>"));
+        sb.AppendLine(Invariant($"<p>{WebUtility.HtmlEncode(ex.Message)}</p>"));
         if (!string.IsNullOrEmpty(ex.StackTrace))
         {
             sb.AppendLine("<pre><code>");
@@ -592,7 +815,7 @@ public abstract class HttpServerBase : IDisposable
         }
         if (ex.InnerException != null)
         {
-            sb.AppendLine(CultureInfo_Invariant($"<p><strong>Inner:</strong> {WebUtility.HtmlEncode(ex.InnerException.GetType().Name)}: {WebUtility.HtmlEncode(ex.InnerException.Message)}</p>"));
+            sb.AppendLine(Invariant($"<p><strong>Inner:</strong> {WebUtility.HtmlEncode(ex.InnerException.GetType().Name)}: {WebUtility.HtmlEncode(ex.InnerException.Message)}</p>"));
         }
         sb.AppendLine("</div>");
 
@@ -602,10 +825,12 @@ public abstract class HttpServerBase : IDisposable
         return sb.ToString();
     }
 
-    // Workaround: static method can't use CultureInfo.InvariantCulture directly in
-    // string interpolation. Provide a thin wrapper.
-    private static string CultureInfo_Invariant(FormattableString fs)
-        => fs.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    /// <summary>
+    /// Format an interpolated string with the invariant culture. Without this
+    /// the interpolation would use the ambient culture, so a machine with a
+    /// comma decimal separator could render numbers into the HTML.
+    /// </summary>
+    private static string Invariant(FormattableString fs) => fs.ToString(CultureInfo.InvariantCulture);
 
     // ── Browser auto-open ──
 
@@ -613,11 +838,12 @@ public abstract class HttpServerBase : IDisposable
     {
         if (!OpenBrowser) return;
 
+        var url = $"http://{BrowserHost(Host)}:{Port}/";
         try
         {
             Process.Start(new ProcessStartInfo
             {
-                FileName = $"http://{Host}:{Port}/",
+                FileName = url,
                 UseShellExecute = true
             });
             LogWriter.Info("Browser", "Opened in default browser");

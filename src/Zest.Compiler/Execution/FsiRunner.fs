@@ -201,7 +201,7 @@ module FsiRunner =
     //   .zest.fsx always returns true (the extension guarantees it).
     //   Plain .fsx always returns false — Zest does not route ordinary scripts.
     //   .md / .markdown always returns false (plain Markdown).
-    //   Everything else (.ztk / .webc / …) is matched by keyword patterns.
+    //   Everything else (.ztk / .njk / …) is matched by keyword patterns.
     //
     //   Takes the full path rather than a bare extension because
     //   `Path.GetExtension "page.zest.fsx"` is ".fsx", which would otherwise

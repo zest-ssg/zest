@@ -44,12 +44,26 @@ public static class LogWriter
     /// <summary>Legacy quiet flag — when true, Info messages are suppressed.</summary>
     public static bool Quiet => _quiet;
 
-    /// <summary>Configure the logger from <see cref="Zest.Compiler.Model.SiteConfig"/>.</summary>
-    public static void Configure(string level, bool toFile, bool timestamps)
+    /// <summary>
+    /// Configure the logger from <see cref="Zest.Compiler.Model.SiteConfig"/>,
+    /// with CLI flags applied on top. This is the single entry point every
+    /// command uses, so <c>log_level</c>/<c>log_to_file</c>/<c>log_timestamps</c>
+    /// behave identically for build, serve and preview.
+    /// </summary>
+    /// <param name="level">Configured minimum level name.</param>
+    /// <param name="toFile">Mirror output to a log file.</param>
+    /// <param name="timestamps">Prefix entries with a timestamp.</param>
+    /// <param name="verbose">Force Debug level (CLI <c>--verbose</c>).</param>
+    /// <param name="quiet">Force Warn level and suppress chatter (CLI <c>--quiet</c>).</param>
+    public static void Configure(string level, bool toFile, bool timestamps, bool verbose = false, bool quiet = false)
     {
         _minLevel = ParseLevel(level);
+        if (verbose) _minLevel = Level.Debug;
+        if (quiet) _minLevel = Level.Warn;
+        _quiet = quiet;
         _logToFile = toFile;
         _logTimestamps = timestamps;
+        _logFilePath = null;
     }
 
     /// <summary>Configure the logger with explicit values.</summary>
@@ -61,8 +75,14 @@ public static class LogWriter
         _logFilePath = logFilePath;
     }
 
-    public static void SetVerbose(bool enabled) =>
-        _minLevel = enabled ? Level.Debug : Level.Info;
+    /// <summary>
+    /// Raise the level to Debug when enabled. Disabling is a no-op rather than
+    /// a reset to Info, so a call cannot silently discard a configured level.
+    /// </summary>
+    public static void SetVerbose(bool enabled)
+    {
+        if (enabled) _minLevel = Level.Debug;
+    }
 
     public static void SetQuiet(bool enabled) => _quiet = enabled;
 
@@ -161,21 +181,38 @@ public static class LogWriter
     private const string _indent = "  ";
 
     /// <summary>
+    /// True when conversational output (info, dim, headers) should appear.
+    /// Suppressed by --quiet and by any level above Info.
+    /// </summary>
+    private static bool ShowsChatter => !_quiet && _minLevel <= Level.Info;
+
+    /// <summary>
+    /// True when warnings should appear. Warnings survive --quiet on purpose:
+    /// quiet mode is for suppressing chatter, not for hiding problems.
+    /// </summary>
+    private static bool ShowsWarnings => _minLevel <= Level.Warn;
+
+    /// <summary>
     /// Write an accent-colored section label on its own line. The label
     /// carries no decorative rule, so compact banners and help output
     /// never overflow the terminal width on narrow windows.
     /// </summary>
     public static void WriteSection(string title)
     {
+        if (!ShowsChatter) return;
         Console.WriteLine();
         Console.ForegroundColor = ConsoleColor.Cyan;
         Console.WriteLine($"{_indent}{title}");
         Console.ResetColor();
     }
 
-    /// <summary>Write a success message (green text).</summary>
+    /// <summary>
+    /// Write a success message (green text). Results stay visible under
+    /// --quiet: the point of quiet is to drop narration, not outcomes.
+    /// </summary>
     public static void WriteSuccess(string message)
     {
+        if (_minLevel > Level.Info) return;
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine(message);
         Console.ResetColor();
@@ -184,6 +221,7 @@ public static class LogWriter
     /// <summary>Write a warning message (yellow text).</summary>
     public static void WriteWarning(string message)
     {
+        if (!ShowsWarnings) return;
         Console.ForegroundColor = ConsoleColor.Yellow;
         Console.WriteLine(message);
         Console.ResetColor();
@@ -200,6 +238,7 @@ public static class LogWriter
     /// <summary>Write an info message (default gray text).</summary>
     public static void WriteInfo(string message)
     {
+        if (!ShowsChatter) return;
         Console.ForegroundColor = ConsoleColor.Gray;
         Console.WriteLine(message);
         Console.ResetColor();
@@ -208,6 +247,7 @@ public static class LogWriter
     /// <summary>Write an accent message (cyan text — for headers and emphasis).</summary>
     public static void WriteAccent(string message)
     {
+        if (!ShowsChatter) return;
         Console.ForegroundColor = ConsoleColor.Cyan;
         Console.WriteLine(message);
         Console.ResetColor();
@@ -216,6 +256,7 @@ public static class LogWriter
     /// <summary>Write a dim message (dark gray — for secondary/helper text).</summary>
     public static void WriteDim(string message)
     {
+        if (!ShowsChatter) return;
         Console.ForegroundColor = ConsoleColor.DarkGray;
         Console.WriteLine(message);
         Console.ResetColor();
@@ -224,6 +265,7 @@ public static class LogWriter
     /// <summary>Write a label-value pair with aligned columns.</summary>
     public static void WriteField(string label, string value, int labelWidth = 8)
     {
+        if (!ShowsChatter) return;
         Console.ForegroundColor = ConsoleColor.DarkGray;
         Console.Write($"{_indent}  {label}");
         Console.ResetColor();
@@ -241,6 +283,7 @@ public static class LogWriter
     /// </summary>
     public static void Banner(string title, string url, params (string label, string value)[] info)
     {
+        if (!ShowsChatter) return;
         WriteSection(title);
         WriteField("URL", url);
         foreach (var (label, value) in info)

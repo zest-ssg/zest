@@ -41,6 +41,10 @@ internal static class MimeMapper
         [".csv"]  = "text/csv; charset=utf-8",
         [".wasm"] = "application/wasm",
         [".avif"] = "image/avif",
+        // ZCSS is normally compiled on the fly, but a source file can still be
+        // requested directly (e.g. when compilation fails).
+        [".zcss"] = "text/css; charset=utf-8",
+        [".webmanifest"] = "application/manifest+json",
     };
 
     /// <summary>

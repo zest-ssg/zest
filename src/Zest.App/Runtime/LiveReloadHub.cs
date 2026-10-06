@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
 
 #nullable enable
 
@@ -12,10 +11,24 @@ namespace Zest.App.Runtime;
 /// Lightweight WebSocket server for live-reload broadcasting.
 /// Accepts WebSocket clients on a dedicated port, maintains an active
 /// connection pool, and broadcasts "reload"/"style" frames on demand.
-/// Implements RFC 6455 handshake and frame encoding.
+/// Implements the RFC 6455 handshake and frame encoding.
 /// </summary>
+/// <remarks>
+/// The hub is optional: when its port cannot be bound (another process holds
+/// it) the caller keeps serving and the injected client script falls back to
+/// the SSE endpoint. Live reload degrades, it never takes the dev server down.
+/// </remarks>
 public class LiveReloadHub : IDisposable
 {
+    /// <summary>Handshake requests larger than this are treated as garbage.</summary>
+    private const int MaxHandshakeBytes = 16 * 1024;
+
+    /// <summary>Upper bound on concurrent live-reload sockets.</summary>
+    private const int MaxClients = 64;
+
+    /// <summary>Upper bound on a client frame payload we are willing to drain.</summary>
+    private const long MaxInboundPayload = 16 * 1024 * 1024;
+
     private readonly int _port;
     private TcpListener? _wsListener;
     private readonly List<TcpClient> _wsClients = new();
@@ -28,21 +41,45 @@ public class LiveReloadHub : IDisposable
         _port = port;
     }
 
-    public void Start(CancellationTokenSource cts)
+    /// <summary>True once the socket is accepting clients.</summary>
+    public bool IsRunning { get; private set; }
+
+    /// <summary>
+    /// Begin accepting clients. Returns false (without throwing) when the port
+    /// is unavailable, so the caller can continue with SSE only.
+    /// </summary>
+    public bool Start(CancellationTokenSource cts)
     {
         _cts = cts;
-        _wsListener = new TcpListener(IPAddress.Loopback, _port);
-        _wsListener.Start();
+        try
+        {
+            _wsListener = new TcpListener(IPAddress.Loopback, _port);
+            _wsListener.Start();
+        }
+        catch (SocketException ex)
+        {
+            _wsListener = null;
+            LogWriter.Warn("WebSocket",
+                $"Live-reload port {_port} unavailable ({ex.SocketErrorCode}). " +
+                "Falling back to server-sent events.");
+            return false;
+        }
+
+        IsRunning = true;
         _ = Task.Run(() => AcceptClients(cts.Token));
+        return true;
     }
 
     public void Stop()
     {
         _disposed = true;
+        IsRunning = false;
 
         try { _wsListener?.Stop(); }
         catch (ObjectDisposedException) { }
         catch (SocketException) { }
+
+        _wsListener = null;
 
         lock (_wsLock)
         {
@@ -107,8 +144,7 @@ public class LiveReloadHub : IDisposable
                 }
             }
 
-            if (snapshot.Length > 0 || dead.Count > 0)
-                LogWriter.VerboseLog($"Broadcast to {snapshot.Length} clients ({dead.Count} dead): {json}");
+            LogWriter.VerboseLog($"Broadcast to {snapshot.Length} clients ({dead.Count} dead): {json}");
         });
     }
 
@@ -119,6 +155,15 @@ public class LiveReloadHub : IDisposable
             try
             {
                 var client = await _wsListener!.AcceptTcpClientAsync(ct).ConfigureAwait(false);
+
+                if (ClientCount >= MaxClients)
+                {
+                    // Refuse rather than grow without bound.
+                    try { client.Close(); } catch { }
+                    LogWriter.VerboseLog($"WebSocket client refused (limit {MaxClients}).");
+                    continue;
+                }
+
                 _ = Task.Run(() => HandleClient(client), CancellationToken.None);
             }
             catch (OperationCanceledException) { break; }
@@ -134,24 +179,34 @@ public class LiveReloadHub : IDisposable
         }
     }
 
+    private int ClientCount
+    {
+        get { lock (_wsLock) return _wsClients.Count; }
+    }
+
     private async Task HandleClient(TcpClient tcpClient)
     {
         try
         {
             using var stream = tcpClient.GetStream();
-            var buf = new byte[4096];
-            var read = await stream.ReadAsync(buf.AsMemory(0, buf.Length));
-            if (read == 0) return;
 
-            var req = Encoding.UTF8.GetString(buf, 0, read);
-            var keyMatch = Regex.Match(req, @"Sec-WebSocket-Key:\s*(.+)");
-            if (!keyMatch.Success)
+            var request = await ReadHandshakeAsync(stream, _cts?.Token ?? CancellationToken.None);
+            if (request is null) return;
+
+            if (!HasWebSocketUpgrade(request))
+            {
+                LogWriter.VerboseLog("WebSocket: handshake missing Upgrade header, closing.");
+                return;
+            }
+
+            var key = HeaderValue(request, "Sec-WebSocket-Key");
+            if (key is null)
             {
                 LogWriter.VerboseLog("WebSocket: handshake missing Sec-WebSocket-Key, closing.");
                 return;
             }
 
-            var acceptKey = ComputeAcceptKey(keyMatch.Groups[1].Value.Trim());
+            var acceptKey = ComputeAcceptKey(key);
             var response = "HTTP/1.1 101 Switching Protocols\r\n" +
                            "Upgrade: websocket\r\n" +
                            "Connection: Upgrade\r\n" +
@@ -159,45 +214,138 @@ public class LiveReloadHub : IDisposable
             await stream.WriteAsync(Encoding.UTF8.GetBytes(response));
 
             lock (_wsLock) _wsClients.Add(tcpClient);
-            LogWriter.VerboseLog($"WebSocket client connected (total: {_wsClients.Count})");
+            LogWriter.VerboseLog($"WebSocket client connected (total: {ClientCount})");
 
-            // Read loop: wait for close frame (opcode 0x8) or connection drop.
-            // We ignore ping (0x9) — the TCP stack handles keepalive.
-            try
-            {
-                while (_cts is { IsCancellationRequested: false } && !_disposed)
-                {
-                    var frame = new byte[2];
-                    var n = await stream.ReadAsync(frame.AsMemory(0, 2), _cts!.Token);
-                    if (n < 2) break; // connection closed
-
-                    var opcode = frame[0] & 0x0F;
-                    if (opcode == 0x08) break;  // close frame
-                    if (opcode == 0x09)         // ping → respond with pong
-                    {
-                        var pong = new byte[2];
-                        pong[0] = 0x8A; // FIN + pong opcode
-                        pong[1] = 0x00; // zero-length payload
-                        await stream.WriteAsync(pong.AsMemory(0, 2), _cts.Token);
-                    }
-                    // For data frames (0x1 text, 0x2 binary), just consume and
-                    // discard — we don't expect client→server messages.
-                }
-            }
-            catch (OperationCanceledException) { }
-            catch (IOException) { }
-            catch (ObjectDisposedException) { }
-            finally
-            {
-                lock (_wsLock) _wsClients.Remove(tcpClient);
-            }
+            await PumpClientFramesAsync(stream);
         }
         catch (IOException) { /* client disconnected during handshake */ }
         catch (ObjectDisposedException) { /* shutdown race */ }
+        catch (OperationCanceledException) { /* shutting down */ }
         catch (Exception ex)
         {
             LogWriter.VerboseLog($"WebSocket client error: {ex.Message}");
         }
+        finally
+        {
+            lock (_wsLock) _wsClients.Remove(tcpClient);
+        }
+    }
+
+    /// <summary>
+    /// Read up to the end of the HTTP request header block.
+    /// Returns null when the client closed before sending a full header.
+    /// </summary>
+    private static async Task<string?> ReadHandshakeAsync(NetworkStream stream, CancellationToken ct)
+    {
+        var buffer = new byte[4096];
+        var accumulated = new StringBuilder();
+
+        while (accumulated.Length < MaxHandshakeBytes)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), ct);
+            if (read == 0) return null;
+
+            accumulated.Append(Encoding.UTF8.GetString(buffer, 0, read));
+            if (accumulated.ToString().Contains("\r\n\r\n", StringComparison.Ordinal))
+                return accumulated.ToString();
+        }
+
+        return null;
+    }
+
+    private static bool HasWebSocketUpgrade(string request) =>
+        HeaderValue(request, "Upgrade")?.Contains("websocket", StringComparison.OrdinalIgnoreCase) == true;
+
+    private static string? HeaderValue(string request, string headerName)
+    {
+        foreach (var line in request.Split("\r\n"))
+        {
+            var colon = line.IndexOf(':');
+            if (colon <= 0) continue;
+
+            var name = line[..colon].Trim();
+            if (string.Equals(name, headerName, StringComparison.OrdinalIgnoreCase))
+                return line[(colon + 1)..].Trim();
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Consume client frames until close or disconnect. Browsers do not send
+    /// data to this hub, but the payload of every frame must still be read:
+    /// leaving it in the socket desynchronises the next frame header.
+    /// </summary>
+    private async Task PumpClientFramesAsync(NetworkStream stream)
+    {
+        var token = _cts?.Token ?? CancellationToken.None;
+        var header = new byte[2];
+
+        while (!token.IsCancellationRequested && !_disposed)
+        {
+            if (!await ReadExactAsync(stream, header, token)) break;
+
+            var opcode = header[0] & 0x0F;
+            var masked = (header[1] & 0x80) != 0;
+            long payloadLength = header[1] & 0x7F;
+
+            if (payloadLength == 126)
+            {
+                var extended = new byte[2];
+                if (!await ReadExactAsync(stream, extended, token)) break;
+                payloadLength = (extended[0] << 8) | extended[1];
+            }
+            else if (payloadLength == 127)
+            {
+                var extended = new byte[8];
+                if (!await ReadExactAsync(stream, extended, token)) break;
+                payloadLength = 0;
+                for (var i = 0; i < 8; i++)
+                    payloadLength = (payloadLength << 8) | extended[i];
+            }
+
+            if (masked)
+            {
+                var maskKey = new byte[4];
+                if (!await ReadExactAsync(stream, maskKey, token)) break;
+            }
+
+            if (payloadLength > MaxInboundPayload) break;
+            if (payloadLength > 0 && !await DrainAsync(stream, payloadLength, token)) break;
+
+            if (opcode == 0x08) break;      // close frame
+            if (opcode == 0x09)             // ping → respond with pong
+            {
+                var pong = new byte[] { 0x8A, 0x00 };
+                await stream.WriteAsync(pong.AsMemory(0, 2), token);
+            }
+            // Other data frames are consumed and discarded.
+        }
+    }
+
+    private static async Task<bool> ReadExactAsync(NetworkStream stream, byte[] buffer, CancellationToken ct)
+    {
+        var offset = 0;
+        while (offset < buffer.Length)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(offset, buffer.Length - offset), ct);
+            if (read == 0) return false;
+            offset += read;
+        }
+        return true;
+    }
+
+    private static async Task<bool> DrainAsync(NetworkStream stream, long length, CancellationToken ct)
+    {
+        var scratch = new byte[4096];
+        var remaining = length;
+        while (remaining > 0)
+        {
+            var want = (int)Math.Min(scratch.Length, remaining);
+            var read = await stream.ReadAsync(scratch.AsMemory(0, want), ct);
+            if (read == 0) return false;
+            remaining -= read;
+        }
+        return true;
     }
 
     // ── RFC 6455 helpers ──
@@ -231,7 +379,7 @@ public class LiveReloadHub : IDisposable
         frameLarge[0] = 0x81;
         frameLarge[1] = 127;
         var len = (ulong)payload.Length;
-        for (int i = 7; i >= 0; i--)
+        for (var i = 7; i >= 0; i--)
         {
             frameLarge[2 + i] = (byte)(len & 0xFF);
             len >>= 8;
@@ -242,7 +390,7 @@ public class LiveReloadHub : IDisposable
 
     private static string ComputeAcceptKey(string key)
     {
-        const string magic = "258EAFA5-E914-47DA-95CA-C5AB5E0285C2";
+        const string magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 #pragma warning disable CA5350 // SHA1 required by RFC 6455
         return Convert.ToBase64String(SHA1.HashData(Encoding.UTF8.GetBytes(key + magic)));
 #pragma warning restore CA5350
@@ -253,7 +401,7 @@ public class LiveReloadHub : IDisposable
     /// <summary>
     /// Generate the live-reload client script for injection into HTML pages.
     /// Supports full-page reload and CSS-only style injection.
-    /// Falls back to SSE if WebSocket connection fails within 2 seconds.
+    /// Falls back to SSE if WebSocket cannot connect within 2 seconds.
     /// The script is identical for every page, so it is built once and cached.
     /// </summary>
     public string GetLiveReloadScript() => _cachedLiveReloadScript ??= BuildLiveReloadScript();
@@ -262,6 +410,10 @@ public class LiveReloadHub : IDisposable
 <script>
 (function(){{
     var port = {_port};
+    // Use the page's own host so live reload also works when the dev server
+    // is reached from another device (--host 0.0.0.0) instead of the machine
+    // the browser runs on.
+    var host = window.location.hostname || 'localhost';
     var connected = false;
     var wsFallbackTimer = null;
 
@@ -293,7 +445,7 @@ public class LiveReloadHub : IDisposable
     }}
 
     function tryWebSocket() {{
-        var ws = new WebSocket('ws://localhost:' + port + '/livereload');
+        var ws = new WebSocket('ws://' + host + ':' + port + '/livereload');
         // Fallback to SSE if WebSocket doesn't connect within 2 seconds
         wsFallbackTimer = setTimeout(function() {{
             ws.close();

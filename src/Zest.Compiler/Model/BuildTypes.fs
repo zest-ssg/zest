@@ -42,7 +42,6 @@ type BuildResult = {
     ProcessedPages: int
     CachedPages: int
     AssetsCopied: int
-    AssetsProcessed: int
     DurationMs: int64
     /// Absolute path to the output directory (for summary display).
     OutputDir: string

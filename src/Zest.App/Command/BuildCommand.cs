@@ -43,28 +43,48 @@ public static class BuildCommand
             Directory.SetCurrentDirectory(fullPath);
         }
 
-        var config = ConfigLoader.Load();
+        SiteConfig config;
+        try
+        {
+            config = ConfigLoader.Load();
+        }
+        catch (ConfigException ex)
+        {
+            LogWriter.WriteError($"  Config error: {ex.Message}");
+            return 1;
+        }
 
-        // Initialize logger from CLI flags overriding config
-        var effectiveLevel = opts.Verbose ? "Debug" : config.LogLevel;
-        if (opts.Quiet) effectiveLevel = "Warn";
-        LogWriter.Configure(effectiveLevel, config.LogToFile, config.LogTimestamps);
+        // --no-incremental forces a full rebuild for this run only.
+        if (opts.NoIncremental)
+            config = config.WithIncrementalBuild(false);
+
+        // Initialize logger from config, with CLI flags applied on top.
+        LogWriter.Configure(config.LogLevel, config.LogToFile, config.LogTimestamps, opts.Verbose, opts.Quiet);
         LogWriter.Debug("Build", $"Log level: {LogWriter.MinLevel}, file logging: {config.LogToFile}");
         LogWriter.Debug("Build", $"Project: {config.Title}");
 
-        var buildSvc = new BuildDriver();
-        var result = buildSvc.Execute(config);
+        try
+        {
+            var buildSvc = new BuildDriver();
+            var result = buildSvc.Execute(config);
 
-        BuildDriver.PrintResult(result, config);
+            BuildDriver.PrintResult(result, config);
 
-        if (opts.Watch)
-            BuildWatcher.StartWatcher(config);
-        else
+            if (opts.Watch)
+            {
+                // Blocks until Ctrl+C; runs periodic full rebuilds on change.
+                BuildWatcher.StartWatcher(config);
+                return 0;
+            }
+
+            return result.Success ? 0 : 1;
+        }
+        finally
+        {
             // A one-shot build must not leave the long-running `dotnet fsi`
-            // child holding the terminal open after we exit. Watch mode keeps
-            // it alive for reuse on subsequent rebuilds.
+            // child holding the terminal open after we exit. This also covers
+            // the failure path, where the child would otherwise outlive us.
             FsiSession.shutdown();
-
-        return result.Success ? 0 : 1;
+        }
     }
 }

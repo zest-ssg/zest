@@ -59,7 +59,9 @@
 
 - **Zestucks templates** — `.ztk` files support the full Nunjucks-compatible feature set: variables, filters, `{% if %}` / `{% for %}`, template inheritance with `{% extends %}` / `{% block %}`, `{% include %}`, and macros, plus the Zest API (`site`, `page`, `pages`, `tags`, `collections`).
 
-- **`_init.zest.fsx`** — An optional initialization script (run before each build) for injecting dynamic data, loading JSON/TOML, and reading environment variables.
+- **`_prebuild.fsx`** — An optional pre-build script (run before each build) for injecting dynamic data, loading JSON/TOML, and reading environment variables.
+
+- **`_finalize.fsx`** — An optional post-build script (run after the site is written) for link checks, search indexes, build reports, and output shaping such as HTML pretty-printing or minification. It reads the build result and may only write inside `_site/`.
 
 - **TOML configuration** — Zero-config defaults; customize via `_config.toml` and `_data/*.toml`. No YAML.
 
@@ -183,7 +185,7 @@ Compiles to:
 
 ### Data
 
-`_init.zest.fsx` runs before every build and can inject global data:
+`_prebuild.fsx` runs before every build and can inject global data:
 
 ```fsharp
 addGlobal "socials" [
@@ -259,7 +261,8 @@ References may omit the extension entirely: `{% include "head" %}` and
 ```
 .
 ├── _config.toml           # optional: site metadata and build options
-├── _init.zest.fsx         # optional: pre-build script (global data, hooks)
+├── _prebuild.fsx          # optional: pre-build script (global data, hooks)
+├── _finalize.fsx          # optional: post-build script (validate, index)
 ├── _layouts/              # Zestucks layouts (.ztk)
 ├── _includes/             # partials pulled in with {{ include }}
 ├── _data/                 # global data (nav.toml, …)
@@ -281,7 +284,11 @@ convention, never configuration.
 | Table    | Key                                                                                 |
 |----------|-------------------------------------------------------------------------------------|
 | `[site]` | `title` `url` `description` `language` `author` `version` `content_dir` `default_layout` `permalink_format` `dev_server_port` `live_reload_port` `log_level` `log_to_file` `log_timestamps` |
-| `[build]`| `output` `parallel` `incremental` `minify` `minify_html` `format_html` `format_assets` `cache_busting` |
+| `[build]`| `output` `parallel` `incremental` `cache_busting` `finalize_on_error` |
+
+Output shaping — pretty-printing and minifying HTML, CSS and JS — is not
+configured here. It is post-build work done in `_finalize.fsx`, where the
+author chooses exactly what to apply; see [Build Hooks](#build-hooks).
 
 Anything not listed — `[[taxonomies]]`, `[menu.*]`, `[[defaults]]`,
 `[pagination]`, `[params]`, `include`, `exclude`,
@@ -366,13 +373,18 @@ Zest distinguishes two kinds of F# script. Only one of them becomes a page.
 | `*.md`         | Standard Markdown                                                | Rendered to HTML                                    |
 | `*.zcss`       | ZCSS stylesheets (CSS superset)                                  | Compiled to `.css`                                  |
 | `*.toml`       | Configuration and data (no YAML)                                 | Parsed at build time                                |
+| `_config.toml` | **Site configuration** — project root only                       | Parsed before the build                             |
+| `_prebuild.fsx`| **Pre-build script** — project root only, never routed           | Executed via `dotnet fsi` before the build          |
+| `_finalize.fsx`| **Post-build script** — project root only, never routed          | Executed via `dotnet fsi` after `_site/` is written |
 
 `*.fsx` scripts are invisible to the build: they are never scanned, evaluated,
 or given a URL. Use them for whatever a page does not need — data generation,
 deployment helpers, scratch work. Keeping them next to pages is fine.
 
-The config entry `zest.config.fsx` (or `zest.fsx`) is a special case: even
-though it is an F# script, it is never routed.
+`_config.toml`, `_prebuild.fsx` and `_finalize.fsx` are the only three special
+files Zest recognises. All live at the project root and are matched by exact
+name — no recursive scan, no other script name, no compatibility alias.
+Everything else is convention, never configuration.
 
 ### `.zest.fsx` Routing
 
@@ -481,16 +493,141 @@ else
     p [ text "No" ]
 ```
 
-### `_init.zest.fsx` API
+### Build Hooks
+
+Zest runs at most two dynamic scripts. Both are optional, both live at the
+project root under exactly the name shown, and neither is routed or published.
+
+```text
+defaults → _config.toml → _prebuild.fsx → render + write _site/ → _finalize.fsx
+```
+
+The three files have one job each, and the split is enforced by what each one
+can actually see:
+
+| File            | Runs                    | Responsibility                                              | Cannot                                 |
+|-----------------|-------------------------|-------------------------------------------------------------|----------------------------------------|
+| `_config.toml`  | before everything       | Declare what the site *is*.                                 | Run code.                              |
+| `_prebuild.fsx` | before anything renders | Inject the data, filters and values templates read.         | Touch the build output.                |
+| `_finalize.fsx` | after `_site/` is complete | Inspect, index and reshape the finished output.          | Inject template data; write outside `_site/`. |
+
+There is no third hook and no `afterBuild` command list: running an external
+tool after the build is `exec` inside `_finalize.fsx`. A hook that fails is
+reported and fails the build, unless it opts out with `setFailOnError false`.
+
+#### `_prebuild.fsx` API
+
+Runs before the build. Data added here is visible to templates as
+`{{ site.<key> }}`.
 
 | Function              | Purpose                                          |
 |-----------------------|--------------------------------------------------|
 | `addGlobal key value` | Inject a key-value pair into global data.        |
-| `loadJson path`       | Parse a JSON file.                               |
+| `loadJson path`       | Parse a JSON file into dictionaries, arrays and scalars. |
 | `loadToml path`       | Parse a TOML file.                               |
-| `loadEnv key`         | Read an environment variable.                    |
+| `loadEnv key`         | Read an environment variable as `string option`. |
 | `console_log msg`     | Emit debug output to stderr.                     |
-| `exec cmd args`       | Run a shell command.                             |
+| `exec cmd args`       | Run a shell command; returns `{ code; stdout; stderr }`. |
+
+`loadJson`, `loadToml`, `loadEnv`, `console_log` and `exec` are the same
+functions, with the same signatures, in both hooks.
+
+#### `_finalize.fsx` API
+
+Runs once the site has been fully written to `_site/`. Everything it writes
+must land inside the output directory — `writeFile` refuses any path outside
+`_site/` — so it can reshape the build output but never the project's sources.
+
+Injected context:
+
+| Binding     | Type          | Value                                            |
+|-------------|---------------|--------------------------------------------------|
+| `site`      | `SiteInfo`    | `title` `url` `description` `author` `language` `version` |
+| `pages`     | `PageInfo list` | every routed content page: `route` `output` `title` `source` |
+| `build`     | `BuildInfo`   | `duration_ms` `page_count` `asset_count` `output_bytes` `started_at` |
+| `output_dir`| `string`      | absolute path of the build output                |
+
+Helpers:
+
+| Function                    | Purpose                                                        |
+|-----------------------------|----------------------------------------------------------------|
+| `readFile path`             | Read a file (relative paths resolve against the project root).  |
+| `writeFile path content`    | Write a file inside `_site/` (relative paths resolve there).    |
+| `exists path`               | True when a file or directory exists.                          |
+| `listFiles path`            | Recursively list files, as paths relative to `path`.            |
+| `sizeOf path`               | Byte size of a file or directory tree.                         |
+| `toJson value`              | Serialize a value to indented JSON.                            |
+| `loadJson path`             | Parse a JSON file into dictionaries, arrays and scalars.        |
+| `loadToml path`             | Parse a TOML file.                                             |
+| `loadEnv key`               | Read an environment variable as `string option`.               |
+| `console_log msg`           | Emit debug output to stderr.                                   |
+| `exec cmd args`             | Run a shell command; returns `{ code; stdout; stderr }`.        |
+| `setFailOnError flag`       | `false` logs hook errors without failing the build.             |
+
+Output shaping — the replacement for the old `[build]` formatting flags:
+
+| Function                    | Purpose                                                        |
+|-----------------------------|----------------------------------------------------------------|
+| `rewriteFiles ext transform`| Apply `transform` to every file of that extension under `_site/`.|
+| `formatHtml html`           | Pretty-print HTML.                                             |
+| `minifyHtml html`           | Minify HTML.                                                   |
+| `formatCss css`             | Pretty-print CSS (2-space indent).                             |
+| `minifyCss css`             | Minify CSS.                                                    |
+| `formatJs js`               | Pretty-print JavaScript (2-space indent).                      |
+| `minifyJs js`               | Minify JavaScript.                                             |
+
+A complete pretty-printed + minified build, which is what the four removed
+`_config.toml` keys used to do:
+
+```fsharp
+rewriteFiles ".html" formatHtml
+rewriteFiles ".css" formatCss
+rewriteFiles ".js" formatJs
+```
+
+Swap `formatHtml` for `minifyHtml`, and the `format*` helpers for the `minify*`
+ones, to minify instead. Nothing is written unless the text actually changes,
+so a hook that is a no-op leaves the output untouched.
+
+Example — check internal links, index the site, and report the build:
+
+```fsharp
+// Report every page whose body references a route that was not rendered.
+let routes = pages |> List.map (fun p -> p.route) |> Set.ofList
+let broken =
+    pages
+    |> List.collect (fun p ->
+        let html = readFile p.output
+        Regex.Matches(html, "href=\"(/[^\"]*)\"")
+        |> Seq.map (fun m -> m.Groups.[1].Value)
+        |> Seq.filter (fun href -> not (Set.contains href routes))
+        |> Seq.map (fun href -> sprintf "%s -> %s" p.route href)
+        |> List.ofSeq)
+
+if not broken.IsEmpty then
+    console_log (sprintf "Found %d broken link(s)" broken.Length)
+    broken |> List.iter console_log
+    setFailOnError true
+
+// Write a search index next to the rendered pages.
+let index =
+    pages
+    |> List.map (fun p -> {| route = p.route; title = (p.title |> Option.defaultValue "") |})
+
+writeFile "search-index.json" (toJson index)
+
+// Report the build.
+console_log (sprintf "Done: %d pages, %d ms, %d bytes"
+                    build.page_count build.duration_ms build.output_bytes)
+
+// Hand off to an external tool when one is available.
+let purge = exec "node" [ "scripts/purge-cdn.js"; site.url ]
+if purge.code <> 0 then console_log (sprintf "CDN purge failed: %s" purge.stderr)
+```
+
+`finalize_on_error` (default `true`) controls whether the hook still runs when
+the main build already reported errors, which is what makes "validate what was
+written, even on a bad build" possible.
 
 ---
 

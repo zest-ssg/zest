@@ -19,7 +19,7 @@ module PagePipeline =
     /// suffix handled separately below.
     /// Excludes .html — HTML is handled separately (native-mode Zestucks preprocessing).
     let private processableExts =
-        [ FileTypes.Zestucks; FileTypes.Nunjucks; FileTypes.WebC
+        [ FileTypes.Zestucks; FileTypes.Nunjucks
           FileTypes.Markdown; FileTypes.MarkdownLong ]
 
     /// <summary>
@@ -62,7 +62,7 @@ module PagePipeline =
                 Directory.EnumerateFiles(contentDir, "*.*", SearchOption.AllDirectories)
                 |> Seq.filter (fun f ->
                     isRoutedFile f
-                    && not (FileTypes.isConfigEntry f)
+                    && not (FileTypes.isReservedFile f)
                     && not (SitePaths.isExcludedWithConfig contentDir config f))
                 |> Seq.distinct
                 |> Seq.toArray
@@ -286,25 +286,9 @@ module PagePipeline =
                     |> Seq.toList
                 LayoutChain.applyLayoutsBatched tasks layouts safeIncludes config safeData
 
-        // ── HTML post-processing pass ──
-        // Pretty-print (enable_html_formatting) or minify
-        // (enable_html_minification) the final HTML for pages that have a
-        // layout result. Formatting takes priority when both flags are
-        // enabled. Pages without a layout result keep their raw content
-        // untouched, matching the previous write-time behaviour.
-        let htmlPostProcess =
-            if config.EnableHtmlFormatting then Formatting.formatDefault
-            else Formatting.minifySafe
-        let needsHtmlPostProcess = config.EnableHtmlFormatting || config.EnableHtmlMinification
-        let processedHtml =
-            if needsHtmlPostProcess then
-                rebuildPages
-                |> Seq.choose (fun page ->
-                    match batchedHtml.TryFind page.SourcePath with
-                    | Some html -> Some (page.SourcePath, htmlPostProcess html)
-                    | None -> None)
-                |> Map.ofSeq
-            else Map.empty
+        // Output shaping is deliberately absent here: HTML pretty-printing and
+        // minification are post-build work performed by _finalize.fsx, which
+        // sees the finished output tree instead of a per-page temp result.
 
         // Write each result in parallel. The content hash for the cache comes
         // from the first-pass file cache, so no second ReadAllText is needed.
@@ -328,9 +312,7 @@ module PagePipeline =
                             for includePath in LayoutChain.collectIncludePaths ltext safeIncludes includePaths do
                                 IncrementalCache.recordDependency page.SourcePath includePath
                         | None -> ()
-                    let finalHtml =
-                        if needsHtmlPostProcess then processedHtml.[page.SourcePath]
-                        else batchedHtml.[page.SourcePath]
+                    let finalHtml = batchedHtml.[page.SourcePath]
                     AtomicFile.write outPath (System.Text.Encoding.UTF8.GetBytes finalHtml)
                     let srcText = fileContentCache.GetOrAdd(page.SourcePath, fun _ -> File.ReadAllText page.SourcePath)
                     IncrementalCache.updateCacheWithHash page.SourcePath outPath finalHtml srcText

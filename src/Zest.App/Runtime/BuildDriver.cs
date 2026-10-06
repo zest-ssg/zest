@@ -47,7 +47,7 @@ public class BuildDriver
         {
             // Build threw before finishing — stop the animator with an error result.
             var errResult = new BuildResult(
-                0, 0, 0, 0, 0, 0, "",
+                0, 0, 0, 0, 0, "",
                 ListModule.OfArray(new[] { ex.Message }));
             BuildAnimator.Stop(errResult);
             _lastResult = errResult;

@@ -1,5 +1,6 @@
 using Zest.Compiler.Model;
 using Zest.Compiler.Build;
+using Zest.App.Config;
 
 #nullable enable
 
@@ -7,53 +8,97 @@ namespace Zest.App.Runtime;
 
 /// <summary>
 /// Relevant file extensions for content watching.
+///
+/// Derived from the compiler's own extension registry rather than a hand-kept
+/// list: Zestucks layouts and includes (<c>.ztk</c>/<c>.njk</c>) are the files
+/// an author edits most, and forgetting one here means "save has no effect"
+/// with no error to explain it.
 /// </summary>
 public static class WatchConstants
 {
-    public static readonly HashSet<string> Extensions = new(StringComparer.OrdinalIgnoreCase)
+    public static readonly HashSet<string> Extensions = BuildExtensions();
+
+    private static HashSet<string> BuildExtensions()
     {
-        FileTypes.FSharpScript, FileTypes.ZestScript,
-        FileTypes.Markdown, FileTypes.MarkdownLong,
-        FileTypes.Html, FileTypes.Css, FileTypes.Zcss,
-        FileTypes.JavaScript, FileTypes.Toml,
-        FileTypes.Png, FileTypes.Jpg, FileTypes.Jpeg,
-        FileTypes.Svg, FileTypes.Gif, FileTypes.Webp
-    };
+        var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            // NOTE: Path.GetExtension("page.zest.fsx") returns ".fsx", so the
+            // plain script extension also covers Zest pages.
+            FileTypes.FSharpScript,
+            FileTypes.Markdown,
+            FileTypes.MarkdownLong,
+            FileTypes.Html,
+            FileTypes.HtmlLong,
+            FileTypes.Zestucks,
+            FileTypes.Nunjucks,
+            FileTypes.Css,
+            FileTypes.Zcss,
+            FileTypes.JavaScript,
+            FileTypes.Toml,
+
+            // Assets copied verbatim.
+            FileTypes.Png,
+            FileTypes.Jpg,
+            FileTypes.Jpeg,
+            FileTypes.Svg,
+            FileTypes.Gif,
+            FileTypes.Webp,
+            ".ico",
+            ".avif",
+            ".woff",
+            ".woff2",
+            ".ttf",
+            ".otf"
+        };
+
+        return extensions;
+    }
 }
 
 /// <summary>
 /// Standalone file watcher for <c>zest build --watch</c>.
-/// Monitors the content directory for changes and triggers a full site
-/// rebuild after a 300ms debounce. Filters by relevant extensions and
-/// excludes hidden/system directories.
+///
+/// Delegates to <see cref="ContentWatcher"/> so <c>build --watch</c> and
+/// <c>zest serve</c> react to exactly the same set of files — previously the
+/// standalone watcher only saw the content directory and silently ignored
+/// layout, include, asset and config edits. Rebuilds are serialised so a burst
+/// of changes cannot start two builds at once.
 /// </summary>
 public static class BuildWatcher
 {
     public static void StartWatcher(SiteConfig config)
     {
-        var excludedDirs = ExcludedPaths.For(config);
-        var contentDir = SitePaths.resolveContentDir(Directory.GetCurrentDirectory(), config);
+        var projectDir = Directory.GetCurrentDirectory();
+        var outputDir = Path.GetFullPath(Path.Combine(projectDir, config.OutputDir.TrimStart('.', '\\', '/')));
 
-        LogWriter.WriteAccent($"  Watching for changes in '{contentDir}'...");
+        LogWriter.WriteAccent($"  Watching for changes in '{projectDir}'...");
         LogWriter.WriteDim("  Press Ctrl+C to stop.");
 
-        using var watcher = new FileSystemWatcher(contentDir, "*.*")
-        {
-            IncludeSubdirectories = true,
-            NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.CreationTime,
-            InternalBufferSize = 65536 // .NET default (8 KB) overflows on large projects
-        };
+        var rebuildLock = new object();
+        using var watcher = new ContentWatcher(
+            projectDir,
+            outputDir,
+            ExcludedPaths.For(config),
+            _ => Rebuild(config, rebuildLock));
 
-        using var debounceTimer = new System.Timers.Timer(300) { AutoReset = false };
-        debounceTimer.Elapsed += (_, _) =>
+        var evt = new ManualResetEventSlim(false);
+        Console.CancelKeyPress += (_, args) => { evt.Set(); args.Cancel = true; };
+        evt.Wait();
+    }
+
+    private static void Rebuild(SiteConfig config, object rebuildLock)
+    {
+        lock (rebuildLock)
         {
             try
             {
+                // Re-read _config.toml so config edits apply without a restart.
+                var effective = ReloadedConfig(config);
                 var svc = new BuildDriver();
-                var r = svc.Execute(config);
+                var r = svc.Execute(effective);
                 // PrintResult stops the animator and prints summary + errors.
                 // No need to re-iterate errors here.
-                BuildDriver.PrintResult(r, config);
+                BuildDriver.PrintResult(r, effective);
             }
             catch (Exception ex)
             {
@@ -61,59 +106,19 @@ public static class BuildWatcher
                 if (ex.InnerException != null)
                     LogWriter.Error("Watch", $"  → {ex.InnerException.Message}");
             }
-        };
-
-        void OnChange(object sender, FileSystemEventArgs e)
-        {
-            if (!ShouldWatchFile(e.FullPath, e.Name, excludedDirs))
-                return;
-
-            debounceTimer.Stop();
-            debounceTimer.Start();
         }
-
-        watcher.Changed += OnChange;
-        watcher.Created += OnChange;
-        watcher.Deleted += OnChange;
-        watcher.Renamed += (_, _) =>
-        {
-            debounceTimer.Stop();
-            debounceTimer.Start();
-        };
-
-        // Handle FileSystemWatcher.Error (buffer overflow, etc.)
-        watcher.Error += (_, e) =>
-        {
-            var ex = e.GetException();
-            LogWriter.Warn("Watch", $"FileSystemWatcher error: {ex.Message}. Triggering rebuild as safety measure.");
-            debounceTimer.Stop();
-            debounceTimer.Start();
-        };
-
-        watcher.EnableRaisingEvents = true;
-
-        var evt = new ManualResetEventSlim(false);
-        Console.CancelKeyPress += (_, args) => { evt.Set(); args.Cancel = true; };
-        evt.Wait();
     }
 
-    private static bool ShouldWatchFile(string fullPath, string? fileName, HashSet<string> excludedDirs)
+    private static SiteConfig ReloadedConfig(SiteConfig fallback)
     {
-        if (string.IsNullOrEmpty(fileName))
-            return false;
-
-        var ext = Path.GetExtension(fileName).ToLowerInvariant();
-        if (!WatchConstants.Extensions.Contains(ext))
-            return false;
-
-        var parts = fullPath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        for (int i = 0; i < parts.Length - 1; i++)
+        try
         {
-            var p = parts[i];
-            if (excludedDirs.Contains(p) || p.StartsWith('_') || p.StartsWith('.'))
-                return false;
+            return ConfigLoader.Load();
         }
-
-        return true;
+        catch (ConfigException ex)
+        {
+            LogWriter.Error("Watch", $"Ignoring invalid _config.toml: {ex.Message}");
+            return fallback;
+        }
     }
 }

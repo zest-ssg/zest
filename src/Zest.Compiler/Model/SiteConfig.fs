@@ -51,15 +51,19 @@ type SiteConfig = {
     PermalinkFormat: string
     DevServerPort: int
     LiveReloadPort: int
-    EnableMinification: bool
-    EnableAssetFormatting: bool
-    EnableHtmlFormatting: bool
-    EnableHtmlMinification: bool
+    // Output shaping (HTML/CSS/JS pretty-printing and minification) is not a
+    // configuration concern: it is post-build work the author performs in
+    // _finalize.fsx with formatHtml / minifyHtml / rewriteFiles.
     EnableCacheBusting: bool
     SiteVersion: string
     // Performance
     EnableParallelBuild: bool
     EnableIncrementalBuild: bool
+    // Build hooks
+    /// Run the _finalize.fsx post-build hook even when the main build already
+    /// reported errors. Default true, so a "validate what was written" hook
+    /// still runs on a failed build.
+    FinalizeOnError: bool
     // Logging
     LogLevel: string        // "Debug" | "Info" | "Warn" | "Error" | "Off"
     LogToFile: bool         // Mirror logs to .zest/logs/zest.log
@@ -101,6 +105,11 @@ with
     member this.WithDevServerPort(port: int) =
         { this with DevServerPort = port }
 
+    /// Create a copy with incremental builds enabled or disabled.
+    /// `zest build --no-incremental` uses this to force a full rebuild.
+    member this.WithIncrementalBuild(enabled: bool) =
+        { this with EnableIncrementalBuild = enabled }
+
 module SiteConfigDefaults =
     let create () =
         { Title = "My Zest Site"
@@ -113,14 +122,11 @@ module SiteConfigDefaults =
           PermalinkFormat = "/:slug/"
           DevServerPort = 8080
           LiveReloadPort = 35729
-          EnableMinification = false
-          EnableAssetFormatting = false
-          EnableHtmlFormatting = false
-          EnableHtmlMinification = false
           EnableCacheBusting = false
           SiteVersion = "1.0"
           EnableParallelBuild = true
           EnableIncrementalBuild = true
+          FinalizeOnError = true
           LogLevel = "Info"
           LogToFile = false
           LogTimestamps = true

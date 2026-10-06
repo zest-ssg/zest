@@ -35,32 +35,32 @@ public static class ServeCommand
             return 0;
         }
 
-        LogWriter.SetVerbose(opts.Verbose);
-        LogWriter.SetQuiet(opts.Quiet);
+        var config = LoadConfig();
+        if (config is null) return 1;
 
-        // Enable FSI verbose output
-        if (opts.Verbose)
-            PageStore.setVerbose(true);
-
-        var config = ConfigLoader.Load();
         if (opts.PortOverride.HasValue)
         {
             config = config.WithDevServerPort(opts.PortOverride.Value);
         }
 
-        using var server = new DevServer(config, opts.Host, opts.OpenBrowser, opts.SPA, opts.DirectoryListing);
-        server.Start();
+        LogWriter.Configure(config.LogLevel, config.LogToFile, config.LogTimestamps, opts.Verbose, opts.Quiet);
 
-        var evt = new ManualResetEventSlim(false);
-        Console.CancelKeyPress += (_, args) =>
+        // Enable FSI verbose output
+        if (opts.Verbose)
+            PageStore.setVerbose(true);
+
+        using var server = new DevServer(config, opts.Host, opts.OpenBrowser, opts.SPA, opts.DirectoryListing);
+        try
         {
-            Console.WriteLine();
-            LogWriter.WriteSuccess("  Shutting down...");
-            server.Shutdown();
-            evt.Set();
-            args.Cancel = true;
-        };
-        evt.Wait();
+            server.Start();
+        }
+        catch (InvalidOperationException ex)
+        {
+            LogWriter.WriteError($"  Error: {ex.Message}");
+            return 1;
+        }
+
+        WaitForShutdown(server, "  Shutting down...");
         return 0;
     }
 
@@ -86,24 +86,60 @@ public static class ServeCommand
             return 0;
         }
 
-        LogWriter.SetVerbose(opts.Verbose);
-        LogWriter.SetQuiet(opts.Quiet);
+        var config = LoadConfig();
+        if (config is null) return 1;
 
-        var config = ConfigLoader.Load();
+        LogWriter.Configure(config.LogLevel, config.LogToFile, config.LogTimestamps, opts.Verbose, opts.Quiet);
+
         using var server = new PreviewServer(config, opts.Port, opts.Host, opts.OpenBrowser,
             watch: opts.Watch, liveReload: opts.LiveReload, spaFallback: opts.SPA, dirListing: opts.DirectoryListing);
-        server.Start();
+        try
+        {
+            server.Start();
+        }
+        catch (InvalidOperationException ex)
+        {
+            LogWriter.WriteError($"  Error: {ex.Message}");
+            return 1;
+        }
 
+        WaitForShutdown(server, "  Shutting down preview server...");
+        return 0;
+    }
+
+    /// <summary>
+    /// Load configuration, reporting a broken <c>_config.toml</c> as a normal
+    /// command failure rather than an unhandled fatal error.
+    /// </summary>
+    private static SiteConfig? LoadConfig()
+    {
+        try
+        {
+            return ConfigLoader.Load();
+        }
+        catch (ConfigException ex)
+        {
+            LogWriter.WriteError($"  Config error: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Block until Ctrl+C, then shut the server down. Shutdown is idempotent,
+    /// so the <c>using</c> block's Dispose is a no-op afterwards.
+    /// </summary>
+    private static void WaitForShutdown(HttpServerBase server, string message)
+    {
         var evt = new ManualResetEventSlim(false);
         Console.CancelKeyPress += (_, args) =>
         {
             Console.WriteLine();
-            LogWriter.WriteSuccess("  Shutting down preview server...");
+            LogWriter.WriteSuccess(message);
             server.Shutdown();
             evt.Set();
             args.Cancel = true;
         };
+
         evt.Wait();
-        return 0;
     }
 }

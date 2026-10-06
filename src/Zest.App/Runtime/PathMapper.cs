@@ -1,5 +1,3 @@
-using System.Web;
-
 #nullable enable
 
 namespace Zest.App.Runtime;
@@ -21,19 +19,11 @@ internal static class PathMapper
         if (string.IsNullOrEmpty(urlPath) || urlPath == "/")
             urlPath = "/index.html";
 
-        // Strip query string
-        var qIdx = urlPath.IndexOf('?');
-        if (qIdx >= 0) urlPath = urlPath[..qIdx];
-
-        // URL-decode to catch encoded path traversal (e.g. %2f → /)
-        urlPath = HttpUtility.UrlDecode(urlPath);
-
-        // Strip leading slash, normalize path separators
-        var relative = urlPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+        var relative = ToRelativePath(urlPath);
 
         // Ends with separator → append index.html
         if (relative.EndsWith(Path.DirectorySeparatorChar))
-            relative = relative + "index.html";
+            relative += "index.html";
 
         // Full path within output dir
         var fullPath = Path.GetFullPath(Path.Combine(outputDir, relative));
@@ -42,37 +32,84 @@ internal static class PathMapper
         if (!File.Exists(fullPath) && string.IsNullOrEmpty(Path.GetExtension(relative)))
             fullPath = Path.GetFullPath(Path.Combine(outputDir, relative, "index.html"));
 
-        // Security: ensure resolved path is within outputDir
-        if (!fullPath.StartsWith(Path.GetFullPath(outputDir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(fullPath, Path.GetFullPath(outputDir), StringComparison.OrdinalIgnoreCase))
-        {
-            throw new UnauthorizedAccessException($"Path traversal detected: {urlPath} resolved to {fullPath}");
-        }
-
+        EnsureWithin(outputDir, fullPath, urlPath);
         return fullPath;
     }
 
     /// <summary>
     /// Resolve a URL path to a physical directory path within the output directory.
-    /// Returns null if the URL doesn't correspond to a directory path.
+    /// Returns null if the URL doesn't correspond to a directory path or escapes
+    /// the output directory.
     /// </summary>
     public static string? ResolveDirPath(string outputDir, string urlPath)
     {
         if (string.IsNullOrEmpty(urlPath) || urlPath == "/")
             return Path.GetFullPath(outputDir);
 
-        var qIdx = urlPath.IndexOf('?');
-        if (qIdx >= 0) urlPath = urlPath[..qIdx];
-
-        var relative = urlPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+        var relative = ToRelativePath(urlPath);
         var fullPath = Path.GetFullPath(Path.Combine(outputDir, relative));
 
-        // Security: ensure within outputDir
-        var normalizedOutput = Path.GetFullPath(outputDir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        if (!fullPath.StartsWith(normalizedOutput, StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(fullPath, Path.GetFullPath(outputDir), StringComparison.OrdinalIgnoreCase))
+        var normalizedOutput = Path.GetFullPath(outputDir)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var prefix = normalizedOutput + Path.DirectorySeparatorChar;
+
+        if (!fullPath.StartsWith(prefix, PathComparison) &&
+            !string.Equals(fullPath, normalizedOutput, PathComparison))
             return null;
 
         return fullPath;
     }
+
+    /// <summary>
+    /// Strip the query string, decode percent-escapes, and convert the URL
+    /// path into a platform-relative path.
+    /// </summary>
+    /// <remarks>
+    /// Decoding uses <see cref="Uri.UnescapeDataString"/>, not
+    /// <c>HttpUtility.UrlDecode</c>: inside a path a '+' is a literal plus,
+    /// not a space, so decoding it would break files whose names contain one.
+    /// </remarks>
+    private static string ToRelativePath(string urlPath)
+    {
+        var qIdx = urlPath.IndexOf('?');
+        if (qIdx >= 0) urlPath = urlPath[..qIdx];
+
+        try
+        {
+            urlPath = Uri.UnescapeDataString(urlPath);
+        }
+        catch (UriFormatException)
+        {
+            // Malformed escapes (e.g. a stray '%'): keep the raw text so the
+            // traversal check below still sees the original characters.
+        }
+
+        if (urlPath.Contains('\0'))
+            throw new UnauthorizedAccessException("Null byte in path.");
+
+        return urlPath.TrimStart('/')
+            .Replace('/', Path.DirectorySeparatorChar)
+            .Replace('\\', Path.DirectorySeparatorChar);
+    }
+
+    /// <summary>Throw when <paramref name="fullPath"/> leaves <paramref name="outputDir"/>.</summary>
+    private static void EnsureWithin(string outputDir, string fullPath, string urlPath)
+    {
+        var normalizedOutput = Path.GetFullPath(outputDir)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var prefix = normalizedOutput + Path.DirectorySeparatorChar;
+
+        if (!fullPath.StartsWith(prefix, PathComparison) &&
+            !string.Equals(fullPath, normalizedOutput, PathComparison))
+        {
+            throw new UnauthorizedAccessException(
+                $"Path traversal detected: {urlPath} resolved to {fullPath}");
+        }
+    }
+
+    /// <summary>
+    /// Windows and macOS compare paths case-insensitively; Linux does not.
+    /// </summary>
+    private static StringComparison PathComparison =>
+        OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 }

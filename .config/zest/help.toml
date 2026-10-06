@@ -15,11 +15,11 @@ usage = "build [path]"
 desc  = "Build the site into _site/"
 
 [[command]]
-usage = "serve [path]"
+usage = "serve [options]"
 desc  = "Build and start the dev server with live reload"
 
 [[command]]
-usage = "preview [path]"
+usage = "preview [options]"
 desc  = "Serve _site/ without rebuilding"
 
 [[command]]
@@ -27,7 +27,7 @@ usage = "init [path]"
 desc  = "Scaffold a new site"
 
 [[command]]
-usage = "clean"
+usage = "clean [path]"
 desc  = "Remove build output"
 
 [[command]]
@@ -69,32 +69,54 @@ usage = "zest build [path] [options]"
 options = [
   "path              Project directory (default: current directory)",
   "--watch, -w       Watch for changes and auto-rebuild",
+  "--no-incremental  Rebuild every page, ignoring the incremental cache",
   "--verbose, -v     Enable Debug-level logging",
-  "--quiet, -q       Suppress Info-level logs"
+  "--quiet, -q       Suppress Info-level logs",
+  "Hooks             _prebuild.fsx runs before the build, _finalize.fsx after it"
 ]
 
 [serve]
 usage = "zest serve [options]"
 options = [
   "--port, -p PORT   Dev server port (default: 8080)",
-  "--host HOST       Bind to host (default: localhost)",
+  "--host HOST       Bind to host (default: localhost; use 0.0.0.0 for all interfaces)",
   "--open, -o        Open browser on start",
   "--spa             Fall back to index.html for every route",
   "--dir             Enable directory listing",
   "--verbose, -v     Show detailed FSI output",
-  "--quiet, -q       Suppress Info-level logs"
+  "--quiet, -q       Suppress Info-level logs",
+  "Hooks             _prebuild.fsx and _finalize.fsx run on every rebuild"
 ]
 
 [preview]
 usage = "zest preview [options]"
 options = [
   "--port, -p PORT   Preview server port (default: 8080)",
-  "--host HOST       Bind to host (default: localhost)",
+  "--host HOST       Bind to host (default: localhost; use 0.0.0.0 for all interfaces)",
   "--open, -o        Open browser on start",
   "--watch, -w       Watch files and auto-rebuild",
   "--livereload, -l  Enable live reload over WebSocket",
   "--spa             Fall back to index.html for every route",
   "--dir             Enable directory listing",
+  "--verbose, -v     Enable Debug-level logging",
+  "--quiet, -q       Suppress Info-level logs"
+]
+
+[init]
+usage = "zest init [path] [options]"
+options = [
+  "path              Target directory (default: current directory)",
+  "--empty           Scaffold the layout without starter content",
+  "--verbose, -v     Enable Debug-level logging",
+  "--quiet, -q       Suppress Info-level logs"
+]
+
+[clean]
+usage = "zest clean [path] [options]"
+options = [
+  "path              Project directory (default: current directory)",
+  "--cache           Remove the build cache only",
+  "--output          Remove the output directory only",
   "--verbose, -v     Enable Debug-level logging",
   "--quiet, -q       Suppress Info-level logs"
 ]
