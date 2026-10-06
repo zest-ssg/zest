@@ -127,23 +127,66 @@ module DslSugar =
     let addC = addClass
 
     // ── Shorthand element builders ───────────────────────────────
+    // `<tag>Text` takes text content; `<tag>TextClass` / `<tag>TextC` take a CSS
+    // class plus text content (see CLAUDE.md §3.1.1 R7). Every `TextClass`
+    // helper ships with its `TextC` alias.
 
     /// Create a div with text content.
-    let divText (cls: string) (content: string) =
+    let divText (content: string) =
+        div [text content]
+
+    /// Create a div with a CSS class and text content.
+    let divTextClass (cls: string) (content: string) =
         divClass cls [text content]
 
+    /// Alias for `divTextClass` (`C` ≡ `Class`). `divTextC` ≡ `divTextClass`.
+    let divTextC = divTextClass
+
     /// Create a span with text content.
-    let spanText (cls: string) (content: string) =
+    let spanText (content: string) =
+        span [text content]
+
+    /// Create a span with a CSS class and text content.
+    let spanTextClass (cls: string) (content: string) =
         spanClass cls [text content]
+
+    /// Alias for `spanTextClass` (`C` ≡ `Class`).
+    let spanTextC = spanTextClass
 
     /// Create a paragraph with text content.
     let pText (content: string) =
         p [text content]
 
-    /// Create a heading with text content.
+    /// Create a paragraph with a CSS class and text content.
+    let pTextClass (cls: string) (content: string) =
+        pClass cls [text content]
+
+    /// Alias for `pTextClass` (`C` ≡ `Class`).
+    let pTextC = pTextClass
+
+    /// Create a list item with text content.
+    let liText (content: string) =
+        li [text content]
+
+    /// Create a list item with a CSS class and text content.
+    let liTextClass (cls: string) (content: string) =
+        liClass cls [text content]
+
+    /// Alias for `liTextClass` (`C` ≡ `Class`).
+    let liTextC = liTextClass
+
+    /// Create a heading with text content. `level` is 1–6.
     let hText (level: int) (content: string) =
         let tag = sprintf "h%d" level
         elem tag [] [text content]
+
+    /// Create a heading with a CSS class and text content.
+    let hTextClass (cls: string) (level: int) (content: string) =
+        let tag = sprintf "h%d" level
+        elem tag [attr "class" cls] [text content]
+
+    /// Alias for `hTextClass` (`C` ≡ `Class`).
+    let hTextC = hTextClass
 
     /// Create a link with text content.
     let aText (url: string) (textContent: string) =

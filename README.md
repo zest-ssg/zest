@@ -470,18 +470,29 @@ Zestucks mirrors Nunjucks:
 
 ### HTML DSL Reference
 
+Two spellings are co-equal throughout the DSL: `<tag>Class` and `<tag>C`
+(`divC` ≡ `divClass`, `imgC` ≡ `imgClass`, `aC` ≡ `aClass`). Both produce
+byte-for-byte identical HTML — pick either and stay consistent within a file.
+For text helpers, `<tag>Text` takes text content while `<tag>TextClass` /
+`<tag>TextC` take a CSS class plus text content (`pText` vs `pTextClass`).
+
 ```fsharp
 // Elements
 h1 [ text "Title" ]
 p  [ text "Paragraph" ]
 a  [ href "https://example.com"; text "Link" ]
 
+// Text shortcuts
+divText "Plain"                            // <div>Plain</div>
+pTextClass "lead" "Intro"                  // <p class="lead">Intro</p>
+aTextC "btn btn-primary" "/about" "About"  // <a href="/about" class="btn btn-primary">About</a>
+
 // Attributes
-div [ class' "container"; id "main" ] [ ... ]
+div [ cls "container"; id' "main"; data' "section" "hero" ] [ ... ]
 
 // CSS class shortcuts
 divClass "card"  [ p [ text "Content" ] ]   // <div class="card">
-spanClass "badge" [ text "New" ]            // <span class="badge">
+spanC   "badge" [ text "New" ]              // <span class="badge">
 
 // List comprehensions
 ul [ for item in items -> li [ text item ] ]

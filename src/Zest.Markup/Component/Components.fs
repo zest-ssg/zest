@@ -16,6 +16,40 @@ module Components =
     let select name ch = elem "select" [attr "name" name] ch
     let option value ch = elem "option" [attr "value" value] ch
     let label forVal ch = elem "label" [attr "for" forVal] ch
+    /// `<optgroup label="…">…</optgroup>` — groups its `<option>` children.
+    let optgroup label ch = elem "optgroup" [attr "label" label] ch
+    /// `<datalist id="…">…</datalist>` — shared by an input's `list` attribute.
+    let datalist id ch = elem "datalist" [attr "id" id] ch
+
+    // `boolAttr` yields "" for a false flag; dropping empty entries keeps a
+    // stray separator out of the attribute list.
+    let private dropEmptyAttrs (attrs: string list) =
+        attrs |> List.filter (fun a -> a <> "")
+
+    // ---- Typed form controls ----
+    // Thin wrappers over `input`/`voidElem` that pin `type`, so authors do not
+    // have to spell out the type string. `n` is the control name, `v` its value.
+    let inputText n v = input "text" n v
+    let inputEmail n v = input "email" n v
+    let inputPassword n v = input "password" n v
+    let inputHidden n v = input "hidden" n v
+    let inputNumber n v = input "number" n v
+    let inputDate n v = input "date" n v
+    let inputRange n v = input "range" n v
+    let inputColor n v = input "color" n v
+    let inputSearch n v = input "search" n v
+    let inputTel n v = input "tel" n v
+    let inputUrl n v = input "url" n v
+    /// `<input type="file" name="…" />` — no `value`: the browser sets it.
+    let inputFile n = voidElem "input" [attr "type" "file"; attr "name" n]
+    /// `<input type="submit" value="…" />` — no `name`: the value is the label.
+    let inputSubmit v = voidElem "input" [attr "type" "submit"; attr "value" v]
+    let inputCheckbox n v isChecked =
+        voidElem "input" (dropEmptyAttrs
+            [ attr "type" "checkbox"; attr "name" n; attr "value" v; boolAttr "checked" isChecked ])
+    let inputRadio n v isChecked =
+        voidElem "input" (dropEmptyAttrs
+            [ attr "type" "radio"; attr "name" n; attr "value" v; boolAttr "checked" isChecked ])
 
     let formClass cls action ch = elem "form" [attr "action" action; attr "class" cls] ch
     let buttonClass cls ch = elem "button" [attr "class" cls] ch
@@ -127,8 +161,8 @@ module Components =
     /// `videoEmbed "https://youtube.com/embed/XYZ"` → padded container + iframe.
     let videoEmbed (url: string) =
         divClass "video-embed" [
-            voidElem "iframe" [attr "src" url; attr "frameborder" "0"
-                               attr "allowfullscreen" "allowfullscreen"]
+            elem "iframe" [attr "src" url; attr "frameborder" "0"
+                           attr "allowfullscreen" "allowfullscreen"] []
         ]
 
     // ---- Progress / status components ──────────────────────────
@@ -138,13 +172,13 @@ module Components =
     let progressBar (percent: int) (label: string) =
         divClass "progress-wrapper" [
             spanClass "progress-label" [text label]
-            voidElem "progress" [attr "value" (string percent); attr "max" "100"]
+            elem "progress" [attr "value" (string percent); attr "max" "100"] []
         ]
 
     /// A simple meter bar (for ratings/gauges).
     let meterBar (value: float) (optimum: float) =
-        voidElem "meter" [attr "value" (string value); attr "min" "0"
-                          attr "max" "100"; attr "optimum" (string optimum)]
+        elem "meter" [attr "value" (string value); attr "min" "0"
+                      attr "max" "100"; attr "optimum" (string optimum)] []
 
     // ---- Social / contact ──────────────────────────────────────
 

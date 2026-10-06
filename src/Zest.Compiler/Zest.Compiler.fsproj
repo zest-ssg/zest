@@ -36,7 +36,7 @@
     <Compile Include="Zcss/Modules.fs" />
     <Compile Include="Zcss/Cache.fs" />
     <Compile Include="Zcss/CssWriter.fs" />
-    <Compile Include="Zcss/Zcss.fs" />
+    <Compile Include="Zcss/Engine.fs" />
 
     <!-- Build (early): front matter, permalinks and locale tables -->
     <Compile Include="Build/PermalinkRouter.fs" />

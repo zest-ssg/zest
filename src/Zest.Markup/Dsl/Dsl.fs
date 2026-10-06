@@ -33,10 +33,25 @@ module Dsl =
         let a = if attrs.IsEmpty then "" else " " + String.concat " " attrs
         sprintf "<%s%s>%s</%s>" tag a (String.concat "" children) tag
 
-    /// Creates a self-closing HTML element (void element) with the specified tag and attributes.
+    /// W3C HTML5 void elements. These are the only tags that may be emitted
+    /// self-closing; every other tag needs an explicit closing tag because the
+    /// parser ignores the slash on a non-void element.
+    /// Mirrors `Zest.Compiler.Rendering.HtmlWriter.voidTags` (the same list for
+    /// template-layer nodes) — keep the two in sync.
+    let voidTags = Set.ofList [
+        "area"; "base"; "br"; "col"; "embed"; "hr"; "img"; "input";
+        "link"; "meta"; "param"; "source"; "track"; "wbr"
+    ]
+
+    /// Creates a void HTML element (`<img … />`) with the specified tag and attributes.
+    /// A tag outside `voidTags` is not void — `<script src="x" />` would leave the
+    /// parser inside the element and swallow every following node — so such a tag
+    /// falls back to `elem`, which emits an explicit closing tag.
     let voidElem tag (attrs: string list) =
-        let a = if attrs.IsEmpty then "" else " " + String.concat " " attrs
-        sprintf "<%s%s />" tag a
+        if not (voidTags.Contains tag) then elem tag attrs []
+        else
+            let a = if attrs.IsEmpty then "" else " " + String.concat " " attrs
+            sprintf "<%s%s />" tag a
 
     // ---- Inline elements ----
     let a url (ch: string list) = elem "a" [attr "href" url] ch
@@ -110,9 +125,18 @@ module Dsl =
     let summary ch = elem "summary" [] ch
     let details ch = elem "details" [] ch
     let dialog ch = elem "dialog" [] ch
-    let progress ch = elem "progress" [] ch
-    let meter ch = elem "meter" [] ch
-    let output ch = elem "output" [] ch
+    /// `<progress max="…" value="…">…</progress>` — completion of a task.
+    /// `max` precedes `value` to match `Zest.Compiler.Rendering.Elements`.
+    let progress (maxValue: int) (value: int) ch =
+        elem "progress" [attr "max" (string maxValue); attr "value" (string value)] ch
+
+    /// `<meter min="…" max="…" value="…">…</meter>` — a scalar gauge.
+    let meter (minimum: float) (maximum: float) (value: float) ch =
+        elem "meter" [attr "min" (string minimum); attr "max" (string maximum)
+                      attr "value" (string value)] ch
+
+    /// `<output for="…">…</output>` — the result of a calculation.
+    let output (forVal: string) ch = elem "output" [attr "for" forVal] ch
 
     // ---- Form elements ----
     let fieldset ch = elem "fieldset" [] ch
@@ -126,6 +150,29 @@ module Dsl =
     let iframe src = elem "iframe" [attr "src" src] []
     let canvas id ch = elem "canvas" [attr "id" id] ch
     let svg ch = elem "svg" [] ch
+
+    // ---- Embedded content ----
+    let picture ch = elem "picture" [] ch
+    /// `<source src="…" type="…" />` — a responsive media candidate.
+    let source src type' = voidElem "source" [attr "src" src; attr "type" type']
+    /// `<track src="…" kind="…" srclang="…" label="…" />` — a media text track.
+    let track src kind srclang label =
+        voidElem "track" [attr "src" src; attr "kind" kind; attr "srclang" srclang; attr "label" label]
+    let embed src type' = voidElem "embed" [attr "src" src; attr "type" type']
+    /// `` ``object`` `` — `object` is a reserved word, so the builder is quoted (R3).
+    let ``object`` data type' ch = elem "object" [attr "data" data; attr "type" type'] ch
+    let param name value = voidElem "param" [attr "name" name; attr "value" value]
+
+    // ---- Scripting / templating ----
+    let noscript ch = elem "noscript" [] ch
+    let template id ch = elem "template" [attr "id" id] ch
+    let slot name ch = elem "slot" [attr "name" name] ch
+
+    // ---- Grouping / text-level semantics ----
+    let menu ch = elem "menu" [] ch
+    let var ch = elem "var" [] ch
+    let bdo dir ch = elem "bdo" [attr "dir" dir] ch
+    let bdi ch = elem "bdi" [] ch
 
     // ---- Class-shortcut variants for new semantic elements ----
     let figureClass cls ch = elem "figure" [attr "class" cls] ch
@@ -144,7 +191,9 @@ module Dsl =
     let meta attrs = voidElem "meta" attrs
     let link rel href = voidElem "link" [attr "rel" rel; attr "href" href]
     let stylesheet href = link "stylesheet" href
-    let script src = voidElem "script" [attr "src" src]
+    // `script` is not a void element: a self-closing slash leaves the parser in
+    // script-data state and swallows the rest of the document.
+    let script src = elem "script" [attr "src" src] []
     let scriptInline code = elem "script" [] [raw code]
     let style css = elem "style" [] [raw css]
 
@@ -203,9 +252,13 @@ module Dsl =
     let ddClass cls ch = elem "dd" [attr "class" cls] ch
     let figcaptionClass cls ch = elem "figcaption" [attr "class" cls] ch
     let summaryClass cls ch = elem "summary" [attr "class" cls] ch
-    let progressClass cls ch = elem "progress" [attr "class" cls] ch
-    let meterClass cls ch = elem "meter" [attr "class" cls] ch
-    let outputClass cls ch = elem "output" [attr "class" cls] ch
+    let progressClass cls maxValue value ch =
+        elem "progress" [attr "max" (string maxValue); attr "value" (string value)
+                         attr "class" cls] ch
+    let meterClass cls minimum maximum value ch =
+        elem "meter" [attr "min" (string minimum); attr "max" (string maximum)
+                      attr "value" (string value); attr "class" cls] ch
+    let outputClass cls forVal ch = elem "output" [attr "for" forVal; attr "class" cls] ch
     let theadClass cls ch = elem "thead" [attr "class" cls] ch
     let tbodyClass cls ch = elem "tbody" [attr "class" cls] ch
     let trClass cls ch = elem "tr" [attr "class" cls] ch
@@ -218,6 +271,23 @@ module Dsl =
     let iframeClass cls src = elem "iframe" [attr "src" src; attr "class" cls] []
     let canvasClass cls id ch = elem "canvas" [attr "id" id; attr "class" cls] ch
     let svgClass cls ch = elem "svg" [attr "class" cls] ch
+
+    // ---- Class-shortcut helpers for the embedded / scripting / bidi elements ----
+    let pictureClass cls ch = elem "picture" [attr "class" cls] ch
+    let sourceClass cls src type' = voidElem "source" [attr "src" src; attr "type" type'; attr "class" cls]
+    let trackClass cls src kind srclang label =
+        voidElem "track" [attr "src" src; attr "kind" kind; attr "srclang" srclang
+                          attr "label" label; attr "class" cls]
+    let embedClass cls src type' = voidElem "embed" [attr "src" src; attr "type" type'; attr "class" cls]
+    let objectClass cls data type' ch = elem "object" [attr "data" data; attr "type" type'; attr "class" cls] ch
+    let paramClass cls name value = voidElem "param" [attr "name" name; attr "value" value; attr "class" cls]
+    let noscriptClass cls ch = elem "noscript" [attr "class" cls] ch
+    let templateClass cls id ch = elem "template" [attr "id" id; attr "class" cls] ch
+    let slotClass cls name ch = elem "slot" [attr "name" name; attr "class" cls] ch
+    let menuClass cls ch = elem "menu" [attr "class" cls] ch
+    let varClass cls ch = elem "var" [attr "class" cls] ch
+    let bdoClass cls dir ch = elem "bdo" [attr "dir" dir; attr "class" cls] ch
+    let bdiClass cls ch = elem "bdi" [attr "class" cls] ch
 
     // ---- Link shortcuts ----
     let aBlank url t = elem "a" [attr "href" url; attr "target" "_blank"; attr "rel" "noopener noreferrer"] [text t]
@@ -300,6 +370,19 @@ module Dsl =
     let iframeC = iframeClass
     let canvasC = canvasClass
     let svgC = svgClass
+    let pictureC = pictureClass
+    let sourceC = sourceClass
+    let trackC = trackClass
+    let embedC = embedClass
+    let objectC = objectClass
+    let paramC = paramClass
+    let noscriptC = noscriptClass
+    let templateC = templateClass
+    let slotC = slotClass
+    let menuC = menuClass
+    let varC = varClass
+    let bdoC = bdoClass
+    let bdiC = bdiClass
 
     // ---- Conditional helpers ----
     let showIf cond ch = if cond then ch else ""
