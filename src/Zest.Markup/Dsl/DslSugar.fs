@@ -266,15 +266,11 @@ module DslSugar =
 
     /// Split a list into chunks of the specified size.
     /// Last chunk may be smaller if the list length is not evenly divisible by chunk size.
+    /// `List.chunkBySize` raises for a non-positive size, so that case is
+    /// handled explicitly: the whole list becomes a single chunk.
     let chunk (chunkSize: int) (items: 'a list) : 'a list list =
         if chunkSize <= 0 || List.isEmpty items then [items]
-        else
-            let rec loop remaining acc =
-                if List.isEmpty remaining then List.rev acc
-                else
-                    let currentChunk = List.take chunkSize remaining
-                    loop (List.skip chunkSize remaining) (currentChunk :: acc)
-            loop items []
+        else items |> List.chunkBySize chunkSize
 
     /// Intersperse a separator BETWEEN items (not trailing).
     /// `intersperse ", " ["a";"b";"c"]` → `"a, b, c"`.

@@ -16,14 +16,14 @@
 //   loadJson path                  parse a JSON file
 //   loadToml path                  parse a TOML file
 //   loadEnv key                    read an environment variable
-//   consoleLog message            print to stderr
+//   consoleLog message             print to stderr
 //   exec command args              run a shell command, return its result
-//
-// Examples — uncomment what you need.
-//
-// Expose the build year to templates as {{ site.buildYear }}:
-//
-//   addGlobal "buildYear" (System.DateTime.UtcNow.Year)
+
+// Expose the build year to templates as {{ site.buildYear }} — used by the
+// footer folio so a static site never shows a stale copyright year.
+addGlobal "buildYear" (System.DateTime.UtcNow.Year)
+
+// More examples — uncomment what you need.
 //
 // Load a JSON file into global data:
 //

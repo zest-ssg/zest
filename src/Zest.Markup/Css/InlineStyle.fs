@@ -12,7 +12,7 @@ open System.IO
 // raw CSS strings using the same ergonomic API.
 //
 // Usage:
-//   // ZCSS computation expression
+//   // ZCSS computation expression (needs `open Zest.Markup.Stylesheet.Selectors`)
 //   styleZcss (stylesheet { body [ bg "#000"; color "#fff" ] })
 //
 //   // Native CSS (with optional validation)
@@ -35,6 +35,7 @@ module InlineStyle =
     /// `stylesheet { ... }`) inside a `<style>` tag.
     ///
     /// Example:
+    ///   open Zest.Markup.Stylesheet.Selectors
     ///   let myCss = stylesheet { body [ bg "#f0f0f0"; color "#333" ] }
     ///   styleZcss myCss
     let styleZcss (compiledCss: string) : string =
@@ -45,6 +46,7 @@ module InlineStyle =
     /// Uses `compileStylesheet` under the hood (pretty-printed).
     ///
     /// Example:
+    ///   open Zest.Markup.Stylesheet.Selectors
     ///   let rules = [ body [ bg "#000" ]; cls "card" [ padding "1rem" ] ]
     ///   styleFromZcss rules
     let styleFromZcss (cssRules: CssRule list) : string =
@@ -79,7 +81,7 @@ module InlineStyle =
     let styleCss (css: string) : string =
         if String.IsNullOrWhiteSpace css then ""
         else
-            let validated = Validator.validate css
+            let validated = Validator.validateCss css
             elem "style" [] [raw ("\n" + validated + "\n")]
 
     // ── Scoped CSS ────────────────────────────────────────────
@@ -110,6 +112,7 @@ module InlineStyle =
     /// results and wrap in `<style>`.  Syntactic sugar for `styleZcss`.
     ///
     /// Example:
+    ///   open Zest.Markup.Stylesheet.Selectors
     ///   inlineZcss <| stylesheet { body [ bg "#fff" ] }
     let inline inlineZcss (compiledCss: string) : string =
         styleZcss compiledCss
@@ -129,7 +132,7 @@ module InlineStyle =
                 zcssPath.[..zcssPath.Length - 6] + ".css"
             else
                 zcssPath
-        stylesheet cssPath
+        link "stylesheet" cssPath
 
     /// Load an external `.zcss` file from disk, compile it, and
     /// inline the result inside a `<style>` tag.

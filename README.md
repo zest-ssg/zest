@@ -118,6 +118,8 @@ render [
 ]
 ```
 
+The engine pre-opens the DSL for `.zest.fsx` pages (it also opens `Values`, `Seo` and `Feeds`). In plain FSI, `open Zest.Markup` alone is enough for the markup and CSS DSL — `Dsl`, `DslSugar`, `Stylesheet`, `InlineStyle`, `Components`, `Compound` and `Collections` are all `[<AutoOpen>]` — while the content helpers in `Values` (`md`, `chunk`, …), `Seo` and `Feeds` still need an explicit `open`.
+
 ### Example: a `.zest.fsx` page
 
 ```fsharp
@@ -144,7 +146,7 @@ The `md` helper renders a Markdown string to an HTML string, so prose and the F#
 open Zest.Markup
 
 render [
-    divClass "about" [
+    divC "about" [
         md """
 # About
 This page is a **native template** written in `.zest.fsx` (real F#), where
@@ -263,7 +265,7 @@ References may omit the extension entirely: `{% include "head" %}` and
 ├── _config.toml           # optional: site metadata and build options
 ├── _prebuild.fsx          # optional: pre-build script (global data, hooks)
 ├── _finalize.fsx          # optional: post-build script (validate, index)
-├── _layouts/              # Zestucks layouts (.ztk)
+├── _layouts/              # layouts: .ztk (Zestucks) or .zest.fsx (F# DSL)
 ├── _includes/             # partials pulled in with {{ include }}
 ├── _data/                 # global data (nav.toml, …)
 ├── _locales/              # i18n string tables (en.toml, …)

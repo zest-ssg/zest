@@ -2,7 +2,9 @@ namespace Zest.Markup
 
 open System
 
-/// Module containing all DSL helpers — opened by user scripts
+/// Module containing all DSL helpers. Auto-opened with the namespace, so
+/// `open Zest.Markup` is enough to bring it into scope.
+[<AutoOpen>]
 module Dsl =
     open Context
 
@@ -190,17 +192,15 @@ module Dsl =
     let title ch = elem "title" [] ch
     let meta attrs = voidElem "meta" attrs
     let link rel href = voidElem "link" [attr "rel" rel; attr "href" href]
-    let stylesheet href = link "stylesheet" href
+    // `stylesheet` is the ZCSS computation-expression builder in `Stylesheet`;
+    // for the `<link rel="stylesheet">` tag use `link "stylesheet" href`.
     // `script` is not a void element: a self-closing slash leaves the parser in
     // script-data state and swallows the rest of the document.
     let script src = elem "script" [attr "src" src] []
     let scriptInline code = elem "script" [] [raw code]
     let style css = elem "style" [] [raw css]
-
-    /// Convenience re-export — inlines a compiled ZCSS stylesheet string
-    /// (output of `stylesheet { ... }` computation expression).
-    /// Equivalent to `styleZcss` from InlineStyle.
-    let styleZcss (compiledCss: string) = elem "style" [] [raw ("\n" + compiledCss + "\n")]
+    // `styleZcss` lives in `InlineStyle` alone — it returns "" for blank input
+    // instead of emitting an empty `<style>` tag.
 
     // ---- Class-shortcut helpers ----
     let divClass cls ch = elem "div" [attr "class" cls] ch

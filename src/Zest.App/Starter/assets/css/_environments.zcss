@@ -1,0 +1,93 @@
+/* ---------------------------------------------------------------------------
+   Structural environments — theorem, numbered equation, figure, footnotes.
+
+   Authors write these with plain HTML in Markdown (see
+   content/posts/theorem-environments.md); no shortcodes are involved.
+   --------------------------------------------------------------------------- */
+
+.theorem [
+  background: surface;
+  padding: 1rem 1.25rem;
+  margin-top: 1.5rem;
+]
+
+.theorem--plain [
+  background: transparent;
+  border: 1px solid rule;
+]
+
+.theorem p [
+  margin-top: 0;
+]
+
+.theorem p + p [
+  margin-top: 0.75rem;
+]
+
+.theorem__label [
+  font-weight: 700;
+  font-style: normal;
+]
+
+.equation [
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 1rem;
+  margin-top: 1.5rem;
+]
+
+.equation__body [
+  text-align: center;
+  font-style: italic;
+]
+
+.equation__tag [
+  color: muted;
+  font-variant-numeric: tabular-nums;
+]
+
+.figure [
+  margin-top: 1.75rem;
+  text-align: center;
+]
+
+.figure__plot [
+  width: 100%;
+  max-width: 22rem;
+  height: auto;
+  margin: 0 auto;
+]
+
+.figure__caption [
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+  color: muted;
+]
+
+.figure__axis [
+  font-family: font-mono;
+  font-size: 11px;
+  fill: muted;
+]
+
+.footnotes [
+  margin-top: 2.5rem;
+  font-size: 0.875rem;
+  color: muted;
+]
+
+.footnotes__rule [
+  border-top: 1px solid rule;
+  margin-bottom: 0.75rem;
+]
+
+.footnotes__list [
+  padding-left: 1.25rem;
+]
+
+.footnote-ref a [
+  font-size: 0.75em;
+  vertical-align: super;
+  line-height: 0;
+]

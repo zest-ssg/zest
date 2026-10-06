@@ -71,8 +71,8 @@ module Values =
         |> List.groupBy keyFn
         |> List.map (fun (k, g) -> k, List.ofSeq g)
 
-    let chunk (size: int) (items: string list) =
-        items |> List.chunkBySize size
+    // `chunk` lives in DslSugar alone — it is generic ('a list) and tolerant of
+    // size <= 0, so scripts use the bare name without opening `Values`.
 
     let intersperseStr (sep: string) (items: string list) =
         items |> List.collect (fun x -> [sep; x]) |> List.tail

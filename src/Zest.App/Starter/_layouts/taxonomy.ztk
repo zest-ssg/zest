@@ -1,0 +1,9 @@
+<ol class="post-list">
+{% for post in term_pages %}
+  <li class="post-list__item">
+    <h2 class="post-list__title"><a href="{{ post.url }}">{{ post.title }}</a></h2>
+    <p class="post-list__meta">{% if post.date %}{{ post.date | date('%B %e, %Y') }}{% endif %}{% if post.description %} &middot; {{ post.description }}{% endif %}</p>
+  </li>
+{% endfor %}
+</ol>
+<p class="paper__nav"><a href="/{{ taxonomy.plural }}/">All {{ taxonomy.plural }}</a> &middot; <a href="/">Home</a></p>

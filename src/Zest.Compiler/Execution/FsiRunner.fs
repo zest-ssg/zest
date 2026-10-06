@@ -415,25 +415,44 @@ module FsiRunner =
 
     // ── Individual script evaluation ──────────────────────────────────────
 
-    let evaluatePageScript (scriptText: string) : Result<string, string> =
+    /// Drop the `// @…` header lines: the front-matter parser already consumed
+    /// them, and the preamble exposes the same values as bindings.
+    let private stripHeaderLines (scriptText: string) : string =
+        scriptText.Split('\n')
+        |> Array.filter (fun l ->
+            let t = l.TrimStart()
+            not (t.StartsWith("// @")))
+        |> String.concat "\n"
+
+    /// Cache key for a page script. The injected bindings are part of the hash:
+    /// the pagination generator evaluates one template once per window, and two
+    /// windows of the same file must never share a cache entry.
+    let private scriptHash (bindings: string) (scriptText: string) : string =
+        computeHash (bindings + "\u0000" + scriptText)
+
+    /// Indent a block by one level so it sits inside the batch module wrapper.
+    let private indent (text: string) : string =
+        text.Split('\n')
+        |> Array.map (fun l -> if String.IsNullOrWhiteSpace l then "" else "    " + l)
+        |> String.concat "\n"
+
+    /// Evaluate a page script with extra F# bindings injected above it. The
+    /// bindings compile into the script's own scope, so a template reads them
+    /// exactly like the preamble's own `sitePages()`.
+    let evaluatePageScriptWithBindings (bindings: string) (scriptText: string) : Result<string, string> =
         try
-            let hash = computeHash scriptText
+            let hash = scriptHash bindings scriptText
             match scriptCache.TryGetValue(hash) with
             | true, e when cacheEnabled -> e.Result
             | _ ->
                 if String.IsNullOrEmpty ctxFilePath || not (File.Exists ctxFilePath) then
                     resetSession ()
 
-                let stripped =
-                    scriptText.Split('\n')
-                    |> Array.filter (fun l ->
-                        let t = l.TrimStart()
-                        not (t.StartsWith("// @")))
-                    |> String.concat "\n"
+                let body = (buildPreamble ctxFilePath) + "\n" + bindings + stripHeaderLines scriptText
 
                 let tmpFsx = Path.Combine(Path.GetTempPath(), sprintf "zest-page-%s.fsx" (Guid.NewGuid().ToString("N")))
                 try
-                    File.WriteAllText(tmpFsx, (buildPreamble ctxFilePath) + "\n" + stripped, Encoding.UTF8)
+                    File.WriteAllText(tmpFsx, body, Encoding.UTF8)
                     match runFsi tmpFsx with
                     | Ok html ->
                         let result = Ok html
@@ -447,11 +466,18 @@ module FsiRunner =
         with ex ->
             Error(sprintf "FsiRunner threw: %s" ex.Message)
 
+    let evaluatePageScript (scriptText: string) : Result<string, string> =
+        evaluatePageScriptWithBindings "" scriptText
+
     // ── Batch evaluation: all page scripts in ONE FSI process ─────────────
     //   Uses numeric marker IDs to avoid backslash/special-char issues in paths.
 
-    let evaluatePageScriptsBatch (scripts: (string * string) list) : Map<string, Result<string, string>> =
-        if scripts.IsEmpty then Map.empty
+    /// Batch-evaluate page scripts that each carry their own injected bindings.
+    /// A task is (taskKey, bindings, scriptText); the key is the caller's label
+    /// for the result — the pagination generator passes a window's SourcePath.
+    let evaluatePageScriptsBatchWithBindings (tasks: (string * string * string) list)
+        : Map<string, Result<string, string>> =
+        if tasks.IsEmpty then Map.empty
         else
             try
                 if String.IsNullOrEmpty ctxFilePath || not (File.Exists ctxFilePath) then
@@ -461,30 +487,24 @@ module FsiRunner =
                 let sb = System.Text.StringBuilder(preamble.Length + 2048)
                 sb.Append(preamble) |> ignore
 
-                // Map numeric IDs → file paths (avoids backslash escaping in F# string literals)
+                // Map numeric IDs → task keys (avoids backslash escaping in F# string literals)
                 let idMap = Dictionary<int, string>()
                 let mutable idx = 0
 
-                for filePath, scriptText in scripts do
-                    let stripped =
-                        scriptText.Split('\n')
-                        |> Array.filter (fun l ->
-                            let t = l.TrimStart()
-                            not (t.StartsWith("// @")))
-                        |> String.concat "\n"
+                for taskKey, bindings, scriptText in tasks do
+                    let stripped = stripHeaderLines scriptText
                     let markerId = idx
-                    idMap.[markerId] <- filePath
+                    idMap.[markerId] <- taskKey
                     idx <- idx + 1
                     // Each script becomes its own module so identical top-level
                     // binding names across pages (e.g. `let cloud = ...`) do not
-                    // collide with FS0037 and abort the whole batch.
-                    let indented =
-                        stripped.Split('\n')
-                        |> Array.map (fun l -> if String.IsNullOrWhiteSpace l then "" else "    " + l)
-                        |> String.concat "\n"
+                    // collide with FS0037 and abort the whole batch. Injected
+                    // bindings come first, so the script reads them as its own.
                     Printf.bprintf sb "\nmodule BatchScript_%d =\n" markerId
                     Printf.bprintf sb "    printfn \"___ZEST_BATCH_START_%d___\"\n" markerId
-                    Printf.bprintf sb "%s\n" indented
+                    if bindings.Length > 0 then
+                        Printf.bprintf sb "%s\n" (indent bindings)
+                    Printf.bprintf sb "%s\n" (indent stripped)
                     Printf.bprintf sb "    printfn \"___ZEST_BATCH_END_%d___\"\n" markerId
 
                 let tmpFsx = Path.Combine(Path.GetTempPath(), sprintf "zest-batch-%s.fsx" (Guid.NewGuid().ToString("N")))
@@ -501,42 +521,47 @@ module FsiRunner =
                         let results = Dictionary<string, Result<string, string>>()
                         for kv in idMap do
                             let markerId = kv.Key
-                            let filePath = kv.Value
+                            let taskKey = kv.Value
                             let s = sprintf "___ZEST_BATCH_START_%d___" markerId
                             let e = sprintf "___ZEST_BATCH_END_%d___" markerId
                             let sIdx = stdout.IndexOf(s, StringComparison.Ordinal)
                             let eIdx = stdout.IndexOf(e, StringComparison.Ordinal)
-                            // Files without both markers are left out of the
+                            // Tasks without both markers are left out of the
                             // dictionary so they fall through to the retry loop.
                             if sIdx >= 0 && eIdx > sIdx then
                                 let content = stdout.Substring(sIdx + s.Length, eIdx - (sIdx + s.Length))
                                 let trimmed = content.Trim()
                                 if trimmed.Length > 0 then
-                                    results.[filePath] <- Ok trimmed
+                                    results.[taskKey] <- Ok trimmed
                                 else
-                                    results.[filePath] <- Ok content
+                                    results.[taskKey] <- Ok content
 
-                        for filePath, scriptText in scripts do
-                            match results.TryGetValue(filePath) with
+                        for taskKey, bindings, scriptText in tasks do
+                            match results.TryGetValue(taskKey) with
                             | true, Ok html when cacheEnabled ->
-                                let hash = computeHash scriptText
+                                let hash = scriptHash bindings scriptText
                                 scriptCache.[hash] <- { Hash = hash; Result = Ok html; Timestamp = DateTime.Now }
                             | true, _ ->
                                 // Already has a result (Ok without caching).
                                 ()
                             | false, _ ->
                                 // Marker missing — the script failed inside the batch.
-                                // Re-evaluate only this file, not the whole batch.
-                                results.[filePath] <- evaluatePageScript scriptText
+                                // Re-evaluate only this task, not the whole batch.
+                                results.[taskKey] <- evaluatePageScriptWithBindings bindings scriptText
                         results |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
                     | None ->
-                        // Session unavailable entirely — one-shot fallback per file.
+                        // Session unavailable entirely — one-shot fallback per task.
                         if !PageStore.verboseRef then
                             Console.Error.WriteLine("[FSI] Session unavailable; evaluating scripts individually")
-                        scripts |> List.map (fun (id, scriptText) ->
-                            id, evaluatePageScript scriptText) |> Map.ofList
+                        tasks |> List.map (fun (taskKey, bindings, scriptText) ->
+                            taskKey, evaluatePageScriptWithBindings bindings scriptText) |> Map.ofList
                 finally
                     if File.Exists tmpFsx then File.Delete tmpFsx
             with ex ->
-                scripts |> List.map (fun (id, _) ->
-                    id, Error(sprintf "Batch evaluation threw: %s" ex.Message)) |> Map.ofList
+                tasks |> List.map (fun (taskKey, _, _) ->
+                    taskKey, Error(sprintf "Batch evaluation threw: %s" ex.Message)) |> Map.ofList
+
+    let evaluatePageScriptsBatch (scripts: (string * string) list) : Map<string, Result<string, string>> =
+        scripts
+        |> List.map (fun (filePath, scriptText) -> filePath, "", scriptText)
+        |> evaluatePageScriptsBatchWithBindings

@@ -15,6 +15,13 @@ module AssetWriter =
         else
             let dst = Path.Combine(outputDir, "assets")
             Directory.CreateDirectory(dst) |> ignore
+            // A stylesheet compiles to CSS that depends on the files it `@use`s,
+            // so the compile cache has to survive between runs: editing a
+            // partial does not move the timestamp of the entry sheet importing
+            // it, and only the timestamps recorded here can tell that the two
+            // are out of step. Without this the published main.css goes stale.
+            let cssCacheFile = Path.Combine(dst, ".zcss-cache.log")
+            Cache.load cssCacheFile
             let createdDirs = ConcurrentDictionary<string, byte>()
             let ensureDir (target: string) =
                 let dir = Path.GetDirectoryName(target)
@@ -27,17 +34,29 @@ module AssetWriter =
             let files = Directory.GetFiles(src, "*", SearchOption.AllDirectories)
             Parallel.ForEach(files, fun (file: string) ->
                 let ext = Path.GetExtension(file).ToLowerInvariant()
-                let rel = Path.GetRelativePath(src, file)
-                let srcLastWrite = File.GetLastWriteTimeUtc(file)
-                if ext = FileTypes.Zcss then
-                    let target = Path.Combine(dst, Path.ChangeExtension(rel, FileTypes.Css))
-                    ensureDir target
-                    if not (File.Exists target) || srcLastWrite > File.GetLastWriteTimeUtc(target) then
-                        Zcss.processFileTo file target |> ignore
-                else
-                    let target = Path.Combine(dst, rel)
-                    ensureDir target
-                    if not (File.Exists target) || srcLastWrite > File.GetLastWriteTimeUtc(target) then
-                        File.Copy(file, target, overwrite = true)
-                System.Threading.Interlocked.Increment(&n) |> ignore) |> ignore
+                // `_name.zcss` is a partial: it reaches the output only inlined
+                // into the entry sheet that imports it with `@use`. Skipping it
+                // keeps `_name.css` out of the published assets.
+                let isPartial = ext = FileTypes.Zcss && FileTypes.isZcssPartial file
+                if not isPartial then
+                    let rel = Path.GetRelativePath(src, file)
+                    let srcLastWrite = File.GetLastWriteTimeUtc(file)
+                    if ext = FileTypes.Zcss then
+                        let target = Path.Combine(dst, Path.ChangeExtension(rel, FileTypes.Css))
+                        ensureDir target
+                        let stale =
+                            not (File.Exists target)
+                            || srcLastWrite > File.GetLastWriteTimeUtc(target)
+                            || Cache.dependenciesChanged file
+                        if stale then
+                            Zcss.processFileTo file target |> ignore
+                    else
+                        let target = Path.Combine(dst, rel)
+                        ensureDir target
+                        if not (File.Exists target) || srcLastWrite > File.GetLastWriteTimeUtc(target) then
+                            File.Copy(file, target, overwrite = true)
+                    System.Threading.Interlocked.Increment(&n) |> ignore) |> ignore
+            // Persist the dependency timestamps so the next run can tell a
+            // changed partial from an untouched one.
+            Cache.save cssCacheFile
             n

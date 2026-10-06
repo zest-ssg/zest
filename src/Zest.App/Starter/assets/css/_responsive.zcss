@@ -1,0 +1,74 @@
+/* ---------------------------------------------------------------------------
+   Responsive, print and motion preferences.
+
+   The print rules are the paper's real payoff: chrome disappears and the
+   document prints as a clean manuscript.
+   --------------------------------------------------------------------------- */
+
+@media (max-width: 640px) [
+  .paper__title [ font-size: 1.75rem; ]
+
+  .page__main [
+    padding-left: 1rem;
+    padding-right: 1rem;
+  ]
+
+  .site-header, .site-footer [
+    padding-left: 1rem;
+    padding-right: 1rem;
+  ]
+
+  .post-list__title:before [
+    display: block;
+    margin-right: 0;
+    margin-bottom: 0.15rem;
+  ]
+
+  table [
+    display: block;
+    overflow-x: auto;
+  ]
+
+  .pagination [
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  ]
+]
+
+@media print [
+  .site-header, .site-footer, .pagination, .paper__nav [
+    display: none;
+  ]
+
+  body [
+    background: #ffffff;
+    color: #000000;
+    font-size: 12pt;
+  ]
+
+  .page__main [
+    max-width: none;
+    padding: 0;
+  ]
+
+  .paper__head [
+    margin-bottom: 2rem;
+  ]
+
+  .theorem [
+    border: 1px solid #000000;
+  ]
+
+  a [
+    color: #000000;
+    text-decoration: none;
+  ]
+]
+
+@media (prefers-reduced-motion: reduce) [
+  * [
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  ]
+]

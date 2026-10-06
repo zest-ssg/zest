@@ -71,15 +71,32 @@
     <None Remove="Starter\**\*" />
     <EmbeddedResource Include="Starter\_config.toml" LogicalName="Zest.App.Starter._config.toml" />
     <EmbeddedResource Include="Starter\_prebuild.fsx" LogicalName="Zest.App.Starter._prebuild.fsx" />
+    <EmbeddedResource Include="Starter\_finalize.fsx" LogicalName="Zest.App.Starter._finalize.fsx" />
     <EmbeddedResource Include="Starter\README.md" LogicalName="Zest.App.Starter.README.md" />
-    <EmbeddedResource Include="Starter\content\index.md" LogicalName="Zest.App.Starter.content\index.md" />
+    <EmbeddedResource Include="Starter\assets\css\main.zcss" LogicalName="Zest.App.Starter.assets\css\main.zcss" />
+    <EmbeddedResource Include="Starter\assets\css\_base.zcss" LogicalName="Zest.App.Starter.assets\css\_base.zcss" />
+    <EmbeddedResource Include="Starter\assets\css\_controls.zcss" LogicalName="Zest.App.Starter.assets\css\_controls.zcss" />
+    <EmbeddedResource Include="Starter\assets\css\_environments.zcss" LogicalName="Zest.App.Starter.assets\css\_environments.zcss" />
+    <EmbeddedResource Include="Starter\assets\css\_listings.zcss" LogicalName="Zest.App.Starter.assets\css\_listings.zcss" />
+    <EmbeddedResource Include="Starter\assets\css\_paper.zcss" LogicalName="Zest.App.Starter.assets\css\_paper.zcss" />
+    <EmbeddedResource Include="Starter\assets\css\_responsive.zcss" LogicalName="Zest.App.Starter.assets\css\_responsive.zcss" />
+    <EmbeddedResource Include="Starter\assets\css\_shell.zcss" LogicalName="Zest.App.Starter.assets\css\_shell.zcss" />
+    <EmbeddedResource Include="Starter\assets\css\_tokens.zcss" LogicalName="Zest.App.Starter.assets\css\_tokens.zcss" />
+    <EmbeddedResource Include="Starter\_layouts\shell.zest.fsx" LogicalName="Zest.App.Starter._layouts\shell.zest.fsx" />
+    <EmbeddedResource Include="Starter\_layouts\base.zest.fsx" LogicalName="Zest.App.Starter._layouts\base.zest.fsx" />
+    <EmbeddedResource Include="Starter\_layouts\default.zest.fsx" LogicalName="Zest.App.Starter._layouts\default.zest.fsx" />
+    <EmbeddedResource Include="Starter\_layouts\post.zest.fsx" LogicalName="Zest.App.Starter._layouts\post.zest.fsx" />
+    <EmbeddedResource Include="Starter\_layouts\taxonomy.ztk" LogicalName="Zest.App.Starter._layouts\taxonomy.ztk" />
+    <EmbeddedResource Include="Starter\_layouts\terms.ztk" LogicalName="Zest.App.Starter._layouts\terms.ztk" />
+    <EmbeddedResource Include="Starter\content\index.zest.fsx" LogicalName="Zest.App.Starter.content\index.zest.fsx" />
+    <EmbeddedResource Include="Starter\content\archive.zest.fsx" LogicalName="Zest.App.Starter.content\archive.zest.fsx" />
+    <EmbeddedResource Include="Starter\content\about.md" LogicalName="Zest.App.Starter.content\about.md" />
     <EmbeddedResource Include="Starter\content\rss.zest.fsx" LogicalName="Zest.App.Starter.content\rss.zest.fsx" />
     <EmbeddedResource Include="Starter\content\atom.zest.fsx" LogicalName="Zest.App.Starter.content\atom.zest.fsx" />
     <EmbeddedResource Include="Starter\content\sitemap.zest.fsx" LogicalName="Zest.App.Starter.content\sitemap.zest.fsx" />
-    <EmbeddedResource Include="Starter\_layouts\post.ztk" LogicalName="Zest.App.Starter._layouts\post.ztk" />
-    <EmbeddedResource Include="Starter\_includes\head.ztk" LogicalName="Zest.App.Starter._includes\head.ztk" />
-    <EmbeddedResource Include="Starter\_includes\header.ztk" LogicalName="Zest.App.Starter._includes\header.ztk" />
-    <EmbeddedResource Include="Starter\assets\css\main.zcss" LogicalName="Zest.App.Starter.assets\css\main.zcss" />
+    <EmbeddedResource Include="Starter\content\posts\why-zest.md" LogicalName="Zest.App.Starter.content\posts\why-zest.md" />
+    <EmbeddedResource Include="Starter\content\posts\writing-in-markdown.md" LogicalName="Zest.App.Starter.content\posts\writing-in-markdown.md" />
+    <EmbeddedResource Include="Starter\content\posts\theorem-environments.md" LogicalName="Zest.App.Starter.content\posts\theorem-environments.md" />
   </ItemGroup>
 
   <!-- Package icon + README at the nupkg root (NuGet metadata convention). -->

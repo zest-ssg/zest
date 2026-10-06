@@ -297,7 +297,9 @@ module Validator =
     /// Strict: wraps in HTML comment errors + strips invalid blocks.
     /// Warn: wraps in HTML comment warnings, keeps content intact.
     /// Off: returns original CSS unchanged.
-    let validate (css: string) : string =
+    /// Named `validateCss` so it does not collide with `ContentGuard.validate`,
+    /// which guards content conditions rather than CSS.
+    let validateCss (css: string) : string =
         match globalValidationLevel with
         | CssValidationLevel.Off -> css
         | _ ->

@@ -90,9 +90,8 @@ module Sequences =
     let tryWith (f: unit -> 'T) (fallback: 'T) =
         try f () with _ -> fallback
 
-    /// Tap: execute a side-effect and return the value unchanged.
-    let tap (f: 'T -> unit) (value: 'T) =
-        f value; value
+    // `tap` lives in DslSugar alone — it is auto-opened, so scripts use the
+    // bare name without opening `Sequences`.
 
     /// Pair a value with a key for dict-building.
     let (=>) (key: string) (value: obj) = (key, value)

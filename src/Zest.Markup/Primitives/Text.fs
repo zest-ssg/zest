@@ -45,10 +45,8 @@ module Text =
     let excerpt (maxLen: int) (html: string) =
         stripHtml html |> fun s -> truncate maxLen s
 
-    /// Capitalize the first character of a string.
-    let capitalize (s: string) =
-        if String.IsNullOrEmpty s then s
-        else s.[0..0].ToUpperInvariant() + s.[1..]
+    // `capitalize` lives in DslSugar alone — it is auto-opened, so scripts use
+    // the bare name without opening `Text`.
 
     /// Convert a string to Title Case.
     let titleCase (s: string) =

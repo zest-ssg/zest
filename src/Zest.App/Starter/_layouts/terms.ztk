@@ -1,0 +1,6 @@
+<p class="terms-intro">Every {{ taxonomy.plural }} label used across the site.</p>
+<ul class="terms">
+{% for t in terms %}
+  <li class="terms__item"><a href="/{{ taxonomy.plural }}/{{ t.slug }}/">{{ t.name }}</a></li>
+{% endfor %}
+</ul>

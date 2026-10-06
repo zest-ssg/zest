@@ -64,6 +64,12 @@ module FileTypes =
     [<Literal>]
     let Css = ".css"
 
+    /// Prefix that marks a stylesheet as a partial. `_name.zcss` is a fragment
+    /// inlined by the `@use` of an entry sheet, so it is never compiled into a
+    /// stylesheet of its own.
+    [<Literal>]
+    let PartialPrefix = "_"
+
     // ── Data / config extensions ───────────────────────────
 
     /// TOML (site config & global data).
@@ -145,6 +151,17 @@ module FileTypes =
     let isAsset (path: string) =
         Assets
         |> List.exists (fun ext -> path.EndsWith(ext, System.StringComparison.OrdinalIgnoreCase))
+
+    /// <summary>True when a stylesheet is a partial (<c>_name.zcss</c>).</summary>
+    /// <remarks>
+    /// The asset writer compiles every <c>.zcss</c> it finds into a same-named
+    /// <c>.css</c>. A partial is only ever a fragment of the entry sheet that
+    /// imports it, so it is skipped instead of published — the same
+    /// underscore-means-private rule the content pipeline applies to paths.
+    /// </remarks>
+    let isZcssPartial (path: string) =
+        not (isNull path) &&
+        Path.GetFileName(path).StartsWith(PartialPrefix, System.StringComparison.Ordinal)
 
     // ── Routing guards ──────────────────────────────────────
 

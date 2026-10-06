@@ -1,0 +1,29 @@
+/* ---------------------------------------------------------------------------
+   Buttons — ink on paper, inverting on hover; never rounded, never glowing.
+   --------------------------------------------------------------------------- */
+
+.btn [
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  border: 1px solid ink;
+  background: ink;
+  color: paper;
+  font-family: font-serif;
+  font-size: 0.875rem;
+  transition: background-color 200ms ease, color 200ms ease;
+]
+
+.btn:hover [
+  background: paper;
+  color: ink;
+  text-decoration: none;
+]
+
+.btn--ghost [
+  background: transparent;
+  color: ink;
+]
+
+.btn--ghost:hover [
+  background: surface;
+]

@@ -1,0 +1,22 @@
+/* ---------------------------------------------------------------------------
+   Design tokens — the one place colours and font stacks are written down.
+
+   Every other partial reads these names. assets/css/main.zcss pulls the
+   partials in with `@use`, which inlines a file the way F# `open` brings a
+   module's names into scope, so `paper` and `measure` are usable in any
+   partial below.
+
+   The leading underscore marks the file as a partial: the build compiles every
+   .zcss under assets/ into a stylesheet of the same name, but skips
+   `_name.zcss` — a fragment is imported, never published on its own.
+   --------------------------------------------------------------------------- */
+
+let paper      = #ffffff
+let ink        = #111111
+let link       = #0b5394
+let surface    = #f5f5f0
+let rule       = #d4d4d0
+let muted      = #6b6b66
+let font-serif = 'Latin Modern Roman', 'CMU Serif', Georgia, 'Times New Roman', serif
+let font-mono  = 'Latin Modern Mono', 'CMU Typewriter Text', 'SF Mono', Consolas, monospace
+let measure    = 42rem
