@@ -16,7 +16,7 @@
 //   loadJson path                  parse a JSON file
 //   loadToml path                  parse a TOML file
 //   loadEnv key                    read an environment variable
-//   console_log message            print to stderr
+//   consoleLog message            print to stderr
 //   exec command args              run a shell command, return its result
 //
 // Examples — uncomment what you need.
@@ -37,4 +37,4 @@
 //
 //   match (exec "git" [ "rev-parse"; "--short"; "HEAD" ]).code with
 //   | 0 -> addGlobal "commit" ((exec "git" [ "rev-parse"; "--short"; "HEAD" ]).stdout.Trim())
-//   | _ -> console_log "not a git checkout"
+//   | _ -> consoleLog "not a git checkout"

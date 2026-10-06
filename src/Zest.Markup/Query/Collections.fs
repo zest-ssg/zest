@@ -25,69 +25,69 @@ module Collections =
            category: string |}
 
     /// All pages across the site.
-    let site_pages () = (get ()).Pages
+    let sitePages () = (get ()).Pages
 
     /// Most recent N pages (sorted by date descending).
-    let recent_pages n =
+    let recentPages n =
         (get ()).Pages
         |> Array.filter (fun r -> r.date <> "")
         |> Array.sortByDescending (fun r -> r.date)
         |> Array.truncate n
 
     /// Pages tagged with a specific tag.
-    let pages_by_tag (tag: string) =
+    let pagesByTag (tag: string) =
         (get ()).Pages
         |> Array.filter (fun r ->
             r.tags
             |> Array.exists (fun t -> t.Equals(tag, StringComparison.OrdinalIgnoreCase)))
 
     /// Pages whose URL contains the given directory segment.
-    let pages_by_dir dir =
+    let pagesByDir dir =
         (get ()).Pages
         |> Array.filter (fun r -> r.url.Contains("/" + dir + "/"))
 
     /// Pages belonging to a collection (first URL segment).
-    let pages_by_collection col =
+    let pagesByCollection col =
         (get ()).Pages
         |> Array.filter (fun r -> r.url.Trim('/').Split('/').[0] = col)
 
     /// All unique tags across the site.
-    let all_tags () =
+    let allTags () =
         (get ()).Pages
         |> Array.collect (fun r -> r.tags)
         |> Array.distinct
         |> Array.sort
 
     /// All unique collection names (first URL segments).
-    let all_collections () =
+    let allCollections () =
         (get ()).Pages
         |> Array.map (fun r -> r.url.Trim('/').Split('/').[0])
         |> Array.distinct
         |> Array.sort
 
     /// Case-insensitive title search.
-    let search_pages (query: string) =
+    let searchPages (query: string) =
         (get ()).Pages
         |> Array.filter (fun r ->
             r.title.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
 
     /// Total page count.
-    let page_count () = (get ()).Pages.Length
+    let pageCount () = (get ()).Pages.Length
 
     /// Render an include partial by name.
-    let include_partial name =
+    let includePartial name =
         match (get ()).Includes.TryGetValue(name) with
         | true, c -> c
         | _ -> sprintf "<!-- include '%s' not found -->" name
 
     /// Look up a site data value by key.
-    let site_data key =
+    let siteData key =
         match (get ()).SiteData.TryGetValue(key) with
         | true, v -> v.ToString()
         | _ -> ""
 
     /// Look up site data values under a prefix (e.g. "social.twitter").
-    let site_section prefix =
+    let siteSection prefix =
         (get ()).SiteData
         |> Seq.filter (fun kv -> kv.Key.StartsWith(prefix + "."))
         |> Seq.map (fun kv -> kv.Key.Substring(prefix.Length + 1), kv.Value)
@@ -96,7 +96,7 @@ module Collections =
     // ── New APIs ──────────────────────────────────────────────────────────
 
     /// Sort pages by a field ("title", "date", "slug") and direction ("asc", "desc").
-    let sort_pages_by (field: string) (direction: string) =
+    let sortPagesBy (field: string) (direction: string) =
         let ordered =
             match field.ToLowerInvariant() with
             | "title" -> (get ()).Pages |> Array.sortBy (fun r -> r.title.ToLowerInvariant())
@@ -108,11 +108,11 @@ module Collections =
         | _ -> ordered
 
     /// Filter pages by a predicate function.
-    let filter_pages_by (pred: PageInfo -> bool) =
+    let filterPagesBy (pred: PageInfo -> bool) =
         (get ()).Pages |> Array.filter pred
 
     /// Group pages by year (from date field).
-    let group_pages_by_year () =
+    let groupPagesByYear () =
         (get ()).Pages
         |> Array.filter (fun r -> r.date <> "")
         |> Array.groupBy (fun r ->
@@ -122,28 +122,28 @@ module Collections =
         |> Array.toList
 
     /// Find related pages by shared tags, excluding the current page.
-    let related_pages (page_url: string) (count: int) =
+    let relatedPages (pageUrl: string) (count: int) =
         let current =
             (get ()).Pages |> Array.tryFind (fun r ->
-                r.url.TrimEnd('/').Equals(page_url.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+                r.url.TrimEnd('/').Equals(pageUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
         match current with
         | None -> [||]
         | Some cur ->
             (get ()).Pages
             |> Array.filter (fun r ->
-                not (r.url.TrimEnd('/').Equals(page_url.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+                not (r.url.TrimEnd('/').Equals(pageUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
                 && r.tags |> Array.exists (fun t -> cur.tags |> Array.exists (fun ct -> ct.Equals(t, StringComparison.OrdinalIgnoreCase))))
             |> Array.sortByDescending (fun r ->
                 r.tags |> Array.filter (fun t -> cur.tags |> Array.exists (fun ct -> ct.Equals(t, StringComparison.OrdinalIgnoreCase))) |> Array.length)
             |> Array.truncate count
 
     /// Tag cloud: list of (tag, count) pairs, optionally filtered by minimum count.
-    let tag_cloud (min_count: int) =
+    let tagCloud (minCount: int) =
         (get ()).Pages
         |> Array.collect (fun r -> r.tags)
         |> Array.groupBy id
         |> Array.map (fun (tag, occurrences) -> tag, occurrences.Length)
-        |> Array.filter (fun (_, count) -> count >= min_count)
+        |> Array.filter (fun (_, count) -> count >= minCount)
         |> Array.sortByDescending snd
         |> Array.toList
 
@@ -151,14 +151,14 @@ module Collections =
 
     /// A single page of paginated results.
     type Page<'a> = {
-        Items: 'a list
-        PageNumber: int      // 1-based
-        TotalPages: int
-        TotalItems: int
-        HasPrev: bool
-        HasNext: bool
-        PrevUrl: string
-        NextUrl: string
+        items: 'a list
+        pageNumber: int      // 1-based
+        totalPages: int
+        totalItems: int
+        hasPrev: bool
+        hasNext: bool
+        prevUrl: string
+        nextUrl: string
     }
 
     /// Split a sequence of items into pages of `perPage` items each.
@@ -172,18 +172,18 @@ module Collections =
             let startIdx = (p - 1) * perPage
             let count = min perPage (total - startIdx) |> max 0
             let pageItems = if count > 0 then arr.[startIdx .. startIdx + count - 1] else [||]
-            { Items = List.ofArray pageItems
-              PageNumber = p
-              TotalPages = totalPages
-              TotalItems = total
-              HasPrev = p > 1
-              HasNext = p < totalPages
-              PrevUrl = if p > 1 then urlFor (p - 1) else ""
-              NextUrl = if p < totalPages then urlFor (p + 1) else "" } ]
+            { items = List.ofArray pageItems
+              pageNumber = p
+              totalPages = totalPages
+              totalItems = total
+              hasPrev = p > 1
+              hasNext = p < totalPages
+              prevUrl = if p > 1 then urlFor (p - 1) else ""
+              nextUrl = if p < totalPages then urlFor (p + 1) else "" } ]
 
     /// Convenience paginator for site pages, splitting by date-descending
     /// order (common blog pattern). `urlFor` receives the 1-based page index.
-    let paginate_pages (perPage: int) (urlFor: int -> string) =
+    let paginatePages (perPage: int) (urlFor: int -> string) =
         (get ()).Pages
         |> Array.filter (fun r -> r.date <> "")
         |> Array.sortByDescending (fun r -> r.date)
@@ -199,7 +199,7 @@ module Collections =
     /// Group site pages by a field name ("tag", "collection", "year", "author").
     /// Returns (key, pages) pairs so callers can iterate uniformly regardless
     /// of the grouping field.
-    let group_pages_by (field: string) : (string * obj list) list =
+    let groupPagesBy (field: string) : (string * obj list) list =
         let pages = (get ()).Pages
         match field.ToLowerInvariant() with
         | "tag" ->
@@ -240,31 +240,31 @@ module Collections =
         items |> Array.filter (fun r -> getProp r = value)
 
     /// Look up a single page by URL. Returns Some page or None.
-    let get_page (url: string) =
+    let getPage (url: string) =
         (get ()).Pages
         |> Array.tryFind (fun r -> r.url.TrimEnd('/').Equals(url.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
 
     /// Look up all pages in a named collection (first URL segment).
-    let get_collection (name: string) = pages_by_collection name
+    let getCollection (name: string) = pagesByCollection name
 
     // ── Enhanced collection APIs ────────────────────────────────
 
     /// Get pages by multiple tags (AND logic - must have ALL tags).
-    let pages_by_all_tags (tags: string list) =
+    let pagesByAllTags (tags: string list) =
         (get ()).Pages
         |> Array.filter (fun r ->
             tags |> List.forall (fun tag ->
                 r.tags |> Array.exists (fun t -> t.Equals(tag, StringComparison.OrdinalIgnoreCase))))
 
     /// Get pages by multiple tags (OR logic - must have ANY tag).
-    let pages_by_any_tag (tags: string list) =
+    let pagesByAnyTag (tags: string list) =
         (get ()).Pages
         |> Array.filter (fun r ->
             r.tags |> Array.exists (fun t ->
                 tags |> List.exists (fun tag -> t.Equals(tag, StringComparison.OrdinalIgnoreCase))))
 
     /// Get pages published in a specific year.
-    let pages_by_year (year: string) =
+    let pagesByYear (year: string) =
         (get ()).Pages
         |> Array.filter (fun r -> r.date.StartsWith(year))
 
@@ -272,37 +272,37 @@ module Collections =
 
     /// Pages written by a specific author (case-insensitive, from the
     /// `author` front-matter field; pages without the field match "").
-    let pages_by_author (author: string) =
+    let pagesByAuthor (author: string) =
         (get ()).Pages
         |> Array.filter (fun r ->
             r.author.Equals(author, StringComparison.OrdinalIgnoreCase))
 
     /// Pages in a specific category (case-insensitive, from the `category`
     /// front-matter field; pages without the field match "").
-    let pages_by_category (category: string) =
+    let pagesByCategory (category: string) =
         (get ()).Pages
         |> Array.filter (fun r ->
             r.category.Equals(category, StringComparison.OrdinalIgnoreCase))
 
     /// Sort pages by a field ("title", "date", "slug") and direction
-    /// ("asc"/"desc"). Canonical `pages_sorted_by` name; delegates to
-    /// `sort_pages_by`.
-    let pages_sorted_by (field: string) (direction: string) =
-        sort_pages_by field direction
+    /// ("asc"/"desc"). Canonical `pagesSortedBy` name; delegates to
+    /// `sortPagesBy`.
+    let pagesSortedBy (field: string) (direction: string) =
+        sortPagesBy field direction
 
     /// Restrict results to the first N pages (negative N behaves like 0).
-    let pages_limit (n: int) =
+    let pagesLimit (n: int) =
         (get ()).Pages |> Array.truncate (max 0 n)
 
     /// Skip the first N pages (negative N behaves like 0).
-    let pages_offset (n: int) =
+    let pagesOffset (n: int) =
         (get ()).Pages |> Array.skip (max 0 n)
 
     // ── Phase 5: time-based grouping ───────────────────────────────
 
     /// Group pages by year-month (yyyy-MM) from the date field, sorted
     /// newest-first. Pages with no usable date land under "unknown".
-    let group_pages_by_month () =
+    let groupPagesByMonth () =
         (get ()).Pages
         |> Array.filter (fun r -> r.date <> "")
         |> Array.groupBy (fun r ->
@@ -316,7 +316,7 @@ module Collections =
 
     /// Regex-based search across title, url, description and tags
     /// (case-insensitive). Invalid patterns match nothing instead of throwing.
-    let search_pages_advanced (pattern: string) =
+    let searchPagesAdvanced (pattern: string) =
         let re =
             try
                 Some (System.Text.RegularExpressions.Regex(
@@ -335,24 +335,24 @@ module Collections =
     /// Related pages sharing the same category, excluding the page itself.
     /// Returns at most `count` results (empty when the current page has no
     /// category or cannot be found).
-    let related_pages_by_category (page_url: string) (count: int) =
+    let relatedPagesByCategory (pageUrl: string) (count: int) =
         let current =
             (get ()).Pages |> Array.tryFind (fun r ->
-                r.url.TrimEnd('/').Equals(page_url.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+                r.url.TrimEnd('/').Equals(pageUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
         match current with
         | None -> [||]
         | Some cur when cur.category = "" -> [||]
         | Some cur ->
             (get ()).Pages
             |> Array.filter (fun r ->
-                not (r.url.TrimEnd('/').Equals(page_url.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+                not (r.url.TrimEnd('/').Equals(pageUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
                 && r.category.Equals(cur.category, StringComparison.OrdinalIgnoreCase))
             |> Array.truncate (max 0 count)
 
     /// Tag cloud with weighted importance: weight = count ^ `weight` (default
     /// 1.0 gives plain counts; a higher exponent amplifies frequent tags).
     /// Returns (tag, weight, count) triples sorted by weight descending.
-    let tag_cloud_weighted (weight: float) =
+    let tagCloudWeighted (weight: float) =
         (get ()).Pages
         |> Array.collect (fun r -> r.tags)
         |> Array.groupBy id

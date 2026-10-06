@@ -47,6 +47,20 @@ Architectural boundary changes are **escalated changes** — see §8.3.
 - **MUST**: Use domain vocabulary. No meaningless abbreviations.
 - **SHOULD**: A single clear word is fine — `Parser`, `Router`, `Compiler`, `Renderer`. Two-word names like `TemplateParser` are equally fine. Context decides.
 - **SHOULD**: Use specific verbs: `parseContent`, `fetchMetadata`, `compileStyle`. Use `get`/`handle`/`process`/`run` only when the meaning is unambiguous.
+
+#### 3.1.1 DSL naming rules (R1–R7)
+The `Zest.Markup` namespace is the public authoring surface: its names are API, so the following rules are binding there and in every script that opens it.
+
+- **R1 — One style.** Functions, values, parameters, locals and record fields are `camelCase`. `snake_case` is not permitted. DU cases and type/module names stay `PascalCase`.
+- **R2 — HTML attribute emitters keep their `'` sigil.** `id'`, `type'`, `for'`, `class'`, `style'`, `data'`, `aria'`, `alt'`. The trailing `'` marks "HTML attribute", aligns with the Feliz ecosystem, and sidesteps F# keywords. Do not strip it, do not add it anywhere else.
+- **R3 — F# keyword collisions use double-backticks**, never a trailing underscore:
+  `` ``checked`` ``, `` ``default`` ``, `` ``not`` ``, `` ``object`` ``, `` ``base`` ``, `` ``select`` `` (as in `Stylesheet.``select`` `, `Sel.``not`` `).
+- **R4 — Never touch string literals.** Renames apply to identifiers only. CSS property names (`"font-size"`), pseudo-class selectors (`":first-child"`), attribute names (`"data-x"`) and template-layer filter names (`"pages_by_tag"`) are data, not identifiers — changing them silently breaks output. When an identifier and a string sit on the same line (`member _.firstChild = Sel(name + ":first-child")`), change only the identifier.
+- **R5 — Prefer the CSSOM name over a shadowing builtin.** A property emitter must not shadow an F# builtin. CSS `float` is exposed as `cssFloat` (`Stylesheet.cssFloat`), matching the DOM's `style.cssFloat`, because the `Stylesheet` module is `[<AutoOpen>]` and `float` would hide the built-in conversion.
+- **R6 — `C` ≡ `Class` (co-equal spellings).** In `Zest.Markup` the suffix `C` is globally equivalent to `Class`: `divC` ≡ `divClass`, `imgC` ≡ `imgClass`, `aC` ≡ `aClass`, `aTextC` ≡ `aTextClass`, `addC` ≡ `addClass`. Both spellings are first-class and produce byte-for-byte identical output — pick either, but keep your choice consistent within a file. The short form is the pre-rename spelling and is also how the compiler's own rendering layer (`Zest.Compiler.Rendering.Modifiers`) names its builders, so `C` is a house convention, not an exotic alias. Trailing-underscore forms (`a_text_c`) remain banned. **MUST**: whenever a new `<tag>Class` helper is added, its `<tag>C` alias ships in the same change — the equivalence only holds for names that carry both.
+- **R7 — Class-shortcut naming.** `<tag>Class` / `<tag>C` takes a CSS class; `<tag>Text` takes text content; `<tag>TextClass` / `<tag>TextC` takes class + text.
+
+`Zest.Compiler.Rendering.*` (the compiler's internal partial/filter DSL) still carries pre-existing `snake_case`. It is legacy and out of scope until it is migrated; new code must not copy its style.
 ### 3.2 Banned names
 Avoid vague catch-alls: `Utils`, `Helper`, `Manager`, `Common`, `Misc`, `Data`.
 Avoid arbitrary abbreviations: `Tmp`, `Cfg`, `Req`, `Mgr`, `Svc`, `Impl`.
@@ -56,7 +70,7 @@ Avoid arbitrary abbreviations: `Tmp`, `Cfg`, `Req`, `Mgr`, `Svc`, `Impl`.
 - Small-scope renames may proceed directly; renames spanning more than three files are escalated (§8.3).
 - **MUST**: Pure renames live in their own commit, never mixed with logic changes.
 - **SHOULD**: Do not rename existing, already-clear names just to match style.
----
+- **MUST**: A rename of a public DSL name ships with no `[<Obsolete>]` alias. Update `README.md`, `Starter/*`, and every FSI prelude/helper in the same change — a stale prelude drops symbols silently (§3.1.1 R4).
 ## 4. Comments & Documentation
 **Goal**: Comments carry the context that code cannot. Documentation carries the contract that signatures cannot.
 ### 4.1 Comments

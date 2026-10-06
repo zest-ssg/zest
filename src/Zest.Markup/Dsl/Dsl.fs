@@ -115,11 +115,12 @@ module Dsl =
     let output ch = elem "output" [] ch
 
     // ---- Class-shortcut variants for new semantic elements ----
-    let figureC cls ch = elem "figure" [attr "class" cls] ch
-    let timeC cls datetime ch = elem "time" [attr "datetime" datetime; attr "class" cls] ch
-    let detailsC cls ch = elem "details" [attr "class" cls] ch
-    let dlC cls ch = elem "dl" [attr "class" cls] ch
-    let citeC cls ch = elem "cite" [attr "class" cls] ch
+    let figureClass cls ch = elem "figure" [attr "class" cls] ch
+    let timeClass cls datetime ch = elem "time" [attr "datetime" datetime; attr "class" cls] ch
+    let detailsClass cls ch = elem "details" [attr "class" cls] ch
+    let dialogClass cls ch = elem "dialog" [attr "class" cls] ch
+    let dlClass cls ch = elem "dl" [attr "class" cls] ch
+    let citeClass cls ch = elem "cite" [attr "class" cls] ch
 
     // ---- Doc structure ----
     let doctype = "<!DOCTYPE html>"
@@ -140,33 +141,76 @@ module Dsl =
     let styleZcss (compiledCss: string) = elem "style" [] [raw ("\n" + compiledCss + "\n")]
 
     // ---- Class-shortcut helpers ----
-    let divC cls ch = elem "div" [attr "class" cls] ch
-    let pC cls ch = elem "p" [attr "class" cls] ch
-    let spanC cls ch = elem "span" [attr "class" cls] ch
-    let sectionC cls ch = elem "section" [attr "class" cls] ch
-    let ulC cls ch = elem "ul" [attr "class" cls] ch
-    let olC cls ch = elem "ol" [attr "class" cls] ch
-    let liC cls ch = elem "li" [attr "class" cls] ch
-    let navC cls ch = elem "nav" [attr "class" cls] ch
-    let headerC cls ch = elem "header" [attr "class" cls] ch
-    let footerC cls ch = elem "footer" [attr "class" cls] ch
-    let mainC cls ch = elem "main" [attr "class" cls] ch
-    let articleC cls ch = elem "article" [attr "class" cls] ch
-    let asideC cls ch = elem "aside" [attr "class" cls] ch
-    let h1C cls ch = elem "h1" [attr "class" cls] ch
-    let h2C cls ch = elem "h2" [attr "class" cls] ch
-    let h3C cls ch = elem "h3" [attr "class" cls] ch
-    let blockquoteC cls ch = elem "blockquote" [attr "class" cls] ch
-    let preC cls ch = elem "pre" [attr "class" cls] ch
-    let codeC cls ch = elem "code" [attr "class" cls] ch
-    let tableC cls ch = elem "table" [attr "class" cls] ch
-    let imgC cls src alt = voidElem "img" [attr "src" src; attr "alt" alt; attr "class" cls]
+    let divClass cls ch = elem "div" [attr "class" cls] ch
+    let pClass cls ch = elem "p" [attr "class" cls] ch
+    let spanClass cls ch = elem "span" [attr "class" cls] ch
+    let sectionClass cls ch = elem "section" [attr "class" cls] ch
+    let ulClass cls ch = elem "ul" [attr "class" cls] ch
+    let olClass cls ch = elem "ol" [attr "class" cls] ch
+    let liClass cls ch = elem "li" [attr "class" cls] ch
+    let navClass cls ch = elem "nav" [attr "class" cls] ch
+    let headerClass cls ch = elem "header" [attr "class" cls] ch
+    let footerClass cls ch = elem "footer" [attr "class" cls] ch
+    let mainClass cls ch = elem "main" [attr "class" cls] ch
+    let articleClass cls ch = elem "article" [attr "class" cls] ch
+    let asideClass cls ch = elem "aside" [attr "class" cls] ch
+    let h1Class cls ch = elem "h1" [attr "class" cls] ch
+    let h2Class cls ch = elem "h2" [attr "class" cls] ch
+    let h3Class cls ch = elem "h3" [attr "class" cls] ch
+    let h4Class cls ch = elem "h4" [attr "class" cls] ch
+    let h5Class cls ch = elem "h5" [attr "class" cls] ch
+    let h6Class cls ch = elem "h6" [attr "class" cls] ch
+    let blockquoteClass cls ch = elem "blockquote" [attr "class" cls] ch
+    let preClass cls ch = elem "pre" [attr "class" cls] ch
+    let codeClass cls ch = elem "code" [attr "class" cls] ch
+    let tableClass cls ch = elem "table" [attr "class" cls] ch
+    let imgClass cls src alt = voidElem "img" [attr "src" src; attr "alt" alt; attr "class" cls]
     let codeBlock lang c = elem "pre" [] [elem "code" [attr "class" ("lang-" + lang)] [c]]
 
     // ---- Link shortcuts ----
     let aBlank url t = elem "a" [attr "href" url; attr "target" "_blank"; attr "rel" "noopener noreferrer"] [text t]
     let aHref url t = elem "a" [attr "href" url] [text t]
-    let aC cls url ch = elem "a" [attr "href" url; attr "class" cls] ch
+    let aClass cls url ch = elem "a" [attr "href" url; attr "class" cls] ch
+
+    // ---- Class-shorthand aliases: C ≡ Class ----
+    //
+    // Naming convention: within Zest.Markup the suffix `C` is globally
+    // EQUIVALENT to `Class`. Every `xxxClass` builder therefore has an `xxxC`
+    // alias — `divC` ≡ `divClass`, `imgC` ≡ `imgClass`, `aC` ≡ `aClass`, …
+    // Both spellings are fully interchangeable and produce identical HTML.
+    // The short form exists for backwards compatibility with scripts written
+    // before the `Class` rename and because it is terser to write.
+    let figureC = figureClass
+    let timeC = timeClass
+    let detailsC = detailsClass
+    let dlC = dlClass
+    let citeC = citeClass
+    let dialogC = dialogClass
+    let divC = divClass
+    let pC = pClass
+    let spanC = spanClass
+    let sectionC = sectionClass
+    let ulC = ulClass
+    let olC = olClass
+    let liC = liClass
+    let navC = navClass
+    let headerC = headerClass
+    let footerC = footerClass
+    let mainC = mainClass
+    let articleC = articleClass
+    let asideC = asideClass
+    let h1C = h1Class
+    let h2C = h2Class
+    let h3C = h3Class
+    let h4C = h4Class
+    let h5C = h5Class
+    let h6C = h6Class
+    let blockquoteC = blockquoteClass
+    let preC = preClass
+    let codeC = codeClass
+    let tableC = tableClass
+    let imgC = imgClass
+    let aC = aClass
 
     // ---- Conditional helpers ----
     let showIf cond ch = if cond then ch else ""

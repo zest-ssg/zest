@@ -29,21 +29,21 @@ module Text =
         else s.[..maxLen - 1] + "…"
 
     /// Strip all HTML tags from a string.
-    let strip_html (s: string) =
+    let stripHtml (s: string) =
         Regex.Replace(s, @"<[^>]+>", "").Trim()
 
     /// Estimate reading time in minutes (200 wpm).
-    let reading_time (s: string) =
-        let wordCount = s.Split([| ' '; '\n'; '\t' |], StringSplitOptions.RemoveEmptyEntries).Length
-        max 1 (wordCount / 200)
+    let readingTime (s: string) =
+        let count = s.Split([| ' '; '\n'; '\t' |], StringSplitOptions.RemoveEmptyEntries).Length
+        max 1 (count / 200)
 
     /// Count words in a string.
-    let word_count (s: string) =
+    let wordCount (s: string) =
         s.Split([| ' '; '\n'; '\t' |], StringSplitOptions.RemoveEmptyEntries).Length
 
     /// Extract an excerpt from HTML content.
     let excerpt (maxLen: int) (html: string) =
-        strip_html html |> fun s -> truncate maxLen s
+        stripHtml html |> fun s -> truncate maxLen s
 
     /// Capitalize the first character of a string.
     let capitalize (s: string) =
@@ -51,7 +51,7 @@ module Text =
         else s.[0..0].ToUpperInvariant() + s.[1..]
 
     /// Convert a string to Title Case.
-    let title_case (s: string) =
+    let titleCase (s: string) =
         if String.IsNullOrEmpty s then s
         else
             s.Split(' ')
@@ -61,7 +61,7 @@ module Text =
             |> String.concat " "
 
     /// Return the value if non-null/non-empty, otherwise the fallback.
-    let default_value (fallback: string) (value: string) =
+    let defaultValue (fallback: string) (value: string) =
         if String.IsNullOrEmpty value then fallback else value
 
     /// Return the first non-null/non-empty string from a list.

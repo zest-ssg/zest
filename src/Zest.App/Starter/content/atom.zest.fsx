@@ -13,10 +13,10 @@ let siteDesc = opt "site.description"
 let author = opt "site.author"
 
 let articles =
-    site_pages ()
+    sitePages ()
     |> Array.filter (fun p -> p.date <> "")
     |> Array.sortByDescending (fun p -> p.date)
     |> Array.map (fun p ->
         { url = p.url; title = p.title; date = p.date; description = p.description } : Feeds.FeedItem)
 
-printfn "%s" (Feeds.atom_xml siteTitle siteUrl siteDesc author articles)
+printfn "%s" (Feeds.atomXml siteTitle siteUrl siteDesc author articles)

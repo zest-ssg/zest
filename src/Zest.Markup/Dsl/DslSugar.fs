@@ -1,7 +1,7 @@
 // DslSugar.fs
 //
 // Convenience helpers for DSL scripts: conditionals, loops, pipelines,
-// shorthand element builders, and i18n lookups (t / t_lang). Site data values
+// shorthand element builders, and i18n lookups (t / tLang). Site data values
 // reach these helpers as native CLR objects, so every value is normalised to a
 // string via siteString before use.
 //
@@ -23,11 +23,11 @@ module DslSugar =
     // ── Implicit yield helpers ───────────────────────────────────
 
     /// Begin an implicit-yield block with newline separators.
-    let yield_block (nodes: string list) =
+    let yieldBlock (nodes: string list) =
         nodes |> String.concat "\n"
 
     /// Begin an implicit-yield block without separators.
-    let yield_inline (nodes: string list) =
+    let yieldInline (nodes: string list) =
         nodes |> String.concat ""
 
     // ── Shorthand conditionals ───────────────────────────────────
@@ -37,66 +37,66 @@ module DslSugar =
         if condition then ifTrue else ifFalse
 
     /// Return fallback if value is null/empty.
-    let default_to (fallback: string) (value: string) =
+    let defaultTo (fallback: string) (value: string) =
         if String.IsNullOrEmpty value then fallback else value
 
     /// Return the first non-null/non-empty value from a list.
-    let coalesce_str (values: string list) =
+    let coalesceStr (values: string list) =
         values |> List.tryFind (fun v -> not (String.IsNullOrEmpty v))
         |> Option.defaultValue ""
 
     /// Return content only if condition is true.
-    let when_true (cond: bool) (content: string) =
+    let whenTrue (cond: bool) (content: string) =
         if cond then content else ""
 
     /// Return content only if condition is false.
-    let unless_true (cond: bool) (content: string) =
+    let unlessTrue (cond: bool) (content: string) =
         if cond then "" else content
 
-    /// Alias for unless_true — return content only if condition is false.
-    let when_false (cond: bool) (content: string) = unless_true cond content
+    /// Alias for unlessTrue — return content only if condition is false.
+    let whenFalse (cond: bool) (content: string) = unlessTrue cond content
 
     /// Switch on a string value, return the matching case.
     /// Case-insensitive comparison for convenience.
-    let switch_value (value: string) (cases: (string * string) list) (defaultCase: string) =
+    let switchValue (value: string) (cases: (string * string) list) (defaultCase: string) =
         cases
         |> List.tryFind (fun (v, _) -> v.Equals(value, StringComparison.OrdinalIgnoreCase))
         |> Option.map snd
         |> Option.defaultValue defaultCase
 
     /// Match on boolean conditions, return first match.
-    let match_cond (cases: (bool * string) list) (fallback: string) =
+    let matchCond (cases: (bool * string) list) (fallback: string) =
         cases |> List.tryFind fst |> Option.map snd |> Option.defaultValue fallback
 
     /// Conditional rendering with else clause — if cond then trueContent else falseContent.
-    let if_else (cond: bool) (trueContent: string) (falseContent: string) =
+    let ifElse (cond: bool) (trueContent: string) (falseContent: string) =
         if cond then trueContent else falseContent
 
     // ── Simplified loops and iterators ───────────────────────────
 
     /// Map over items and join with a separator.
-    let each_with (items: 'a list) (separator: string) (f: 'a -> string) =
+    let eachWith (items: 'a list) (separator: string) (f: 'a -> string) =
         items |> List.map f |> String.concat separator
 
     /// Map over items and join with newlines.
-    let each_line (items: 'a list) (f: 'a -> string) =
+    let eachLine (items: 'a list) (f: 'a -> string) =
         items |> List.map f |> String.concat "\n"
 
     /// Map over items and wrap in a container tag.
-    let each_in_container (tag: string) (items: 'a list) (f: 'a -> string) =
+    let eachInContainer (tag: string) (items: 'a list) (f: 'a -> string) =
         let inner = items |> List.map f |> String.concat ""
         elem tag [] [inner]
 
     /// Repeat a string N times.
-    let repeat_str (count: int) (s: string) =
+    let repeatStr (count: int) (s: string) =
         StringBuilder().Insert(0, s, count).ToString()
 
     /// Generate a numbered list of items.
-    let numbered_list (items: 'a list) (f: int -> 'a -> string) =
+    let numberedList (items: 'a list) (f: int -> 'a -> string) =
         items |> List.mapi (fun i item -> f (i + 1) item) |> String.concat "\n"
 
     /// For-loop over a range with a render function.
-    let for_range (start: int) (endInclusive: int) (f: int -> string) =
+    let forRange (start: int) (endInclusive: int) (f: int -> string) =
         [start..endInclusive] |> List.map f |> String.concat ""
 
     // ── Pipeline / chaining operators ────────────────────────────
@@ -111,11 +111,11 @@ module DslSugar =
     let (>>) = (>>)
 
     /// Wrap a string in an HTML tag.
-    let wrap_in (tag: string) (content: string) =
+    let wrapIn (tag: string) (content: string) =
         sprintf "<%s>%s</%s>" tag content tag
 
     /// Add a CSS class to an element string.
-    let add_class (cls: string) (element: string) =
+    let addClass (cls: string) (element: string) =
         let pattern = @"^<(\w+)"
         let m = Text.RegularExpressions.Regex.Match(element, pattern)
         if m.Success then
@@ -123,43 +123,45 @@ module DslSugar =
             element.Replace(sprintf "<%s" tag, sprintf "<%s class=\"%s\"" tag cls)
         else element
 
+    /// Alias for `addClass` (`C` ≡ `Class`). `addC` ≡ `addClass`.
+    let addC = addClass
+
     // ── Shorthand element builders ───────────────────────────────
 
     /// Create a div with text content.
-    let div_text (cls: string) (content: string) =
-        divC cls [text content]
+    let divText (cls: string) (content: string) =
+        divClass cls [text content]
 
     /// Create a span with text content.
-    let span_text (cls: string) (content: string) =
-        spanC cls [text content]
+    let spanText (cls: string) (content: string) =
+        spanClass cls [text content]
 
     /// Create a paragraph with text content.
-    let p_text (content: string) =
+    let pText (content: string) =
         p [text content]
 
     /// Create a heading with text content.
-    let h_text (level: int) (content: string) =
+    let hText (level: int) (content: string) =
         let tag = sprintf "h%d" level
         elem tag [] [text content]
 
     /// Create a link with text content.
-    let a_text (url: string) (textContent: string) =
+    let aText (url: string) (textContent: string) =
         a url [text textContent]
 
     /// Create a link with a CSS class and text content.
-    let a_text_c (cls: string) (url: string) (textContent: string) =
-        aC cls url [text textContent]
+    let aTextClass (cls: string) (url: string) (textContent: string) =
+        aClass cls url [text textContent]
 
-    /// Create an image with a CSS class.
-    let img_c (cls: string) (src: string) (alt: string) =
-        imgC cls src alt
+    /// Alias for `aTextClass` (`C` ≡ `Class`). `aTextC` ≡ `aTextClass`.
+    let aTextC = aTextClass
 
     /// Create a ul from items using a render function.
-    let ul_from (items: 'a list) (f: 'a -> string) =
+    let ulFrom (items: 'a list) (f: 'a -> string) =
         ul (items |> List.map (fun i -> li [f i]))
 
     /// Create an ol from items using a render function.
-    let ol_from (items: 'a list) (f: 'a -> string) =
+    let olFrom (items: 'a list) (f: 'a -> string) =
         ol (items |> List.map (fun i -> li [f i]))
 
     // ── Type conversion shortcuts ────────────────────────────────
@@ -168,55 +170,55 @@ module DslSugar =
     let inline str (x: 'a) = x.ToString()
 
     /// Convert an integer to a string.
-    let inline int_str (x: int) = string x
+    let inline intStr (x: int) = string x
 
     /// Convert a float to a string with format.
-    let float_str (format: string) (x: float) = x.ToString(format)
+    let floatStr (format: string) (x: float) = x.ToString(format)
 
     /// Convert a boolean to "true" / "false".
-    let bool_str (x: bool) = if x then "true" else "false"
+    let boolStr (x: bool) = if x then "true" else "false"
 
     // ── Option / nullable rendering ─────────────────────────────
 
     /// Render an `Option<string>`: `Some s` → `s`, `None` → `""`.
     /// Same as `Components.opt` but available in the sugar module.
-    let opt_str (v: string option) = match v with Some s -> s | None -> ""
+    let optStr (v: string option) = match v with Some s -> s | None -> ""
 
     /// Render an `Option<string>` with a fallback for `None`.
-    let opt_or (fallback: string) (v: string option) =
+    let optOr (fallback: string) (v: string option) =
         match v with Some s when not (String.IsNullOrEmpty s) -> s | _ -> fallback
 
     /// Apply a render function only when the value is `Some`, else `""`.
-    let opt_map (f: 'a -> string) (v: 'a option) =
+    let optMap (f: 'a -> string) (v: 'a option) =
         match v with Some x -> f x | None -> ""
 
     /// Render content only when the value is `Some`, ignoring the inner value.
-    let opt_when (v: 'a option) (content: string) =
+    let optWhen (v: 'a option) (content: string) =
         match v with Some _ -> content | None -> ""
 
     // ── Joining helpers ─────────────────────────────────────────
 
     /// Join items with newlines (alias for readability in pipelines).
-    let join_lines (items: string list) = String.concat "\n" items
+    let joinLines (items: string list) = String.concat "\n" items
 
     /// Join items with commas (e.g. tag lists).
-    let join_comma (items: string list) = String.concat ", " items
+    let joinComma (items: string list) = String.concat ", " items
 
     /// Join items with a custom separator (alias for `joinWith`).
-    let join_with (sep: string) (items: string list) = String.concat sep items
+    let joinWith (sep: string) (items: string list) = String.concat sep items
 
     // ── Collection helpers ──────────────────────────────────────
 
     /// Filter items that are not null or empty strings.
-    let filter_not_empty (items: string list) =
+    let filterNotEmpty (items: string list) =
         items |> List.filter (fun s -> not (String.IsNullOrEmpty s))
 
     /// Take first N items from a list.
-    let take_first (count: int) (items: 'a list) =
+    let takeFirst (count: int) (items: 'a list) =
         items |> List.truncate count
 
     /// Skip first N items from a list.
-    let skip_first (count: int) (items: 'a list) =
+    let skipFirst (count: int) (items: 'a list) =
         items.[max 0 (min count items.Length) ..]
 
     /// Split a list into chunks of the specified size.
@@ -241,16 +243,16 @@ module DslSugar =
     // ── Text formatting ─────────────────────────────────────────
 
     /// Truncate a string to `maxLen` chars, appending an ellipsis if cut.
-    let truncate_str (maxLen: int) (s: string) =
+    let truncateStr (maxLen: int) (s: string) =
         if s = null then ""
         elif s.Length <= maxLen then s
         else s.[..maxLen-1] + "…"
 
     /// Pad a string to a fixed width with spaces (right-padded).
-    let pad_right (width: int) (s: string) = s.PadRight(width)
+    let padRight (width: int) (s: string) = s.PadRight(width)
 
     /// Pad a string to a fixed width with spaces (left-padded).
-    let pad_left (width: int) (s: string) = s.PadLeft(width)
+    let padLeft (width: int) (s: string) = s.PadLeft(width)
 
     /// Simple pluralisation: `pluralize 1 "item"` → `"1 item"`,
     /// `pluralize 3 "item"` → `"3 items"` (appends 's'). For irregular
@@ -260,7 +262,7 @@ module DslSugar =
         sprintf "%d %s" count word
 
     /// Pluralise with an explicit plural form.
-    let pluralize_with (count: int) (singular: string) (plural: string) =
+    let pluralizeWith (count: int) (singular: string) (plural: string) =
         let word = if count = 1 then singular else plural
         sprintf "%d %s" count word
 
@@ -289,7 +291,7 @@ module DslSugar =
 
     /// Translate a key using locale data from siteData.
     /// Looks up `locale.{lang}.{key}` with fallback to any available locale.
-    /// Usage: `t "nav.home"` or `t_lang "nav.home" "zh"
+    /// Usage: `t "nav.home"` or `tLang "nav.home" "zh"
     let t (key: string) : string =
         let ctx = Context.get ()
         let defaultLang =
@@ -311,7 +313,7 @@ module DslSugar =
             |> Option.defaultValue key
 
     /// Translate a key with an explicit language code.
-    let t_lang (key: string) (lang: string) : string =
+    let tLang (key: string) (lang: string) : string =
         let ctx = Context.get ()
         let tryKey = sprintf "locale.%s.%s" lang key
         match ctx.SiteData.TryGetValue(tryKey) with
@@ -322,12 +324,12 @@ module DslSugar =
 
     /// Inject the self-contained pjax client script.
     /// Place in head or before closing body tag.
-    /// Usage: `pjax_script ()`
+    /// Usage: `pjaxScript ()`
     ///
     /// Reuses Zest.Compiler.Rendering.Pjax.script (the single source of
     /// truth also served to Zestucks templates via `{{ pjaxScript | safe }}`),
     /// so the DSL and template paths always ship the same script.
-    let pjax_script () : string =
+    let pjaxScript () : string =
         Zest.Compiler.Rendering.Pjax.script
 
     // ── Error handling ──────────────────────────────────────────
@@ -335,8 +337,8 @@ module DslSugar =
     /// Execute `tryFn` and recover via `onError` when it raises.
     /// `onError` receives the exception and must produce a result.
     ///
-    ///   try_catch (fun () -> risky ()) (fun ex -> sprintf "failed: %s" ex.Message)
-    let try_catch (tryFn: unit -> 'T) (onError: exn -> 'T) : 'T =
+    ///   tryCatch (fun () -> risky ()) (fun ex -> sprintf "failed: %s" ex.Message)
+    let tryCatch (tryFn: unit -> 'T) (onError: exn -> 'T) : 'T =
         try tryFn ()
         with ex -> onError ex
 
@@ -344,8 +346,8 @@ module DslSugar =
 
     /// Map a function over a list concurrently on the .NET thread pool,
     /// preserving input order in the result. Exceptions propagate to the
-    /// caller (wrap with `try_catch` to recover per item).
-    let async_map (f: 'a -> 'b) (items: 'a list) : 'b list =
+    /// caller (wrap with `tryCatch` to recover per item).
+    let asyncMap (f: 'a -> 'b) (items: 'a list) : 'b list =
         items
         |> List.map (fun x -> async { return f x })
         |> Async.Parallel
@@ -453,16 +455,16 @@ module DslSugar =
 
     /// Zip two lists with a custom combiner, stopping at the shorter list
     /// (no exception when lengths differ).
-    ///   zip_with (fun a b -> a + b) [1;2;3] [10;20]  →  [11;22]
-    let zip_with (f: 'a -> 'b -> 'c) (left: 'a list) (right: 'b list) : 'c list =
+    ///   zipWith (fun a b -> a + b) [1;2;3] [10;20]  →  [11;22]
+    let zipWith (f: 'a -> 'b -> 'c) (left: 'a list) (right: 'b list) : 'c list =
         let n = min left.Length right.Length
         [ for i in 0 .. n - 1 -> f left.[i] right.[i] ]
 
     // ── String processing ───────────────────────────────────────
 
     /// Split a string by a literal separator (not a regex).
-    ///   split_by "," "a,b,c"  →  ["a";"b";"c"]
-    let split_by (separator: string) (s: string) : string list =
+    ///   splitBy "," "a,b,c"  →  ["a";"b";"c"]
+    let splitBy (separator: string) (s: string) : string list =
         if isNull s then []
         elif String.IsNullOrEmpty separator then [ s ]
         else
@@ -470,11 +472,11 @@ module DslSugar =
             |> Array.toList
 
     /// Case-sensitive prefix check.
-    let starts_with (prefix: string) (s: string) : bool =
+    let startsWith (prefix: string) (s: string) : bool =
         not (isNull s) && not (isNull prefix) && s.StartsWith(prefix, StringComparison.Ordinal)
 
     /// Case-sensitive suffix check.
-    let ends_with (suffix: string) (s: string) : bool =
+    let endsWith (suffix: string) (s: string) : bool =
         not (isNull s) && not (isNull suffix) && s.EndsWith(suffix, StringComparison.Ordinal)
 
     /// Case-sensitive substring check.
@@ -482,7 +484,7 @@ module DslSugar =
         not (isNull s) && not (isNull substr) && s.IndexOf(substr, StringComparison.Ordinal) >= 0
 
     /// Replace every occurrence of `oldValue` with `newValue` (literal, not regex).
-    let replace_all (oldValue: string) (newValue: string) (s: string) : string =
+    let replaceAll (oldValue: string) (newValue: string) (s: string) : string =
         if isNull s then s
         elif String.IsNullOrEmpty oldValue then s
         else s.Replace(oldValue, newValue)

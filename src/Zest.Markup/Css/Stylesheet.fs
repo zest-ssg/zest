@@ -44,62 +44,62 @@ type Sel(name: string) =
     member _.active       = Sel(name + ":active")
     member _.focus        = Sel(name + ":focus")
     member _.visited      = Sel(name + ":visited")
-    member _.checked_     = Sel(name + ":checked")
+    member _.``checked``  = Sel(name + ":checked")
     member _.disabled     = Sel(name + ":disabled")
     member _.enabled      = Sel(name + ":enabled")
     member _.required     = Sel(name + ":required")
     member _.optional     = Sel(name + ":optional")
-    member _.read_only    = Sel(name + ":read-only")
-    member _.read_write   = Sel(name + ":read-write")
+    member _.readOnly     = Sel(name + ":read-only")
+    member _.readWrite    = Sel(name + ":read-write")
     member _.valid        = Sel(name + ":valid")
     member _.invalid      = Sel(name + ":invalid")
-    member _.default_     = Sel(name + ":default")
-    member _.in_range     = Sel(name + ":in-range")
-    member _.out_of_range = Sel(name + ":out-of-range")
-    member _.placeholder_shown = Sel(name + ":placeholder-shown")
+    member _.``default``  = Sel(name + ":default")
+    member _.inRange      = Sel(name + ":in-range")
+    member _.outOfRange   = Sel(name + ":out-of-range")
+    member _.placeholderShown = Sel(name + ":placeholder-shown")
     member _.autofill     = Sel(name + ":autofill")
     member _.target       = Sel(name + ":target")
-    member _.root_        = Sel(name + ":root")
+    member _.root         = Sel(name + ":root")
     member _.empty        = Sel(name + ":empty")
     member _.blank        = Sel(name + ":blank")
-    member _.first_child  = Sel(name + ":first-child")
-    member _.last_child   = Sel(name + ":last-child")
-    member _.only_child   = Sel(name + ":only-child")
-    member _.first_of_type = Sel(name + ":first-of-type")
-    member _.last_of_type  = Sel(name + ":last-of-type")
-    member _.only_of_type  = Sel(name + ":only-of-type")
-    member _.nth_child(n: int)    = Sel(name + sprintf ":nth-child(%d)" n)
-    member _.nth_last_child(n: int) = Sel(name + sprintf ":nth-last-child(%d)" n)
-    member _.nth_of_type(n: int)  = Sel(name + sprintf ":nth-of-type(%d)" n)
-    member _.nth_last_of_type(n: int) = Sel(name + sprintf ":nth-last-of-type(%d)" n)
-    member _.not_(sel: string)    = Sel(name + sprintf ":not(%s)" sel)
-    member _.lang(code: string)   = Sel(name + sprintf ":lang(%s)" code)
-    member _.is_(sel: string)     = Sel(name + sprintf ":is(%s)" sel)
-    member _.where_(sel: string)  = Sel(name + sprintf ":where(%s)" sel)
-    member _.has_(sel: string)    = Sel(name + sprintf ":has(%s)" sel)
+    member _.firstChild   = Sel(name + ":first-child")
+    member _.lastChild    = Sel(name + ":last-child")
+    member _.onlyChild    = Sel(name + ":only-child")
+    member _.firstOfType  = Sel(name + ":first-of-type")
+    member _.lastOfType   = Sel(name + ":last-of-type")
+    member _.onlyOfType   = Sel(name + ":only-of-type")
+    member _.nthChild(n: int)         = Sel(name + sprintf ":nth-child(%d)" n)
+    member _.nthLastChild(n: int)     = Sel(name + sprintf ":nth-last-child(%d)" n)
+    member _.nthOfType(n: int)        = Sel(name + sprintf ":nth-of-type(%d)" n)
+    member _.nthLastOfType(n: int)    = Sel(name + sprintf ":nth-last-of-type(%d)" n)
+    member _.``not``(sel: string)     = Sel(name + sprintf ":not(%s)" sel)
+    member _.lang(code: string)       = Sel(name + sprintf ":lang(%s)" code)
+    member _.is(sel: string)          = Sel(name + sprintf ":is(%s)" sel)
+    member _.where(sel: string)       = Sel(name + sprintf ":where(%s)" sel)
+    member _.has(sel: string)         = Sel(name + sprintf ":has(%s)" sel)
 
     // ── Pseudo-elements ─────────────────────────────────
 
     member _.before  = Sel(name + "::before")
     member _.after   = Sel(name + "::after")
-    member _.first_letter = Sel(name + "::first-letter")
-    member _.first_line   = Sel(name + "::first-line")
+    member _.firstLetter  = Sel(name + "::first-letter")
+    member _.firstLine    = Sel(name + "::first-line")
     member _.selection    = Sel(name + "::selection")
     member _.placeholder  = Sel(name + "::placeholder")
     member _.backdrop     = Sel(name + "::backdrop")
     member _.marker       = Sel(name + "::marker")
-    member _.spelling_error = Sel(name + "::spelling-error")
-    member _.grammar_error  = Sel(name + "::grammar-error")
+    member _.spellingError = Sel(name + "::spelling-error")
+    member _.grammarError  = Sel(name + "::grammar-error")
 
     // ── Attribute selectors ─────────────────────────────
 
     member this.attr(a: string) = Sel(name + sprintf "[%s]" a)
-    member this.attr_eq(a: string, v: string) = Sel(name + sprintf """[%s="%s"]""" a v)
-    member this.attr_contains(a: string, v: string) = Sel(name + sprintf """[%s~="%s"]""" a v)
-    member this.attr_dash(a: string, v: string) = Sel(name + sprintf """[%s|="%s"]""" a v)
-    member this.attr_starts(a: string, v: string) = Sel(name + sprintf """[%s^="%s"]""" a v)
-    member this.attr_ends(a: string, v: string) = Sel(name + sprintf """[%s$="%s"]""" a v)
-    member this.attr_substr(a: string, v: string) = Sel(name + sprintf """[%s*="%s"]""" a v)
+    member this.attrEq(a: string) (v: string) = Sel(name + sprintf """[%s="%s"]""" a v)
+    member this.attrContains(a: string) (v: string) = Sel(name + sprintf """[%s~="%s"]""" a v)
+    member this.attrDash(a: string) (v: string) = Sel(name + sprintf """[%s|="%s"]""" a v)
+    member this.attrStarts(a: string) (v: string) = Sel(name + sprintf """[%s^="%s"]""" a v)
+    member this.attrEnds(a: string) (v: string) = Sel(name + sprintf """[%s$="%s"]""" a v)
+    member this.attrSubstr(a: string) (v: string) = Sel(name + sprintf """[%s*="%s"]""" a v)
 
     // ── Child / descendant combinator (space) ───────────
 
@@ -217,220 +217,222 @@ module Stylesheet =
     /// The primary stylesheet computation expression builder.
     /// Usage:
     ///   let myCss = stylesheet {
-    ///       body [ bg "#000"; color "#0f0"; font_family "monospace" ]
+    ///       body [ bg "#000"; color "#0f0"; fontFamily "monospace" ]
     ///       a.hover [ color "#0ff" ]
-    ///       cls "container" [ max_width "1200px"; margin "0 auto" ]
+    ///       cls "container" [ maxWidth "1200px"; margin "0 auto" ]
     ///   }
     let stylesheet = StylesheetBuilder()
 
     // ── CSS Property Functions ──────────────────────────────
 
     // Background
-    let bg                   v = { Property = "background";           Value = v }
-    let bg_color             v = { Property = "background-color";    Value = v }
-    let bg_image             v = { Property = "background-image";    Value = v }
-    let bg_repeat            v = { Property = "background-repeat";   Value = v }
-    let bg_position          v = { Property = "background-position"; Value = v }
-    let bg_size              v = { Property = "background-size";     Value = v }
-    let bg_attachment        v = { Property = "background-attachment"; Value = v }
-    let bg_clip              v = { Property = "background-clip";     Value = v }
-    let bg_origin            v = { Property = "background-origin";   Value = v }
-    let bg_blend_mode        v = { Property = "background-blend-mode"; Value = v }
+    let bg           v = { Property = "background";            Value = v }
+    let bgColor      v = { Property = "background-color";      Value = v }
+    let bgImage      v = { Property = "background-image";      Value = v }
+    let bgRepeat     v = { Property = "background-repeat";     Value = v }
+    let bgPosition   v = { Property = "background-position";   Value = v }
+    let bgSize       v = { Property = "background-size";       Value = v }
+    let bgAttachment v = { Property = "background-attachment"; Value = v }
+    let bgClip       v = { Property = "background-clip";       Value = v }
+    let bgOrigin     v = { Property = "background-origin";     Value = v }
+    let bgBlendMode  v = { Property = "background-blend-mode"; Value = v }
 
     // Color & Text
     let color                v = { Property = "color";          Value = v }
     let opacity              v = { Property = "opacity";        Value = v }
 
     // Typography
-    let font_family          v = { Property = "font-family";     Value = v }
-    let font_size            v = { Property = "font-size";       Value = v }
-    let font_weight          v = { Property = "font-weight";     Value = v }
-    let font_style           v = { Property = "font-style";      Value = v }
-    let font_variant         v = { Property = "font-variant";    Value = v }
-    let font_stretch         v = { Property = "font-stretch";    Value = v }
-    let line_height          v = { Property = "line-height";     Value = v }
-    let letter_spacing       v = { Property = "letter-spacing";  Value = v }
-    let word_spacing         v = { Property = "word-spacing";    Value = v }
-    let text_align           v = { Property = "text-align";      Value = v }
-    let text_decoration      v = { Property = "text-decoration"; Value = v }
-    let text_transform       v = { Property = "text-transform";  Value = v }
-    let text_indent          v = { Property = "text-indent";     Value = v }
-    let text_overflow        v = { Property = "text-overflow";   Value = v }
-    let text_shadow          v = { Property = "text-shadow";     Value = v }
-    let text_wrap            v = { Property = "text-wrap";       Value = v }
-    let white_space          v = { Property = "white-space";     Value = v }
-    let word_break           v = { Property = "word-break";      Value = v }
-    let overflow_wrap        v = { Property = "overflow-wrap";   Value = v }
-    let hyphens              v = { Property = "hyphens";         Value = v }
-    let vertical_align       v = { Property = "vertical-align";  Value = v }
+    let fontFamily     v = { Property = "font-family";     Value = v }
+    let fontSize       v = { Property = "font-size";       Value = v }
+    let fontWeight     v = { Property = "font-weight";     Value = v }
+    let fontStyle      v = { Property = "font-style";      Value = v }
+    let fontVariant    v = { Property = "font-variant";    Value = v }
+    let fontStretch    v = { Property = "font-stretch";    Value = v }
+    let lineHeight     v = { Property = "line-height";     Value = v }
+    let letterSpacing  v = { Property = "letter-spacing";  Value = v }
+    let wordSpacing    v = { Property = "word-spacing";    Value = v }
+    let textAlign      v = { Property = "text-align";      Value = v }
+    let textDecoration v = { Property = "text-decoration"; Value = v }
+    let textTransform  v = { Property = "text-transform";  Value = v }
+    let textIndent     v = { Property = "text-indent";     Value = v }
+    let textOverflow   v = { Property = "text-overflow";   Value = v }
+    let textShadow     v = { Property = "text-shadow";     Value = v }
+    let textWrap       v = { Property = "text-wrap";       Value = v }
+    let whiteSpace     v = { Property = "white-space";     Value = v }
+    let wordBreak      v = { Property = "word-break";      Value = v }
+    let overflowWrap   v = { Property = "overflow-wrap";   Value = v }
+    let hyphens        v = { Property = "hyphens";         Value = v }
+    let verticalAlign  v = { Property = "vertical-align";  Value = v }
 
     // Box Model
-    let width                v = { Property = "width";           Value = v }
-    let height               v = { Property = "height";          Value = v }
-    let min_width            v = { Property = "min-width";       Value = v }
-    let max_width            v = { Property = "max-width";       Value = v }
-    let min_height           v = { Property = "min-height";      Value = v }
-    let max_height           v = { Property = "max-height";      Value = v }
-    let margin               v = { Property = "margin";          Value = v }
-    let margin_top           v = { Property = "margin-top";      Value = v }
-    let margin_right         v = { Property = "margin-right";    Value = v }
-    let margin_bottom        v = { Property = "margin-bottom";   Value = v }
-    let margin_left          v = { Property = "margin-left";     Value = v }
-    let padding              v = { Property = "padding";         Value = v }
-    let padding_top          v = { Property = "padding-top";     Value = v }
-    let padding_right        v = { Property = "padding-right";   Value = v }
-    let padding_bottom       v = { Property = "padding-bottom";  Value = v }
-    let padding_left         v = { Property = "padding-left";    Value = v }
-    let box_sizing           v = { Property = "box-sizing";      Value = v }
-    let box_shadow           v = { Property = "box-shadow";      Value = v }
+    let width         v = { Property = "width";           Value = v }
+    let height        v = { Property = "height";          Value = v }
+    let minWidth      v = { Property = "min-width";       Value = v }
+    let maxWidth      v = { Property = "max-width";       Value = v }
+    let minHeight     v = { Property = "min-height";      Value = v }
+    let maxHeight     v = { Property = "max-height";      Value = v }
+    let margin        v = { Property = "margin";          Value = v }
+    let marginTop     v = { Property = "margin-top";      Value = v }
+    let marginRight   v = { Property = "margin-right";    Value = v }
+    let marginBottom  v = { Property = "margin-bottom";   Value = v }
+    let marginLeft    v = { Property = "margin-left";     Value = v }
+    let padding       v = { Property = "padding";         Value = v }
+    let paddingTop    v = { Property = "padding-top";     Value = v }
+    let paddingRight  v = { Property = "padding-right";   Value = v }
+    let paddingBottom v = { Property = "padding-bottom";  Value = v }
+    let paddingLeft   v = { Property = "padding-left";    Value = v }
+    let boxSizing     v = { Property = "box-sizing";      Value = v }
+    let boxShadow     v = { Property = "box-shadow";      Value = v }
 
     // Border
     let border               v = { Property = "border";          Value = v }
-    let border_top           v = { Property = "border-top";      Value = v }
-    let border_right         v = { Property = "border-right";    Value = v }
-    let border_bottom        v = { Property = "border-bottom";   Value = v }
-    let border_left          v = { Property = "border-left";     Value = v }
-    let border_color         v = { Property = "border-color";    Value = v }
-    let border_width         v = { Property = "border-width";    Value = v }
-    let border_style         v = { Property = "border-style";    Value = v }
-    let border_radius        v = { Property = "border-radius";   Value = v }
-    let border_top_left_radius     v = { Property = "border-top-left-radius";     Value = v }
-    let border_top_right_radius    v = { Property = "border-top-right-radius";    Value = v }
-    let border_bottom_left_radius  v = { Property = "border-bottom-left-radius";  Value = v }
-    let border_bottom_right_radius v = { Property = "border-bottom-right-radius"; Value = v }
-    let outline              v = { Property = "outline";         Value = v }
-    let outline_color        v = { Property = "outline-color";   Value = v }
-    let outline_width        v = { Property = "outline-width";   Value = v }
-    let outline_style        v = { Property = "outline-style";   Value = v }
-    let outline_offset       v = { Property = "outline-offset";  Value = v }
+    let borderTop           v = { Property = "border-top";      Value = v }
+    let borderRight         v = { Property = "border-right";    Value = v }
+    let borderBottom        v = { Property = "border-bottom";   Value = v }
+    let borderLeft          v = { Property = "border-left";     Value = v }
+    let borderColor         v = { Property = "border-color";    Value = v }
+    let borderWidth         v = { Property = "border-width";    Value = v }
+    let borderStyle         v = { Property = "border-style";    Value = v }
+    let borderRadius        v = { Property = "border-radius";   Value = v }
+    let borderTopLeftRadius     v = { Property = "border-top-left-radius";     Value = v }
+    let borderTopRightRadius    v = { Property = "border-top-right-radius";    Value = v }
+    let borderBottomLeftRadius  v = { Property = "border-bottom-left-radius";  Value = v }
+    let borderBottomRightRadius v = { Property = "border-bottom-right-radius"; Value = v }
+    let outline             v = { Property = "outline";         Value = v }
+    let outlineColor        v = { Property = "outline-color";   Value = v }
+    let outlineWidth        v = { Property = "outline-width";   Value = v }
+    let outlineStyle        v = { Property = "outline-style";   Value = v }
+    let outlineOffset       v = { Property = "outline-offset";  Value = v }
 
     // Display & Positioning
-    let display              v = { Property = "display";         Value = v }
-    let position             v = { Property = "position";        Value = v }
-    let top                  v = { Property = "top";             Value = v }
-    let right                v = { Property = "right";           Value = v }
-    let bottom               v = { Property = "bottom";          Value = v }
-    let left                 v = { Property = "left";            Value = v }
-    let z_index              v = { Property = "z-index";         Value = v }
-    let float_               v = { Property = "float";           Value = v }
-    let clear                v = { Property = "clear";           Value = v }
-    let overflow             v = { Property = "overflow";        Value = v }
-    let overflow_x           v = { Property = "overflow-x";      Value = v }
-    let overflow_y           v = { Property = "overflow-y";      Value = v }
-    let visibility           v = { Property = "visibility";      Value = v }
-    let object_fit           v = { Property = "object-fit";      Value = v }
-    let object_position      v = { Property = "object-position"; Value = v }
-    let aspect_ratio         v = { Property = "aspect-ratio";    Value = v }
+    let display        v = { Property = "display";         Value = v }
+    let position       v = { Property = "position";        Value = v }
+    let top            v = { Property = "top";             Value = v }
+    let right          v = { Property = "right";           Value = v }
+    let bottom         v = { Property = "bottom";          Value = v }
+    let left           v = { Property = "left";            Value = v }
+    let zIndex         v = { Property = "z-index";         Value = v }
+    // Named `cssFloat` (not `float`) because this module is [<AutoOpen>] in the
+    // `Zest.Markup` namespace and `float` would shadow F#'s built-in conversion.
+    let cssFloat       v = { Property = "float";           Value = v }
+    let clear          v = { Property = "clear";           Value = v }
+    let overflow       v = { Property = "overflow";        Value = v }
+    let overflowX      v = { Property = "overflow-x";      Value = v }
+    let overflowY      v = { Property = "overflow-y";      Value = v }
+    let visibility     v = { Property = "visibility";      Value = v }
+    let objectFit      v = { Property = "object-fit";      Value = v }
+    let objectPosition v = { Property = "object-position"; Value = v }
+    let aspectRatio    v = { Property = "aspect-ratio";    Value = v }
 
     // Flexbox
-    let flex                 v = { Property = "flex";            Value = v }
-    let flex_direction       v = { Property = "flex-direction";  Value = v }
-    let flex_wrap            v = { Property = "flex-wrap";       Value = v }
-    let flex_flow            v = { Property = "flex-flow";       Value = v }
-    let flex_grow            v = { Property = "flex-grow";       Value = v }
-    let flex_shrink          v = { Property = "flex-shrink";     Value = v }
-    let flex_basis           v = { Property = "flex-basis";      Value = v }
-    let justify_content      v = { Property = "justify-content"; Value = v }
-    let align_items          v = { Property = "align-items";     Value = v }
-    let align_content        v = { Property = "align-content";   Value = v }
-    let align_self           v = { Property = "align-self";      Value = v }
-    let justify_items        v = { Property = "justify-items";   Value = v }
-    let justify_self         v = { Property = "justify-self";    Value = v }
-    let order_               v = { Property = "order";           Value = v }
-    let gap                  v = { Property = "gap";             Value = v }
-    let row_gap              v = { Property = "row-gap";         Value = v }
-    let column_gap           v = { Property = "column-gap";      Value = v }
-    let place_items          v = { Property = "place-items";     Value = v }
-    let place_content        v = { Property = "place-content";   Value = v }
-    let place_self           v = { Property = "place-self";      Value = v }
+    let flex           v = { Property = "flex";            Value = v }
+    let flexDirection  v = { Property = "flex-direction";  Value = v }
+    let flexWrap       v = { Property = "flex-wrap";       Value = v }
+    let flexFlow       v = { Property = "flex-flow";       Value = v }
+    let flexGrow       v = { Property = "flex-grow";       Value = v }
+    let flexShrink     v = { Property = "flex-shrink";     Value = v }
+    let flexBasis      v = { Property = "flex-basis";      Value = v }
+    let justifyContent v = { Property = "justify-content"; Value = v }
+    let alignItems     v = { Property = "align-items";     Value = v }
+    let alignContent   v = { Property = "align-content";   Value = v }
+    let alignSelf      v = { Property = "align-self";      Value = v }
+    let justifyItems   v = { Property = "justify-items";   Value = v }
+    let justifySelf    v = { Property = "justify-self";    Value = v }
+    let order          v = { Property = "order";           Value = v }
+    let gap            v = { Property = "gap";             Value = v }
+    let rowGap         v = { Property = "row-gap";         Value = v }
+    let columnGap      v = { Property = "column-gap";      Value = v }
+    let placeItems     v = { Property = "place-items";     Value = v }
+    let placeContent   v = { Property = "place-content";   Value = v }
+    let placeSelf      v = { Property = "place-self";      Value = v }
 
     // Grid
-    let grid                 v = { Property = "grid";            Value = v }
-    let grid_template_columns  v = { Property = "grid-template-columns";  Value = v }
-    let grid_template_rows     v = { Property = "grid-template-rows";     Value = v }
-    let grid_template_areas    v = { Property = "grid-template-areas";    Value = v }
-    let grid_template          v = { Property = "grid-template";          Value = v }
-    let grid_auto_columns      v = { Property = "grid-auto-columns";      Value = v }
-    let grid_auto_rows         v = { Property = "grid-auto-rows";         Value = v }
-    let grid_auto_flow         v = { Property = "grid-auto-flow";         Value = v }
-    let grid_column            v = { Property = "grid-column";            Value = v }
-    let grid_row               v = { Property = "grid-row";               Value = v }
-    let grid_column_start      v = { Property = "grid-column-start";      Value = v }
-    let grid_column_end        v = { Property = "grid-column-end";        Value = v }
-    let grid_row_start         v = { Property = "grid-row-start";         Value = v }
-    let grid_row_end           v = { Property = "grid-row-end";           Value = v }
-    let grid_area              v = { Property = "grid-area";              Value = v }
+    let grid                v = { Property = "grid";                  Value = v }
+    let gridTemplateColumns v = { Property = "grid-template-columns"; Value = v }
+    let gridTemplateRows    v = { Property = "grid-template-rows";    Value = v }
+    let gridTemplateAreas   v = { Property = "grid-template-areas";   Value = v }
+    let gridTemplate        v = { Property = "grid-template";         Value = v }
+    let gridAutoColumns     v = { Property = "grid-auto-columns";     Value = v }
+    let gridAutoRows        v = { Property = "grid-auto-rows";        Value = v }
+    let gridAutoFlow        v = { Property = "grid-auto-flow";        Value = v }
+    let gridColumn          v = { Property = "grid-column";           Value = v }
+    let gridRow             v = { Property = "grid-row";              Value = v }
+    let gridColumnStart     v = { Property = "grid-column-start";     Value = v }
+    let gridColumnEnd       v = { Property = "grid-column-end";       Value = v }
+    let gridRowStart        v = { Property = "grid-row-start";        Value = v }
+    let gridRowEnd          v = { Property = "grid-row-end";          Value = v }
+    let gridArea            v = { Property = "grid-area";             Value = v }
 
     // Transform & Transition
-    let transform            v = { Property = "transform";       Value = v }
-    let transform_origin     v = { Property = "transform-origin"; Value = v }
-    let transition           v = { Property = "transition";      Value = v }
-    let transition_duration  v = { Property = "transition-duration";  Value = v }
-    let transition_property  v = { Property = "transition-property";  Value = v }
-    let transition_timing    v = { Property = "transition-timing-function"; Value = v }
-    let transition_delay     v = { Property = "transition-delay";      Value = v }
+    let transform          v = { Property = "transform";       Value = v }
+    let transformOrigin    v = { Property = "transform-origin"; Value = v }
+    let transition         v = { Property = "transition";      Value = v }
+    let transitionDuration v = { Property = "transition-duration";  Value = v }
+    let transitionProperty v = { Property = "transition-property";  Value = v }
+    let transitionTiming   v = { Property = "transition-timing-function"; Value = v }
+    let transitionDelay    v = { Property = "transition-delay";      Value = v }
 
     // Animation
     let animation            v = { Property = "animation";        Value = v }
-    let animation_name       v = { Property = "animation-name";   Value = v }
-    let animation_duration   v = { Property = "animation-duration"; Value = v }
-    let animation_timing     v = { Property = "animation-timing-function"; Value = v }
-    let animation_delay      v = { Property = "animation-delay";  Value = v }
-    let animation_iteration  v = { Property = "animation-iteration-count"; Value = v }
-    let animation_direction  v = { Property = "animation-direction"; Value = v }
-    let animation_fill_mode  v = { Property = "animation-fill-mode";  Value = v }
-    let animation_play_state v = { Property = "animation-play-state"; Value = v }
+    let animationName        v = { Property = "animation-name";   Value = v }
+    let animationDuration    v = { Property = "animation-duration"; Value = v }
+    let animationTiming      v = { Property = "animation-timing-function"; Value = v }
+    let animationDelay       v = { Property = "animation-delay";  Value = v }
+    let animationIteration   v = { Property = "animation-iteration-count"; Value = v }
+    let animationDirection   v = { Property = "animation-direction"; Value = v }
+    let animationFillMode    v = { Property = "animation-fill-mode";  Value = v }
+    let animationPlayState   v = { Property = "animation-play-state"; Value = v }
 
     // Filter & Effects
-    let filter               v = { Property = "filter";          Value = v }
-    let backdrop_filter      v = { Property = "backdrop-filter"; Value = v }
-    let clip_path            v = { Property = "clip-path";       Value = v }
-    let mix_blend_mode       v = { Property = "mix-blend-mode";  Value = v }
-    let isolation_           v = { Property = "isolation";       Value = v }
+    let filter          v = { Property = "filter";          Value = v }
+    let backdropFilter  v = { Property = "backdrop-filter"; Value = v }
+    let clipPath        v = { Property = "clip-path";       Value = v }
+    let mixBlendMode    v = { Property = "mix-blend-mode";  Value = v }
+    let isolation       v = { Property = "isolation";       Value = v }
 
     // Cursor & Interaction
-    let cursor               v = { Property = "cursor";          Value = v }
-    let pointer_events       v = { Property = "pointer-events";  Value = v }
-    let user_select          v = { Property = "user-select";     Value = v }
-    let resize               v = { Property = "resize";          Value = v }
-    let caret_color          v = { Property = "caret-color";     Value = v }
-    let scroll_behavior      v = { Property = "scroll-behavior"; Value = v }
-    let scrollbar_width      v = { Property = "scrollbar-width"; Value = v }
-    let scrollbar_color      v = { Property = "scrollbar-color"; Value = v }
+    let cursor          v = { Property = "cursor";          Value = v }
+    let pointerEvents   v = { Property = "pointer-events";  Value = v }
+    let userSelect      v = { Property = "user-select";     Value = v }
+    let resize          v = { Property = "resize";          Value = v }
+    let caretColor      v = { Property = "caret-color";     Value = v }
+    let scrollBehavior  v = { Property = "scroll-behavior"; Value = v }
+    let scrollbarWidth  v = { Property = "scrollbar-width"; Value = v }
+    let scrollbarColor  v = { Property = "scrollbar-color"; Value = v }
 
     // Lists & Counters
-    let list_style           v = { Property = "list-style";      Value = v }
-    let list_style_type      v = { Property = "list-style-type"; Value = v }
-    let list_style_position  v = { Property = "list-style-position"; Value = v }
-    let list_style_image     v = { Property = "list-style-image";    Value = v }
-    let counter_reset        v = { Property = "counter-reset";   Value = v }
-    let counter_increment    v = { Property = "counter-increment"; Value = v }
-    let counter_set          v = { Property = "counter-set";     Value = v }
+    let listStyle          v = { Property = "list-style";            Value = v }
+    let listStyleType      v = { Property = "list-style-type";       Value = v }
+    let listStylePosition  v = { Property = "list-style-position";   Value = v }
+    let listStyleImage     v = { Property = "list-style-image";      Value = v }
+    let counterReset       v = { Property = "counter-reset";         Value = v }
+    let counterIncrement   v = { Property = "counter-increment";     Value = v }
+    let counterSet         v = { Property = "counter-set";           Value = v }
 
     // Tables
-    let table_layout         v = { Property = "table-layout";    Value = v }
-    let border_collapse      v = { Property = "border-collapse"; Value = v }
-    let border_spacing       v = { Property = "border-spacing";  Value = v }
-    let caption_side         v = { Property = "caption-side";    Value = v }
-    let empty_cells          v = { Property = "empty-cells";     Value = v }
+    let tableLayout        v = { Property = "table-layout";    Value = v }
+    let borderCollapse     v = { Property = "border-collapse"; Value = v }
+    let borderSpacing      v = { Property = "border-spacing";  Value = v }
+    let captionSide        v = { Property = "caption-side";    Value = v }
+    let emptyCells         v = { Property = "empty-cells";     Value = v }
 
     // Content
-    let content_             v = { Property = "content";         Value = v }
-    let quotes               v = { Property = "quotes";          Value = v }
+    let content            v = { Property = "content";         Value = v }
+    let quotes             v = { Property = "quotes";          Value = v }
 
     // Print
-    let page_break_before    v = { Property = "page-break-before"; Value = v }
-    let page_break_after     v = { Property = "page-break-after";  Value = v }
-    let page_break_inside    v = { Property = "page-break-inside"; Value = v }
+    let pageBreakBefore    v = { Property = "page-break-before"; Value = v }
+    let pageBreakAfter     v = { Property = "page-break-after";  Value = v }
+    let pageBreakInside    v = { Property = "page-break-inside"; Value = v }
 
     // Modern
-    let will_change          v = { Property = "will-change";     Value = v }
+    let willChange           v = { Property = "will-change";     Value = v }
     let contain              v = { Property = "contain";         Value = v }
-    let contain_intrinsic_size v = { Property = "contain-intrinsic-size"; Value = v }
-    let content_visibility   v = { Property = "content-visibility"; Value = v }
+    let containIntrinsicSize v = { Property = "contain-intrinsic-size"; Value = v }
+    let contentVisibility    v = { Property = "content-visibility"; Value = v }
     
     // Custom property / variable
-    let var_ name value = { Property = sprintf "--%s" name; Value = value }
+    let var name value = { Property = sprintf "--%s" name; Value = value }
 
     /// Create a declaration with an explicit CSS property name.
     let prop (name: string) (value: string) = { Property = name; Value = value }
@@ -444,116 +446,116 @@ module Stylesheet =
     /// Open this module explicitly: `open Stylesheet.Selectors`
     module Selectors =
         let allElements = Sel("*")
-        let html_   = Sel("html")
-        let body    = Sel("body")
-        let head_   = Sel("head")
-        let a       = Sel("a")
-        let abbr    = Sel("abbr")
-        let address = Sel("address")
-        let area    = Sel("area")
-        let article = Sel("article")
-        let aside   = Sel("aside")
-        let audio   = Sel("audio")
-        let b       = Sel("b")
-        let base_   = Sel("base")
-        let bdi     = Sel("bdi")
-        let bdo     = Sel("bdo")
-        let blockquote = Sel("blockquote")
-        let br      = Sel("br")
-        let button  = Sel("button")
-        let canvas  = Sel("canvas")
-        let caption = Sel("caption")
-        let cite_   = Sel("cite")
-        let code_   = Sel("code")
-        let col     = Sel("col")
-        let colgroup = Sel("colgroup")
-        let data_   = Sel("data")
-        let datalist = Sel("datalist")
-        let dd      = Sel("dd")
-        let del_    = Sel("del")
-        let details = Sel("details")
-        let dfn     = Sel("dfn")
-        let dialog  = Sel("dialog")
-        let div     = Sel("div")
+        let html        = Sel("html")
+        let body        = Sel("body")
+        let head        = Sel("head")
+        let a           = Sel("a")
+        let abbr        = Sel("abbr")
+        let address     = Sel("address")
+        let area        = Sel("area")
+        let article     = Sel("article")
+        let aside       = Sel("aside")
+        let audio       = Sel("audio")
+        let b           = Sel("b")
+        let ``base``    = Sel("base")
+        let bdi         = Sel("bdi")
+        let bdo         = Sel("bdo")
+        let blockquote  = Sel("blockquote")
+        let br          = Sel("br")
+        let button      = Sel("button")
+        let canvas      = Sel("canvas")
+        let caption     = Sel("caption")
+        let cite        = Sel("cite")
+        let code        = Sel("code")
+        let col         = Sel("col")
+        let colgroup    = Sel("colgroup")
+        let data        = Sel("data")
+        let datalist    = Sel("datalist")
+        let dd          = Sel("dd")
+        let del         = Sel("del")
+        let details     = Sel("details")
+        let dfn         = Sel("dfn")
+        let dialog      = Sel("dialog")
+        let div         = Sel("div")
         let dl      = Sel("dl")
-        let dt      = Sel("dt")
-        let em      = Sel("em")
-        let embed   = Sel("embed")
-        let fieldset = Sel("fieldset")
-        let figcaption = Sel("figcaption")
-        let figure  = Sel("figure")
-        let footer  = Sel("footer")
-        let form    = Sel("form")
-        let h1      = Sel("h1")
-        let h2      = Sel("h2")
-        let h3      = Sel("h3")
-        let h4      = Sel("h4")
-        let h5      = Sel("h5")
-        let h6      = Sel("h6")
-        let header  = Sel("header")
-        let hgroup  = Sel("hgroup")
-        let hr      = Sel("hr")
-        let i       = Sel("i")
-        let iframe  = Sel("iframe")
-        let img     = Sel("img")
-        let input   = Sel("input")
-        let ins_    = Sel("ins")
-        let kbd     = Sel("kbd")
-        let label   = Sel("label")
-        let legend  = Sel("legend")
-        let li      = Sel("li")
-        let link_   = Sel("link")
-        let main    = Sel("main")
-        let map_    = Sel("map")
-        let mark_   = Sel("mark")
-        let menu_   = Sel("menu")
-        let meta_   = Sel("meta")
-        let meter   = Sel("meter")
-        let nav     = Sel("nav")
-        let noscript = Sel("noscript")
-        let object_ = Sel("object")
-        let ol      = Sel("ol")
-        let optgroup = Sel("optgroup")
-        let option_ = Sel("option")
-        let output  = Sel("output")
-        let p       = Sel("p")
-        let picture = Sel("picture")
-        let pre     = Sel("pre")
-        let progress = Sel("progress")
-        let q       = Sel("q")
-        let rp      = Sel("rp")
-        let rt      = Sel("rt")
-        let ruby    = Sel("ruby")
-        let s       = Sel("s")
-        let samp    = Sel("samp")
-        let script_ = Sel("script")
-        let section = Sel("section")
-        let select_ = Sel("select")
-        let small   = Sel("small")
-        let source  = Sel("source")
-        let span    = Sel("span")
-        let strong  = Sel("strong")
-        let style_  = Sel("style")
-        let sub     = Sel("sub")
-        let summary = Sel("summary")
-        let sup     = Sel("sup")
-        let table   = Sel("table")
-        let tbody   = Sel("tbody")
-        let td      = Sel("td")
-        let template = Sel("template")
-        let textarea = Sel("textarea")
-        let tfoot   = Sel("tfoot")
-        let th      = Sel("th")
-        let thead   = Sel("thead")
-        let time_   = Sel("time")
-        let title_  = Sel("title")
-        let tr      = Sel("tr")
-        let track   = Sel("track")
-        let u       = Sel("u")
-        let ul      = Sel("ul")
-        let varEl   = Sel("var")
-        let video   = Sel("video")
-        let wbr     = Sel("wbr")
+        let dt          = Sel("dt")
+        let em          = Sel("em")
+        let embed       = Sel("embed")
+        let fieldset    = Sel("fieldset")
+        let figcaption  = Sel("figcaption")
+        let figure      = Sel("figure")
+        let footer      = Sel("footer")
+        let form        = Sel("form")
+        let h1          = Sel("h1")
+        let h2          = Sel("h2")
+        let h3          = Sel("h3")
+        let h4          = Sel("h4")
+        let h5          = Sel("h5")
+        let h6          = Sel("h6")
+        let header      = Sel("header")
+        let hgroup      = Sel("hgroup")
+        let hr          = Sel("hr")
+        let i           = Sel("i")
+        let iframe      = Sel("iframe")
+        let img         = Sel("img")
+        let input       = Sel("input")
+        let ins         = Sel("ins")
+        let kbd         = Sel("kbd")
+        let label       = Sel("label")
+        let legend      = Sel("legend")
+        let li          = Sel("li")
+        let link        = Sel("link")
+        let main        = Sel("main")
+        let map         = Sel("map")
+        let mark        = Sel("mark")
+        let menu        = Sel("menu")
+        let meta        = Sel("meta")
+        let meter       = Sel("meter")
+        let nav         = Sel("nav")
+        let noscript    = Sel("noscript")
+        let ``object``  = Sel("object")
+        let ol          = Sel("ol")
+        let optgroup    = Sel("optgroup")
+        let option      = Sel("option")
+        let output      = Sel("output")
+        let p           = Sel("p")
+        let picture     = Sel("picture")
+        let pre         = Sel("pre")
+        let progress    = Sel("progress")
+        let q           = Sel("q")
+        let rp          = Sel("rp")
+        let rt          = Sel("rt")
+        let ruby        = Sel("ruby")
+        let s           = Sel("s")
+        let samp        = Sel("samp")
+        let script      = Sel("script")
+        let section     = Sel("section")
+        let ``select``  = Sel("select")
+        let small       = Sel("small")
+        let source      = Sel("source")
+        let span        = Sel("span")
+        let strong      = Sel("strong")
+        let style       = Sel("style")
+        let sub         = Sel("sub")
+        let summary     = Sel("summary")
+        let sup         = Sel("sup")
+        let table       = Sel("table")
+        let tbody       = Sel("tbody")
+        let td          = Sel("td")
+        let template    = Sel("template")
+        let textarea    = Sel("textarea")
+        let tfoot       = Sel("tfoot")
+        let th          = Sel("th")
+        let thead       = Sel("thead")
+        let time        = Sel("time")
+        let title       = Sel("title")
+        let tr          = Sel("tr")
+        let track       = Sel("track")
+        let u           = Sel("u")
+        let ul          = Sel("ul")
+        let varEl       = Sel("var")
+        let video       = Sel("video")
+        let wbr         = Sel("wbr")
 
         // ── ID and Class selector helpers ───────────────────────
 
@@ -564,7 +566,7 @@ module Stylesheet =
         let id (name: string) = Sel(sprintf "#%s" name)
 
         /// Create a selector with attribute [attr].
-        let attr_sel (name: string) = Sel(sprintf "[%s]" name)
+        let attrSel (name: string) = Sel(sprintf "[%s]" name)
 
         /// Combine multiple selectors with comma (e.g., "h1, h2, h3").
         let selectors (sels: Sel list) =
@@ -572,7 +574,7 @@ module Stylesheet =
             Sel(combined)
 
         /// Create a raw selector from a string.
-        let raw_sel (selector: string) = Sel(selector)
+        let rawSel (selector: string) = Sel(selector)
         
         // ── Responsive breakpoint selectors ────────────────────────
         
@@ -586,11 +588,11 @@ module Stylesheet =
         // ── State selectors ─────────────────────────────────────
         
         /// Focus-visible state selector.
-        let focus_visible = Sel(":focus-visible")
+        let focusVisible = Sel(":focus-visible")
         /// Focus-within state selector.
-        let focus_within = Sel(":focus-within")
+        let focusWithin = Sel(":focus-within")
         /// Hover state for touch devices.
-        let hover_hover = Sel(":hover:hover")
+        let hoverHover = Sel(":hover:hover")
 
     // ── At-Rule Functions ───────────────────────────────────
 
@@ -671,27 +673,27 @@ module Stylesheet =
 
     /// Print-only styles wrapped in `@media print`.
     ///
-    ///   print_styles [ cls "no-print" [ display "none" ] ]
-    let print_styles (rules: CssRule list) : string =
+    ///   printStyles [ cls "no-print" [ display "none" ] ]
+    let printStyles (rules: CssRule list) : string =
         media "print" rules
 
     /// Dark colour-scheme styles wrapped in
     /// `@media (prefers-color-scheme: dark)`.
-    let dark_mode_styles (rules: CssRule list) : string =
+    let darkModeStyles (rules: CssRule list) : string =
         media "(prefers-color-scheme: dark)" rules
 
     /// Accessibility styles for users who request reduced motion, wrapped in
     /// `@media (prefers-reduced-motion: reduce)`.
     ///
-    ///   prefers_reduced_motion [ cls "anim" [ animation "none" ] ]
-    let prefers_reduced_motion (rules: CssRule list) : string =
+    ///   prefersReducedMotion [ cls "anim" [ animation "none" ] ]
+    let prefersReducedMotion (rules: CssRule list) : string =
         media "(prefers-reduced-motion: reduce)" rules
 
     /// Element-based media queries via `@container`. `query` may include a
     /// container name, e.g. "card (min-width: 400px)".
     ///
-    ///   container_queries "(min-width: 400px)" [ cls "item" [ width "100%" ] ]
-    let container_queries (query: string) (rules: CssRule list) : string =
+    ///   containerQueries "(min-width: 400px)" [ cls "item" [ width "100%" ] ]
+    let containerQueries (query: string) (rules: CssRule list) : string =
         let sb = StringBuilder()
         sb.AppendLine(sprintf "@container %s {" query) |> ignore
         for rule in rules do
@@ -707,7 +709,7 @@ module Stylesheet =
     /// `color-scheme` property, so native form controls and scrollbars follow
     /// the OS preference. `scheme` is one of "light", "dark", or "light dark".
     ///
-    ///   color_scheme_styles "light dark"   →  :root { color-scheme: light dark; }
-    let color_scheme_styles (scheme: string) : string =
+    ///   colorSchemeStyles "light dark"   →  :root { color-scheme: light dark; }
+    let colorSchemeStyles (scheme: string) : string =
         if String.IsNullOrWhiteSpace scheme then ""
         else ":root { color-scheme: " + scheme.Trim() + "; }"

@@ -134,7 +134,7 @@ module ScriptHost =
     /// Forward a hook's own stderr even when it succeeded.
     ///
     /// The shared FSI session captures the script's streams instead of letting
-    /// them reach the terminal, so without this a hook's `console_log` report —
+    /// them reach the terminal, so without this a hook's `consoleLog` report —
     /// the documented way to report from a hook — would never be seen. FSI's
     /// own warnings are dropped; they are not the hook's message.
     let private forwardDiagnostics (stderr: string) =
@@ -271,8 +271,8 @@ module ScriptHost =
         sb.AppendLine("    | v when v = \"\" -> None") |> ignore
         sb.AppendLine("    | v -> Some v") |> ignore
 
-        // console_log — the hook's reporting channel, tagged for the hook name.
-        sb.AppendLine("let console_log (message: string) = eprintfn \"[" + logTag + "] %s\" message") |> ignore
+        // consoleLog — the hook's reporting channel, tagged for the hook name.
+        sb.AppendLine("let consoleLog (message: string) = eprintfn \"[" + logTag + "] %s\" message") |> ignore
 
         // exec — run an external command. Output is captured, never echoed:
         // the caller decides what to print, so a hook reported in the build log

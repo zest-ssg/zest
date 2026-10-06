@@ -12,10 +12,10 @@ let siteTitle = if opt "site.title" <> "" then opt "site.title" else "Zest Site"
 let siteDesc = opt "site.description"
 
 let articles =
-    site_pages ()
+    sitePages ()
     |> Array.filter (fun p -> p.date <> "")
     |> Array.sortByDescending (fun p -> p.date)
     |> Array.map (fun p ->
         { url = p.url; title = p.title; date = p.date; description = p.description } : Feeds.FeedItem)
 
-printfn "%s" (Feeds.rss_xml siteTitle siteUrl siteDesc articles)
+printfn "%s" (Feeds.rssXml siteTitle siteUrl siteDesc articles)

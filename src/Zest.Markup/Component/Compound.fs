@@ -10,35 +10,35 @@ module Compound =
     open DslSugar
 
     /// Build a media object (image + text side by side).
-    let media_object (imgSrc: string) (imgAlt: string) (title: string) (desc: string) =
-        divC "media" [
-            imgC "media-img" imgSrc imgAlt
-            divC "media-body" [
-                h_text 4 title
-                p_text desc
+    let mediaObject (imgSrc: string) (imgAlt: string) (title: string) (desc: string) =
+        divClass "media" [
+            imgClass "media-img" imgSrc imgAlt
+            divClass "media-body" [
+                hText 4 title
+                pText desc
             ]
         ]
 
     /// Build a simple card component.
-    let card_component (title: string) (body: string) (linkUrl: string) (linkText: string) =
-        divC "card" [
-            divC "card-body" [
-                h_text 4 title
-                p_text body
-                a_text_c "btn btn-primary" linkUrl linkText
+    let cardComponent (title: string) (body: string) (linkUrl: string) (linkText: string) =
+        divClass "card" [
+            divClass "card-body" [
+                hText 4 title
+                pText body
+                aTextClass "btn btn-primary" linkUrl linkText
             ]
         ]
 
     /// Build a hero section.
-    let hero_section (title: string) (subtitle: string) (ctaUrl: string) (ctaText: string) =
-        sectionC "hero" [
-            divC "hero-content" [
-                h_text 1 title
-                p_text subtitle
-                a_text_c "btn btn-lg" ctaUrl ctaText
+    let heroSection (title: string) (subtitle: string) (ctaUrl: string) (ctaText: string) =
+        sectionClass "hero" [
+            divClass "hero-content" [
+                hText 1 title
+                pText subtitle
+                aTextClass "btn btn-lg" ctaUrl ctaText
             ]
         ]
 
     /// Build a grid of cards from data items.
-    let card_grid (items: 'a list) (cardFn: 'a -> string) =
-        divC "grid" (items |> List.map cardFn)
+    let cardGrid (items: 'a list) (cardFn: 'a -> string) =
+        divClass "grid" (items |> List.map cardFn)

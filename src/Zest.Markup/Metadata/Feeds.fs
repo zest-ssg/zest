@@ -11,7 +11,7 @@ module Feeds =
 
     /// A single feed entry (RSS/Atom). Named record — unlike anonymous
     /// records, named types unify across assembly boundaries, so FSI page
-    /// scripts can construct these and call rss_xml / atom_xml directly.
+    /// scripts can construct these and call rssXml / atomXml directly.
     type FeedItem = {
         url: string
         title: string
@@ -41,7 +41,7 @@ module Feeds =
         d.ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'", Globalization.CultureInfo.InvariantCulture)
 
     /// Generate an RSS 2.0 feed XML string from a list of pages.
-    let rss_xml (siteTitle: string) (siteUrl: string) (siteDescription: string) (pages: FeedItem[]) =
+    let rssXml (siteTitle: string) (siteUrl: string) (siteDescription: string) (pages: FeedItem[]) =
         // Normalize once so joining with absolute paths cannot produce "//".
         let siteUrl = siteUrl.TrimEnd('/')
         let sb = StringBuilder()
@@ -75,7 +75,7 @@ module Feeds =
         sb.ToString()
 
     /// Generate an Atom 1.0 feed XML string.
-    let atom_xml (siteTitle: string) (siteUrl: string) (siteDescription: string) (authorName: string) (pages: FeedItem[]) =
+    let atomXml (siteTitle: string) (siteUrl: string) (siteDescription: string) (authorName: string) (pages: FeedItem[]) =
         // Normalize once so joining with absolute paths cannot produce "//".
         let siteUrl = siteUrl.TrimEnd('/')
         let sb = StringBuilder()
@@ -109,7 +109,7 @@ module Feeds =
         sb.ToString()
 
     /// Generate a Sitemap XML string.
-    let sitemap_xml (baseUrl: string) (pages: SitemapItem[]) =
+    let sitemapXml (baseUrl: string) (pages: SitemapItem[]) =
         // Normalize once so joining with absolute paths cannot produce "//".
         let baseUrl = baseUrl.TrimEnd('/')
         let sb = StringBuilder()

@@ -144,7 +144,7 @@ The `md` helper renders a Markdown string to an HTML string, so prose and the F#
 open Zest.Markup
 
 render [
-    divC "about" [
+    divClass "about" [
         md """
 # About
 This page is a **native template** written in `.zest.fsx` (real F#), where
@@ -480,8 +480,8 @@ a  [ href "https://example.com"; text "Link" ]
 div [ class' "container"; id "main" ] [ ... ]
 
 // CSS class shortcuts
-divC "card"  [ p [ text "Content" ] ]   // <div class="card">
-spanC "badge" [ text "New" ]            // <span class="badge">
+divClass "card"  [ p [ text "Content" ] ]   // <div class="card">
+spanClass "badge" [ text "New" ]            // <span class="badge">
 
 // List comprehensions
 ul [ for item in items -> li [ text item ] ]
@@ -526,10 +526,10 @@ Runs before the build. Data added here is visible to templates as
 | `loadJson path`       | Parse a JSON file into dictionaries, arrays and scalars. |
 | `loadToml path`       | Parse a TOML file.                               |
 | `loadEnv key`         | Read an environment variable as `string option`. |
-| `console_log msg`     | Emit debug output to stderr.                     |
+| `consoleLog msg`      | Emit debug output to stderr.                     |
 | `exec cmd args`       | Run a shell command; returns `{ code; stdout; stderr }`. |
 
-`loadJson`, `loadToml`, `loadEnv`, `console_log` and `exec` are the same
+`loadJson`, `loadToml`, `loadEnv`, `consoleLog` and `exec` are the same
 functions, with the same signatures, in both hooks.
 
 #### `_finalize.fsx` API
@@ -560,7 +560,7 @@ Helpers:
 | `loadJson path`             | Parse a JSON file into dictionaries, arrays and scalars.        |
 | `loadToml path`             | Parse a TOML file.                                             |
 | `loadEnv key`               | Read an environment variable as `string option`.               |
-| `console_log msg`           | Emit debug output to stderr.                                   |
+| `consoleLog msg`            | Emit debug output to stderr.                                   |
 | `exec cmd args`             | Run a shell command; returns `{ code; stdout; stderr }`.        |
 | `setFailOnError flag`       | `false` logs hook errors without failing the build.             |
 
@@ -605,8 +605,8 @@ let broken =
         |> List.ofSeq)
 
 if not broken.IsEmpty then
-    console_log (sprintf "Found %d broken link(s)" broken.Length)
-    broken |> List.iter console_log
+    consoleLog (sprintf "Found %d broken link(s)" broken.Length)
+    broken |> List.iter consoleLog
     setFailOnError true
 
 // Write a search index next to the rendered pages.
@@ -617,12 +617,12 @@ let index =
 writeFile "search-index.json" (toJson index)
 
 // Report the build.
-console_log (sprintf "Done: %d pages, %d ms, %d bytes"
+consoleLog (sprintf "Done: %d pages, %d ms, %d bytes"
                     build.page_count build.duration_ms build.output_bytes)
 
 // Hand off to an external tool when one is available.
 let purge = exec "node" [ "scripts/purge-cdn.js"; site.url ]
-if purge.code <> 0 then console_log (sprintf "CDN purge failed: %s" purge.stderr)
+if purge.code <> 0 then consoleLog (sprintf "CDN purge failed: %s" purge.stderr)
 ```
 
 `finalize_on_error` (default `true`) controls whether the hook still runs when

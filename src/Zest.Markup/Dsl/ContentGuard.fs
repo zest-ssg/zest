@@ -15,13 +15,13 @@ module ContentGuard =
         else render value
 
     /// GuardOption: if value is Some, apply render; otherwise fallback.
-    let guard_opt (value: string option) (render: string -> string) (fallback: string) =
+    let guardOpt (value: string option) (render: string -> string) (fallback: string) =
         match value with
         | Some v when not (String.IsNullOrEmpty v) -> render v
         | _ -> fallback
 
     /// Guard a list: only render if the list is non-empty.
-    let guard_list (items: 'a list) (render: 'a list -> string) (fallback: string) =
+    let guardList (items: 'a list) (render: 'a list -> string) (fallback: string) =
         if List.isEmpty items then fallback
         else render items
 
@@ -37,7 +37,7 @@ module ContentGuard =
         else ""
 
     /// Warn when a value is suspiciously short/long.
-    let warn_if (condition: bool) (message: string) (content: string) =
+    let warnIf (condition: bool) (message: string) (content: string) =
         if condition then
             sprintf "<!-- WARNING: %s -->%s" (htmlEncode message) content
         else content

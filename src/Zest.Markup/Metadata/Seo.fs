@@ -16,7 +16,7 @@ module Seo =
     /// Generate a complete set of <meta> tags for SEO.
     /// Includes charset, viewport, title, description, canonical link,
     /// application name, and image.
-    let meta_tags (title: string) (description: string) (url: string) (image: string) (siteName: string) =
+    let metaTags (title: string) (description: string) (url: string) (image: string) (siteName: string) =
         [
             yield sprintf """<meta charset="utf-8" />"""
             yield sprintf """<meta name="viewport" content="width=device-width, initial-scale=1.0" />"""
@@ -30,7 +30,7 @@ module Seo =
         ]
 
     /// Generate Open Graph (og:) meta tags for social sharing.
-    let open_graph_tags (title: string) (description: string) (url: string) (image: string) (ogType: string) =
+    let openGraphTags (title: string) (description: string) (url: string) (image: string) (ogType: string) =
         [
             yield sprintf """<meta property="og:title" content="%s" />""" (ae title)
             yield sprintf """<meta property="og:description" content="%s" />""" (ae description)
@@ -45,7 +45,7 @@ module Seo =
         ]
 
     /// Generate Twitter Card meta tags.
-    let twitter_card_tags (cardType: string) (title: string) (description: string) (image: string) (site: string) =
+    let twitterCardTags (cardType: string) (title: string) (description: string) (image: string) (site: string) =
         [
             yield sprintf """<meta name="twitter:card" content="%s" />""" (ae cardType)
             yield sprintf """<meta name="twitter:title" content="%s" />""" (ae title)
@@ -57,11 +57,11 @@ module Seo =
         ]
 
     /// Generate a canonical URL <link> tag.
-    let canonical_url (url: string) =
+    let canonicalUrlTag (url: string) =
         sprintf """<link rel="canonical" href="%s" />""" (ae url)
 
     /// Generate a single hreflang <link> tag for multilingual pages.
-    let hreflang_tag (lang: string) (url: string) =
+    let hreflangTag (lang: string) (url: string) =
         sprintf """<link rel="alternate" hreflang="%s" href="%s" />""" (ae lang) (ae url)
 
     // ── Page-object convenience APIs ───────────────────────────────────
@@ -82,7 +82,7 @@ module Seo =
     /// `openGraphHtml(page)` matches the spec's page-object signature.
     /// Emits og:site_name when the page carries a site name.
     let openGraphHtml (page: SeoPage) =
-        [ yield! open_graph_tags page.title page.description page.url page.image page.``type``
+        [ yield! openGraphTags page.title page.description page.url page.image page.``type``
           if not (String.IsNullOrEmpty page.siteName) then
               yield sprintf """<meta property="og:site_name" content="%s" />""" (ae page.siteName) ]
         |> String.concat "\n"
@@ -91,16 +91,16 @@ module Seo =
     /// `twitterCardHtml(page, cardType)` — cardType is "summary" or
     /// "summary_large_image".
     let twitterCardHtml (page: SeoPage) (cardType: string) =
-        twitter_card_tags cardType page.title page.description page.image page.siteName
+        twitterCardTags cardType page.title page.description page.image page.siteName
         |> String.concat "\n"
 
     /// Generate a canonical URL <link> tag from a page object.
-    let canonicalUrl (page: SeoPage) = canonical_url page.url
+    let canonicalUrl (page: SeoPage) = canonicalUrlTag page.url
 
     /// Generate the full SEO <head> block (meta + OG + Twitter + canonical)
     /// for a page, ready to drop into a <head> element.
     let seoHead (page: SeoPage) (siteName: string) =
-        [ yield! meta_tags page.title page.description page.url page.image siteName
+        [ yield! metaTags page.title page.description page.url page.image siteName
           yield openGraphHtml page
           yield twitterCardHtml page "summary_large_image"
           yield canonicalUrl page ]

@@ -109,7 +109,7 @@ module FsiRunner =
         sb.AppendLine("open Zest.Markup.Values") |> ignore
         sb.AppendLine("open Zest.Markup.Seo") |> ignore
         sb.AppendLine("open Zest.Markup.Feeds") |> ignore
-        sb.AppendLine("""let console_log (message: string) = eprintfn "[DEBUG] %s" message""") |> ignore
+        sb.AppendLine("""let consoleLog (message: string) = eprintfn "[DEBUG] %s" message""") |> ignore
         sb.ToString()
 
     // ── FSI process helper (shared env var config) ────────────────────────
@@ -150,7 +150,7 @@ module FsiRunner =
         with _ -> None
 
     /// True when FSI diagnostics indicate a real failure (compiler errors or
-    /// runtime exceptions) rather than benign debug output (e.g. console_log).
+    /// runtime exceptions) rather than benign debug output (e.g. consoleLog).
     let private hasFsiErrors = FsiSession.hasErrors
 
     /// Compact, readable error message extracted from FSI stderr.
@@ -224,7 +224,7 @@ module FsiRunner =
             |> Option.map (fun l ->
                 l.StartsWith("render") || l = "page" || l.StartsWith("page {")
                 || l.StartsWith("let ") || l.StartsWith("open ")
-                || l.StartsWith("div ") || l.StartsWith("divC ")
+                || l.StartsWith("div ") || l.StartsWith("divClass ") || l.StartsWith("divC ")
                 || l.StartsWith("h1 ") || l.StartsWith("h2 ") || l.StartsWith("h3 ")
                 || l.StartsWith("p ") || l.StartsWith("section ") || l.StartsWith("article ")
                 || l.StartsWith("a ") || l.StartsWith("span ")
@@ -260,7 +260,7 @@ module FsiRunner =
         sb.AppendLine("open Zest.Markup.Values") |> ignore
         sb.AppendLine("open Zest.Markup.Seo") |> ignore
         sb.AppendLine("open Zest.Markup.Feeds") |> ignore
-        sb.AppendLine("""let console_log (message: string) = eprintfn "[DEBUG] %s" message""") |> ignore
+        sb.AppendLine("""let consoleLog (message: string) = eprintfn "[DEBUG] %s" message""") |> ignore
         sb.ToString()
 
     /// Build the top-level F# bindings (content/page/site) injected into layout

@@ -105,7 +105,7 @@ module FsiSession =
         sb.ToString ()
 
     /// True when FSI diagnostics indicate a real failure (compiler errors or
-    /// runtime exceptions) rather than benign debug output (e.g. console_log).
+    /// runtime exceptions) rather than benign debug output (e.g. consoleLog).
     let hasErrors (stderr: string) =
         stderr.Split('\n')
         |> Array.exists (fun line ->
