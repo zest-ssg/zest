@@ -22,6 +22,22 @@ module Modules =
     type UseDirective =
         { Path: string; Alias: string option }
 
+    /// Resolve a relative module path against `baseDir`, rejecting paths that
+    /// escape the directory or are otherwise invalid. Returns None for a
+    /// traversal attempt (`../../secret`), an invalid path, or a path outside
+    /// the root, so callers cannot read arbitrary files via `@use`.
+    let tryResolveWithinRoot (baseDir: string) (path: string) : string option =
+        let fullPath =
+            try Path.GetFullPath(Path.Combine(baseDir, path))
+            with _ -> ""
+        if fullPath = "" then None
+        else
+            let root = Path.GetFullPath baseDir
+            if fullPath = root
+               || fullPath.StartsWith(root + string Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            then Some fullPath
+            else None
+
     /// Get the source text for a module path.
     /// Built-in modules (zest:utilities, etc.) are resolved first;
     /// otherwise the path is treated as a relative file path.
@@ -31,11 +47,18 @@ module Modules =
         | None ->
             match baseDir with
             | Some dir ->
-                let fullPath = Path.GetFullPath(Path.Combine(dir, path))
-                if File.Exists fullPath then Some(File.ReadAllText(fullPath))
-                else
-                    eprintfn "[ZCSS WARN] @use import not found: '%s' (resolved: %s)" path fullPath
+                // Resolve the path and reject anything that escapes the source
+                // directory: `@use "../../../../etc/passwd"` must not read a
+                // file outside the project, and an invalid path must not throw.
+                match tryResolveWithinRoot dir path with
+                | None ->
+                    eprintfn "[ZCSS WARN] @use import '%s' is invalid or escapes the source directory — skipped." path
                     None
+                | Some fullPath ->
+                    if File.Exists fullPath then Some(File.ReadAllText(fullPath))
+                    else
+                        eprintfn "[ZCSS WARN] @use import not found: '%s' (resolved: %s)" path fullPath
+                        None
             | None ->
                 eprintfn "[ZCSS WARN] @use import '%s' skipped — no source file context" path
                 None

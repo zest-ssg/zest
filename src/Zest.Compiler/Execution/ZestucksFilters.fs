@@ -12,8 +12,11 @@ module ZestucksFilters =
 
     /// Prebuild-declared filters: name → pipeline spec (e.g. "upper | trim").
     /// Set by BuildRunner after running _prebuild.fsx, applied during
-    /// `registerAllFilters` so every engine instance picks them up.
-    let private prebuildFilters = Dictionary<string, string>()
+    /// `registerAllFilters` so every engine instance picks them up. Held as an
+    /// immutable snapshot swapped atomically so a concurrent
+    /// `registerAllFilters` (one per engine, possibly parallel) never observes
+    /// a half-cleared table.
+    let private prebuildFilters = ref Map.empty<string, string>
 
     /// Whether to register Zest extension filters (pages_by_tag, recent,
     /// by_collection, search). When `ZestucksCompatibility = "strict"`,
@@ -24,8 +27,7 @@ module ZestucksFilters =
     /// Set the prebuild-declared filter specs. Called once per build
     /// after _prebuild.fsx executes. Clears any previously accumulated filters.
     let setPrebuildFilters (filters: IDictionary<string, string>) =
-        prebuildFilters.Clear()
-        for kv in filters do prebuildFilters.[kv.Key] <- kv.Value
+        prebuildFilters := (filters |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq)
 
     /// Toggle strict Zestucks compatibility mode. When true, Zest-specific
     /// extension filters are not registered on engine instances.
@@ -189,7 +191,7 @@ module ZestucksFilters =
         // ── prebuild-declared filters (from _prebuild.fsx) ──
         // Each spec is a Zestucks filter pipeline applied via a mini-render.
         // Always registered — these are user-owned, not Zest builtins.
-        for kv in prebuildFilters do
+        for kv in !prebuildFilters do
             let spec = kv.Value
             let name = kv.Key
             engine.RegisterFilter name (fun value _args -> applyPipeline engine spec value)

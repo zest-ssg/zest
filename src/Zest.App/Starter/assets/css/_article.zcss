@@ -1,9 +1,11 @@
 /* ---------------------------------------------------------------------------
-   Document head and body — centred like a paper, with numbered sections.
+   The article block — the `paper__*` elements every page body is built from:
+   centred title, subtitle, and the numbered section body.
 
    The counters live on .paper__body, so the numbering is per document and
    never leaks between pages. Markup comes from _layouts/post.zest.fsx and
-   _layouts/default.zest.fsx.
+   _layouts/default.zest.fsx; the `paper` prefix is the class namespace, not
+   the name of this file.
    --------------------------------------------------------------------------- */
 
 .paper__head [

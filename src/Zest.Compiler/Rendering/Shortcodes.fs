@@ -1,5 +1,6 @@
 namespace Zest.Compiler.Rendering
 open System
+open System.Collections.Concurrent
 open System.Collections.Generic
 open System.Net
 open System.Text
@@ -14,7 +15,9 @@ type ShortcodeFunc = IDictionary<string, obj> -> string -> string
 
 module Shortcodes =
 
-    let private store = Dictionary<string, ShortcodeFunc>()
+    // Pages are rendered in parallel, so registration and lookup must be
+    // thread-safe; a plain Dictionary would corrupt under concurrent writes.
+    let private store = ConcurrentDictionary<string, ShortcodeFunc>()
 
     /// Register a shortcode.
     let add (name: string) (fn: ShortcodeFunc) : unit =
@@ -48,8 +51,8 @@ module Shortcodes =
 
 /// Perform shortcode replacement in template context ({{ key param }} or {% key param %}).
 module ShortcodeRenderer =
+    let private pattern = Regex(@"\{\{\s*(\w+)\s*(.*?)\s*\}\}", RegexOptions.Compiled)
     let inlineShortcodes (ctx: IDictionary<string, obj>) (text: string) =
-        let pattern = Regex(@"\{\{\s*(\w+)\s*(.*?)\s*\}\}", RegexOptions.Compiled)
         pattern.Replace(text, MatchEvaluator(fun m ->
             let name = m.Groups.[1].Value
             let arg  = m.Groups.[2].Value

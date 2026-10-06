@@ -23,14 +23,15 @@ module internal Renderer =
     type RenderEnv = {
         Variables: IDictionary<string, obj>
         LoadTemplate: string * int -> Result<string, string>
-        ChildBlocks: IDictionary<string, Token list>   // blocks from child template
+        ChildBlocks: IDictionary<string, TokenRange>   // blocks from child template
         BlockStack: string list                        // currently active block names
         Depth: int
-        Macros: IDictionary<string, ((string * string option) list * Token list)>   // macro name → (args with defaults, body)
-        Blocks: IDictionary<string, Token list>        // this template's own block defs (for super())
+        Macros: IDictionary<string, ((string * string option) list * TokenRange)>   // macro name → (args with defaults, body)
+        Blocks: IDictionary<string, TokenRange>        // this template's own block defs (for super())
         CurrentBlock: string option                    // block being rendered (for super())
-        CallerBody: Token list option                  // captured {% call %} body (for caller())
+        CallerBody: TokenRange option                  // captured {% call %} body (for caller())
         LoopNesting: int                               // current for-loop nesting depth
+        MacroDepth: int                                // macro / super() recursion depth (bounds self-recursion)
         LastLine: int ref                              // most recently processed source line (for errors)
         ControlFlow: string ref                        // "" | "break" | "continue" (consumed by the nearest for loop)
     }
@@ -58,18 +59,21 @@ module internal Renderer =
         mCtx
 
     // ── Main renderer ──────────────────────────────────────
-    // The recursive core works on a Token[] (O(1) indexing, single conversion
-    // per render). The list wrapper keeps the public signature unchanged.
+    // The recursive core walks a TokenRange — a window over a single shared
+    // Token[]. Block bodies are narrowed (Start/Count) rather than sliced into
+    // fresh lists/arrays, so nesting no longer allocates per level. The list
+    // wrapper is the only place a list is converted, and only once per render.
     let rec renderTokens (tokens: Token list) (env: RenderEnv) : Result<string, string> =
-        renderTokensArr (List.toArray tokens) env
+        renderRange (TokenRange.ofList tokens) env
 
-    and renderTokensArr (tokens: Token[]) (env: RenderEnv) : Result<string, string> =
+    and renderRange (range: TokenRange) (env: RenderEnv) : Result<string, string> =
+        let tokens = range.Source
+        let rangeEnd = range.Stop
         let sb = StringBuilder()
-        let len = tokens.Length
-        let mutable idx = 0
+        let mutable idx = range.Start
         let mutable error: string option = None
 
-        while idx < len && error.IsNone do
+        while idx < rangeEnd && error.IsNone do
             let curLine =
                 match tokens.[idx] with
                 | TextToken(_, l) | VarToken(_, l) | TagToken(_, _, l) | CmtToken(_, l) -> l
@@ -84,21 +88,26 @@ module internal Renderer =
                 let exprTrim = expr.Trim()
                 // {{ super() }} — render the parent's version of the current block.
                 if exprTrim.StartsWith("super(") then
-                    match env.CurrentBlock with
-                    | Some name ->
-                        match env.Blocks.TryGetValue name with
-                        | true, parentBody ->
-                            match renderTokens parentBody { env with CurrentBlock = Some name } with
-                            | Ok h -> sb.Append(h) |> ignore
-                            | Error e -> error <- Some e
-                        | _ -> ()
-                    | None -> ()
+                    // Guard against a block calling super() into itself (e.g. a
+                    // mis-written template), which would recurse forever.
+                    if env.MacroDepth >= 64 then
+                        error <- Some "super() recursion limit exceeded"
+                    else
+                        match env.CurrentBlock with
+                        | Some name ->
+                            match env.Blocks.TryGetValue name with
+                            | true, parentBody ->
+                                match renderRange parentBody { env with CurrentBlock = Some name; MacroDepth = env.MacroDepth + 1 } with
+                                | Ok h -> sb.Append(h) |> ignore
+                                | Error e -> error <- Some e
+                            | _ -> ()
+                        | None -> ()
                     idx <- idx + 1
                 // {{ caller() }} — render the captured {% call %} body.
                 elif exprTrim.StartsWith("caller(") then
                     match env.CallerBody with
                     | Some body ->
-                        match renderTokens body env with
+                        match renderRange body env with
                         | Ok h -> sb.Append(h) |> ignore
                         | Error e -> error <- Some e
                     | None -> ()
@@ -111,14 +120,19 @@ module internal Renderer =
                         let mName = exprTrim.[..pOpen-1].Trim()
                         match env.Macros.TryGetValue mName with
                         | true, (margDefs, mbody) ->
-                            let argsText = exprTrim.[pOpen+1..exprTrim.Length-2].Trim()
-                            let argValues =
-                                if argsText = "" then []
-                                else splitTopLevelArgs argsText |> List.map (fun a -> evalExpr a env.Variables)
-                            let mCtx = bindMacroArgs margDefs argValues env.Variables
-                            match renderTokens mbody { env with Variables = mCtx :> IDictionary<string, obj> } with
-                            | Ok h -> macroResult <- Some h
-                            | Error e -> error <- Some e
+                            // A macro that expands itself (directly or via a
+                            // chain) must not blow the CLR stack; bound it.
+                            if env.MacroDepth >= 64 then
+                                error <- Some(sprintf "Macro recursion limit exceeded in '%s'" mName)
+                            else
+                                let argsText = exprTrim.[pOpen+1..exprTrim.Length-2].Trim()
+                                let argValues =
+                                    if argsText = "" then []
+                                    else splitTopLevelArgs argsText |> List.map (fun a -> evalExpr a env.Variables)
+                                let mCtx = bindMacroArgs margDefs argValues env.Variables
+                                match renderRange mbody { env with Variables = mCtx :> IDictionary<string, obj>; MacroDepth = env.MacroDepth + 1 } with
+                                | Ok h -> macroResult <- Some h
+                                | Error e -> error <- Some e
                         | _ -> ()
                     match macroResult with
                     | Some h ->
@@ -138,39 +152,38 @@ module internal Renderer =
             | TagToken(tag, args, _) ->
                 let isBlock = blockTags.Contains(tag)
                 let endIdx =
-                    if isBlock then findMatchingEnd (idx+1) tag tokens
+                    if isBlock then findMatchingEnd (idx+1) rangeEnd tag tokens
                     else idx
                 // A block tag whose matching end was not found: report a precise error.
-                if isBlock && endIdx >= len && len > idx then
+                if isBlock && endIdx >= rangeEnd && rangeEnd > idx then
                     error <- Some(sprintf "Unclosed block tag '{%% %s %%}'" tag)
                 else
-                let bodyTokens =
-                    if isBlock && endIdx > idx+1 then tokens.[idx+1..endIdx-1] |> Array.toList
-                    else []
-                let bodyHtml =
-                    if isBlock then
-                        match renderTokens bodyTokens env with
-                        | Ok h -> Some h
-                        | Error e -> error <- Some e; None
-                    else None
+                // The body as a zero-copy window over the shared backing array.
+                // Rendering is deferred (lazy) so tags that never consume the
+                // rendered body — if/for/set/macro/break — no longer render it
+                // once and throw the result away.
+                let bodyRange =
+                    if isBlock then { Source = tokens; Start = idx + 1; Count = endIdx - idx - 1 }
+                    else TokenRange.empty
+                let bodyHtml = lazy (renderRange bodyRange env)
 
                 match tag with
                 | "if" ->
-                    // Split the body into (condition, branchTokens) at top-level
+                    // Split the body into (condition, branch) at top-level
                     // elif/else boundaries, then render the first matching branch.
                     let condExpr = args |> String.concat " "
-                    let branches = splitIfBranches condExpr (List.toArray bodyTokens)
+                    let branches = splitIfBranches condExpr bodyRange
                     let chosen =
-                        branches |> List.tryPick (fun (cond, toks) ->
+                        branches |> List.tryPick (fun (cond, r) ->
                             let matched =
                                 match cond with
                                 | None -> true   // else branch
                                 | Some "" -> true
                                 | Some e -> toBool (evalExpr e env.Variables)
-                            if matched then Some toks else None)
+                            if matched then Some r else None)
                     match chosen with
-                    | Some toks ->
-                        match renderTokens toks env with
+                    | Some r ->
+                        match renderRange r env with
                         | Ok h -> sb.Append(h) |> ignore
                         | Error e -> error <- Some e
                     | None -> ()
@@ -182,7 +195,7 @@ module internal Renderer =
                         if inIdx >= 0 then ls.[..inIdx-1].Trim(), ls.[inIdx+4..]
                         else ls, ""
                     let iter = evalExpr iterExpr env.Variables
-                    let loopTokens = forLoopBody (List.toArray bodyTokens)
+                    let loopTokens = forLoopBody bodyRange
                     // Support "key, value" destructuring for dict/pair iteration.
                     let varNames = loopVar.Split(',') |> Array.map (fun v -> v.Trim())
                     // Bind the iteration variable(s) into the per-iteration context.
@@ -239,7 +252,7 @@ module internal Renderer =
                             loopDict.["depth"] <- box(env.LoopNesting + 1)
                             loopDict.["depth0"] <- box env.LoopNesting
                             loopDict.["previtem"] <- prev; loopDict.["nextitem"] <- nxt
-                            match renderTokens loopTokens { env with Variables = ctx :> IDictionary<string, obj>; LoopNesting = env.LoopNesting + 1 } with
+                            match renderRange loopTokens { env with Variables = ctx :> IDictionary<string, obj>; LoopNesting = env.LoopNesting + 1 } with
                             | Ok h -> sb.Append(h) |> ignore
                             | Error e -> error <- Some e
                             // break / continue are consumed by the nearest enclosing for.
@@ -248,8 +261,8 @@ module internal Renderer =
                             i <- i + 1
                         if not stop && list.Count = 0 then
                             // else body of for
-                            let elseBody = forElseBody (List.toArray bodyTokens)
-                            match renderTokens elseBody env with
+                            let elseBody = forElseBody bodyRange
+                            match renderRange elseBody env with
                             | Ok h -> sb.Append(h) |> ignore
                             | Error e -> error <- Some e
                     | :? System.Collections.IEnumerable as e when not (iter :? string) ->
@@ -269,7 +282,7 @@ module internal Renderer =
                                 bindItem ctx item
                                 loopDict.["index"] <- box(count+1); loopDict.["index0"] <- box count
                                 loopDict.["first"] <- box(count=0)
-                                match renderTokens loopTokens { env with Variables = ctx :> IDictionary<string, obj>; LoopNesting = env.LoopNesting + 1 } with
+                                match renderRange loopTokens { env with Variables = ctx :> IDictionary<string, obj>; LoopNesting = env.LoopNesting + 1 } with
                                 | Ok h -> sb.Append(h) |> ignore
                                 | Error er -> error <- Some er
                                 if env.ControlFlow.Value = "break" then env.ControlFlow.Value <- ""; stop <- true
@@ -278,14 +291,14 @@ module internal Renderer =
                         finally
                             match box en with :? System.IDisposable as d -> d.Dispose() | _ -> ()
                         if not stop && not any then
-                            let elseBody = forElseBody (List.toArray bodyTokens)
-                            match renderTokens elseBody env with
+                            let elseBody = forElseBody bodyRange
+                            match renderRange elseBody env with
                             | Ok h -> sb.Append(h) |> ignore
                             | Error e -> error <- Some e
                     | _ ->
                         // Non-iterable value (null / scalar): render the else body.
-                        let elseBody = forElseBody (List.toArray bodyTokens)
-                        match renderTokens elseBody env with
+                        let elseBody = forElseBody bodyRange
+                        match renderRange elseBody env with
                         | Ok h -> sb.Append(h) |> ignore
                         | Error e -> error <- Some e
 
@@ -296,33 +309,43 @@ module internal Renderer =
                     | true, childBody when not (env.BlockStack |> List.contains name) ->
                         // Render child's block content (which may itself extend further)
                         let childEnv = { env with BlockStack = name :: env.BlockStack; CurrentBlock = Some name }
-                        match renderTokens childBody childEnv with
+                        match renderRange childBody childEnv with
                         | Ok h -> sb.Append(h) |> ignore
                         | Error e -> error <- Some e
                     | _ ->
                         // Use parent's default content
-                        match bodyHtml with Some h -> sb.Append(h) |> ignore | None -> ()
+                        match bodyHtml.Value with
+                        | Ok h -> sb.Append(h) |> ignore
+                        | Error e -> error <- Some e
 
                 | "extends" ->
                     let path = if args.Length > 0 then args.[0].Trim('"', '\'') else ""
                     match env.LoadTemplate (path, env.Depth + 1) with
                     | Ok txt ->
-                        let parentArr = tokenize txt |> Array.ofList
+                        let parentRange = TokenRange.ofList (tokenize txt)
                         // Collect blocks from the parent (for super()) and the child
-                        let parentBlocks = collectBlocks parentArr
-                        let childBlocks = collectBlocks tokens
+                        let parentBlocks = collectBlocks parentRange
+                        // Merge this template's own blocks with any overrides
+                        // inherited from a descendant (multi-level `extends`).
+                        // The descendant wins, so `page extends base extends
+                        // root` still lets `page` override a block declared in
+                        // `root` — without the merge the override was lost at
+                        // the second level.
+                        let childBlocks = Dictionary<string, TokenRange>()
+                        for kv in collectBlocks range do childBlocks.[kv.Key] <- kv.Value
+                        for kv in env.ChildBlocks do childBlocks.[kv.Key] <- kv.Value
                         // Render parent with child blocks available for override
                         let parentEnv = { env with
                                             ChildBlocks = childBlocks
                                             Blocks = parentBlocks
                                             Depth = env.Depth + 1
                                             BlockStack = [] }
-                        match renderTokensArr parentArr parentEnv with
+                        match renderRange parentRange parentEnv with
                         | Ok h -> sb.Append(h) |> ignore
                         | Error e -> error <- Some e
                         // extends replaces the whole template: stop rendering the
                         // child's own (already-inherited) tokens.
-                        idx <- len
+                        idx <- rangeEnd
                     | Error e -> error <- Some e
 
                 | "include" ->
@@ -330,7 +353,10 @@ module internal Renderer =
                     let ignoreMissing = args.Length > 1 && (args |> String.concat " ").Contains("ignore", StringComparison.OrdinalIgnoreCase)
                     match env.LoadTemplate (path, env.Depth + 1) with
                     | Ok txt ->
-                        match renderTokens (tokenize txt) env with
+                        // Render with the incremented depth so a mutually
+                        // recursive `{% include %}` chain hits the loader's
+                        // depth cap instead of the CLR stack.
+                        match renderRange (TokenRange.ofList (tokenize txt)) { env with Depth = env.Depth + 1 } with
                         | Ok h -> sb.Append(h) |> ignore
                         | Error e -> error <- Some e
                     | Error _ when ignoreMissing -> ()
@@ -355,10 +381,10 @@ module internal Renderer =
                     else
                         // Block assignment: {% set name %}...{% endset %}
                         let sname = setText.Trim().Trim('"', '\'')
-                        let endIdx = findMatchingEnd (idx+1) "set" tokens
+                        let endIdx = findMatchingEnd (idx+1) rangeEnd "set" tokens
                         if endIdx > idx then
-                            let body = tokens.[idx+1..endIdx-1] |> Array.toList
-                            match renderTokens body env with
+                            let body = { Source = tokens; Start = idx + 1; Count = endIdx - idx - 1 }
+                            match renderRange body env with
                             | Ok h -> env.Variables.[sname] <- box h
                             | Error e -> error <- Some e
                             idx <- endIdx   // consumed; default increment advances past {% endset %}
@@ -384,7 +410,7 @@ module internal Renderer =
                                             else a, None)
                                 name, pargs
                             else macroText.Trim(), []
-                        env.Macros.[mname] <- (margs, bodyTokens)
+                        env.Macros.[mname] <- (margs, bodyRange)
                     ()
 
                 | "call" ->
@@ -404,13 +430,13 @@ module internal Renderer =
                         let mCtx = bindMacroArgs margDefs callArgs env.Variables
                         // Make the captured body available as caller() (also kept as
                         // a string for backwards compatibility with {{ caller }}).
-                        match bodyHtml with
-                        | Some h -> mCtx.["caller"] <- box h
-                        | None -> ()
+                        match bodyHtml.Value with
+                        | Ok h -> mCtx.["caller"] <- box h
+                        | Error e -> error <- Some e
                         let callEnv = { env with
                                             Variables = (mCtx :> IDictionary<string, obj>)
-                                            CallerBody = if bodyHtml.IsSome then Some bodyTokens else None }
-                        match renderTokens mbody callEnv with
+                                            CallerBody = if isBlock then Some bodyRange else None }
+                        match renderRange mbody callEnv with
                         | Ok h -> sb.Append(h) |> ignore
                         | Error e -> error <- Some e
                     | _ -> ()
@@ -425,9 +451,8 @@ module internal Renderer =
                         else importText.Trim().Trim('"', '\''), ""
                     match env.LoadTemplate (path, env.Depth + 1) with
                     | Ok txt ->
-                        let importTokens = tokenize txt |> Array.ofList
                         // Register every macro from the imported file as a callable.
-                        let defs = collectMacroDefs importTokens
+                        let defs = collectMacroDefs (TokenRange.ofList (tokenize txt))
                         for (mname, margs, body) in defs do
                             let key = if asName <> "" then asName + "." + mname else mname
                             env.Macros.[key] <- (margs, body)
@@ -447,7 +472,7 @@ module internal Renderer =
                         else imports.Trim(), ""
                     match env.LoadTemplate (path, env.Depth + 1) with
                     | Ok txt ->
-                        let defs = collectMacroDefs (tokenize txt |> Array.ofList)
+                        let defs = collectMacroDefs (TokenRange.ofList (tokenize txt))
                         match defs |> List.tryFind (fun (mname, _, _) -> mname = importName) with
                         | Some(_, margs, body) ->
                             let key = if asName <> "" then asName else importName
@@ -456,13 +481,15 @@ module internal Renderer =
                     | Error e -> error <- Some e
 
                 | "raw" ->
-                    match bodyHtml with Some h -> sb.Append(h) |> ignore | None -> ()
+                    match bodyHtml.Value with
+                    | Ok h -> sb.Append(h) |> ignore
+                    | Error e -> error <- Some e
 
                 | "filter" ->
                     let fname = if args.Length > 0 then args.[0] else ""
-                    match bodyHtml with
-                    | Some h -> sb.Append(toStr (applyFilter fname (box h) [])) |> ignore
-                    | None -> ()
+                    match bodyHtml.Value with
+                    | Ok h -> sb.Append(toStr (applyFilter fname (box h) [])) |> ignore
+                    | Error e -> error <- Some e
 
                 | "break" -> env.ControlFlow.Value <- "break"
                 | "continue" -> env.ControlFlow.Value <- "continue"
@@ -477,7 +504,7 @@ module internal Renderer =
                         let eq = pair.IndexOf("=")
                         if eq > 0 then
                             newCtx.[pair.[..eq-1].Trim()] <- evalExpr pair.[eq+1..] env.Variables
-                    match renderTokens bodyTokens { env with Variables = newCtx :> IDictionary<string, obj> } with
+                    match renderRange bodyRange { env with Variables = newCtx :> IDictionary<string, obj> } with
                     | Ok h -> sb.Append(h) |> ignore
                     | Error e -> error <- Some e
 
@@ -494,56 +521,65 @@ module internal Renderer =
 
     /// Split an if-block body into ordered branches, each tagged with an
     /// optional condition (None = the final `else`). Nested if/for blocks are
-    /// skipped so their inner elif/else tags don't split the outer branch.
-    and splitIfBranches (firstCond: string) (arr: Token[]) : (string option * Token list) list =
-        let n = arr.Length
-        let branches = ResizeArray<string option * Token list>()
+    /// skipped so their inner elif/else tags don't split the outer branch. Each
+    /// branch is a zero-copy window over the same backing array.
+    and splitIfBranches (firstCond: string) (range: TokenRange) : (string option * TokenRange) list =
+        let tokens = range.Source
+        let rangeEnd = range.Stop
+        let branches = ResizeArray<string option * TokenRange>()
         let mutable curCond : string option = Some firstCond
-        let cur = ResizeArray<Token>()
+        let mutable curStart = range.Start
         let mutable depth = 0
-        let mutable i = 0
-        while i < n do
-            match arr.[i] with
-            | TagToken(("if" | "for"), _, _) -> depth <- depth + 1; cur.Add arr.[i]
-            | TagToken(("endif" | "endfor"), _, _) -> depth <- depth - 1; cur.Add arr.[i]
+        let mutable i = range.Start
+        while i < rangeEnd do
+            match tokens.[i] with
+            | TagToken(("if" | "for"), _, _) -> depth <- depth + 1
+            | TagToken(("endif" | "endfor"), _, _) -> depth <- depth - 1
             | TagToken(("elif" | "elseif"), a, _) when depth = 0 ->
-                branches.Add(curCond, List.ofSeq cur); cur.Clear()
+                branches.Add(curCond, { Source = tokens; Start = curStart; Count = i - curStart })
+                curStart <- i + 1
                 curCond <- Some(a |> String.concat " ")
             | TagToken("else", _, _) when depth = 0 ->
-                branches.Add(curCond, List.ofSeq cur); cur.Clear()
+                branches.Add(curCond, { Source = tokens; Start = curStart; Count = i - curStart })
+                curStart <- i + 1
                 curCond <- None
-            | t -> cur.Add t
+            | _ -> ()
             i <- i + 1
-        branches.Add(curCond, List.ofSeq cur)
+        branches.Add(curCond, { Source = tokens; Start = curStart; Count = rangeEnd - curStart })
         List.ofSeq branches
 
     /// Extract the `{% else %}` body of a for-loop (depth-aware). Returns the
-    /// tokens after a top-level else, or an empty list when none is present.
-    and forElseBody (arr: Token[]) : Token list =
-        let n = arr.Length
+    /// window after a top-level else, or an empty window when none is present.
+    and forElseBody (range: TokenRange) : TokenRange =
+        let tokens = range.Source
+        let rangeEnd = range.Stop
         let mutable depth = 0
         let mutable elseIdx = -1
-        let mutable i = 0
-        while i < n && elseIdx < 0 do
-            match arr.[i] with
+        let mutable i = range.Start
+        while i < rangeEnd && elseIdx < 0 do
+            match tokens.[i] with
             | TagToken(("if" | "for"), _, _) -> depth <- depth + 1
             | TagToken(("endif" | "endfor"), _, _) -> depth <- depth - 1
             | TagToken("else", _, _) when depth = 0 -> elseIdx <- i
             | _ -> ()
             i <- i + 1
-        if elseIdx >= 0 && elseIdx + 1 < n then arr.[elseIdx+1..] |> Array.toList else []
+        if elseIdx >= 0 && elseIdx + 1 < rangeEnd then
+            { Source = tokens; Start = elseIdx + 1; Count = rangeEnd - elseIdx - 1 }
+        else TokenRange.empty
 
     /// Extract the loop body of a for-loop, stopping at a top-level else.
-    and forLoopBody (arr: Token[]) : Token list =
-        let n = arr.Length
+    and forLoopBody (range: TokenRange) : TokenRange =
+        let tokens = range.Source
+        let rangeEnd = range.Stop
         let mutable depth = 0
         let mutable elseIdx = -1
-        let mutable i = 0
-        while i < n && elseIdx < 0 do
-            match arr.[i] with
+        let mutable i = range.Start
+        while i < rangeEnd && elseIdx < 0 do
+            match tokens.[i] with
             | TagToken(("if" | "for"), _, _) -> depth <- depth + 1
             | TagToken(("endif" | "endfor"), _, _) -> depth <- depth - 1
             | TagToken("else", _, _) when depth = 0 -> elseIdx <- i
             | _ -> ()
             i <- i + 1
-        if elseIdx >= 0 then arr.[..elseIdx-1] |> Array.toList else Array.toList arr
+        if elseIdx >= 0 then { Source = tokens; Start = range.Start; Count = elseIdx - range.Start }
+        else range

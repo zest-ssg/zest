@@ -8,6 +8,6 @@
 # prints whichever version this file declares.
 
 [meta]
-version    = "0.8.0"
+version    = "0.9.0"
 header     = "Zest v{0} — Easy Static-site Toolkit"
-ecosystem  = "Ecosystem: .ztk + .zest.fsx + .zcss"
+ecosystem  = "Ecosystem: .zest.fsx + .ztk + .zcss"

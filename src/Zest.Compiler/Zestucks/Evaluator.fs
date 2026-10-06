@@ -290,7 +290,13 @@ module internal Evaluator =
         | "strip" -> ret(s.Trim())
         | "lstrip" -> ret(s.TrimStart())
         | "rstrip" -> ret(s.TrimEnd())
-        | "nl2br" -> ret(s.Replace("\r\n", "\n").Replace("\n", "<br />\n"))
+        | "nl2br" ->
+            // The injected `<br />` must not be auto-escaped downstream, so
+            // escape the text ourselves and mark the whole result safe. A value
+            // already marked safe is passed through untouched.
+            let withBreaks (text: string) = text.Replace("\r\n", "\n").Replace("\n", "<br />\n")
+            if isSafe then SafeString(withBreaks s) :> obj
+            else SafeString(withBreaks (HtmlEncode(s))) :> obj
         | "string" | "str" -> ret s
         | "safe" -> SafeString(s) :> obj  // bypass auto-escape
         | "escape" | "e" -> SafeString(HtmlEncode(s)) :> obj
@@ -386,6 +392,8 @@ module internal Evaluator =
         | "slice" ->
             let start = if args.Length > 0 then (try int(toStr args.[0]) with _ -> 0) else 0
             let step = if args.Length > 1 then (try int(toStr args.[1]) with _ -> 1) else 1
+            // A zero step would make F#'s `..` range throw; treat it as 1.
+            let step = if step = 0 then 1 else step
             match value with
             | :? System.Collections.IList as l ->
                 [| for i in start..step..l.Count-1 -> l.[i] |] :> obj
@@ -567,7 +575,12 @@ module internal Evaluator =
 
         // URL filter
         | "urlize" ->
-            box(reUrl.Replace(s, fun m -> sprintf "<a href=\"%s\">%s</a>" m.Value m.Value))
+            // Escape first (unless the input is already safe HTML), then wrap
+            // matches in anchors; the result is marked safe so the injected
+            // markup survives auto-escaping while the rest stays encoded.
+            let baseText = if isSafe then s else HtmlEncode(s)
+            let linked = reUrl.Replace(baseText, fun m -> sprintf "<a href=\"%s\">%s</a>" m.Value m.Value)
+            SafeString linked :> obj
 
         // Custom registered filters (from Zest)
         | _ ->

@@ -5,6 +5,7 @@ open System.Collections.Generic
 open System.Runtime.CompilerServices
 open System.Text
 open System.Text.RegularExpressions
+open System.Threading
 
 // ============================================================
 // ZCSS Parser Core — Shared types, patterns, and helpers
@@ -29,14 +30,21 @@ module CoreParser =
             let ctx =
                 if this.Line > 0 && this.Line <= lines.Length then
                     let line = lines.[this.Line - 1]
-                    let marker = String(' ', this.Col - 1) + "^"
+                    // Guard against Col <= 0: String(char, count) throws on a
+                    // negative count, which would turn a real parse error into a
+                    // secondary crash while it is being reported.
+                    let marker = String(' ', max 0 (this.Col - 1)) + "^"
                     sprintf "  %d | %s\n     | %s" this.Line line marker
                 else ""
             sprintf "[ZCSS ERROR] %d:%d\n  %s\n%s" this.Line this.Col this.Message ctx
 
     let mutable errors = ConcurrentBag<ZcssError>()
     let getErrors() = Seq.toList errors
-    let clearErrors() = errors <- ConcurrentBag<ZcssError>()
+    /// Atomically replace the error bag. Assigning a fresh bag while another
+    /// thread enumerates the old one loses nothing (the reader holds its own
+    /// reference); `Interlocked.Exchange` just makes the swap itself visible
+    /// to every thread without a torn read.
+    let clearErrors() = Interlocked.Exchange(&errors, ConcurrentBag<ZcssError>()) |> ignore
 
     // ── Regex patterns ──────────────────────────────────────
     // All patterns live at module level with RegexOptions.Compiled: constructing

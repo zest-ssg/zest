@@ -1,5 +1,5 @@
 // @permalink /archive/
-// @layout base
+// @layout default
 // @title Archive
 // @description Every post, grouped by year.
 

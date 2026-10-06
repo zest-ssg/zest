@@ -98,7 +98,12 @@ module GlobalData =
         let cacheKey = dataDir
         let mtime = computeMtime dataDir
         match globalDataCache.TryGetValue(cacheKey) with
-        | true, (cachedMtime, cachedData) when cachedMtime = mtime -> cachedData
+        | true, (cachedMtime, cachedData) when cachedMtime = mtime ->
+            // Hand out a shallow copy: callers inject `site.*`, `params.*`,
+            // `pjaxScript` and prebuild globals straight into this dictionary,
+            // and returning the cached instance would leak those mutations
+            // into the next build in the same process.
+            Dictionary<string, obj>(cachedData) :> IDictionary<string, obj>
         | _ ->
             let dict = Dictionary<string, obj>()
             if Directory.Exists dataDir then

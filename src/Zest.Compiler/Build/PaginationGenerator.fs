@@ -14,8 +14,7 @@
 // as an F# value above the script, so either spelling of a listing template
 // reads the same either way.
 //
-// Dependencies: Zest.Compiler.Domain, Zest.Compiler.Content, Zest.Compiler.Scripting,
-//               Zest.Compiler.Template, Zest.Compiler.Html
+// Dependencies: Zest.Compiler.Model, Zest.Compiler.Execution, Zest.Compiler.Zestucks, Zest.Compiler.Rendering
 
 namespace Zest.Compiler.Build
 open System
@@ -23,7 +22,6 @@ open System.Collections.Generic
 open System.IO
 open System.Text.RegularExpressions
 open Zest.Compiler.Model
-open Zest.Compiler.Build
 open Zest.Compiler.Execution
 open Zest.Compiler.Zestucks
 open Zest.Compiler.Rendering
@@ -50,96 +48,27 @@ module PaginationGenerator =
 
     /// Parse the directive value into (collection, perPage). The collection
     /// defaults to the file's parent directory when omitted (e.g. posts/).
+    ///
+    /// The window size is clamped to at least 1: `@paginate 0` used to divide
+    /// by zero and `@paginate -5` made `List.skip` throw, either of which
+    /// aborted the whole build from inside a listing page.
     let private parseDirective (value: string) (collectionFallback: string) (perPageFallback: int) : string * int =
         let parts =
             value.Split([| ',' |], StringSplitOptions.RemoveEmptyEntries)
             |> Array.map (fun p -> p.Trim())
             |> Array.filter (fun p -> p.Length > 0)
+        let windowOrDefault n = Operators.max 1 n
         match parts with
-        | [||] -> collectionFallback, perPageFallback
+        | [||] -> collectionFallback, windowOrDefault perPageFallback
         | [| a |] ->
             match Int32.TryParse a with
-            | true, n -> collectionFallback, n
-            | _ -> a, perPageFallback
+            | true, n -> collectionFallback, windowOrDefault n
+            | _ -> a, windowOrDefault perPageFallback
         | _ ->
             let col = parts.[0]
             match Int32.TryParse parts.[parts.Length - 1] with
-            | true, n -> col, n
-            | _ -> col, perPageFallback
-
-    /// Strip front-matter comment lines so directives never leak into the
-    /// rendered inner HTML — the generator wraps the fragment itself.
-    let private stripFrontMatter (text: string) : string =
-        Regex.Replace(text, @"^\s*<!--\s*@[a-zA-Z]+[^>]*-->\s*$", "",
-                      RegexOptions.Multiline).TrimStart('\n')
-
-    /// Build the render-context pairs mirroring PageEvaluator's site context,
-    /// plus the pagination window exposed to the template.
-    let private buildContext (config: SiteConfig)
-                             (globalData: IDictionary<string, obj>)
-                             (pagination: IDictionary<string, obj>)
-                             (collection: string)
-                             : IDictionary<string, obj> =
-        let pairs = ResizeArray<string * obj>()
-        pairs.Add("site.title", box config.Title)
-        pairs.Add("site.description", box config.Description)
-        pairs.Add("site.base_url", box config.BaseUrl)
-        pairs.Add("site.version", box config.SiteVersion)
-        pairs.Add("site.author", box config.Author)
-        pairs.Add("site.language", box config.Language)
-        for kv in globalData do
-            pairs.Add("site." + kv.Key, kv.Value)
-        pairs.Add("pages", box (PageStore.getPagesForZestucks () |> Array.map box))
-        pairs.Add("tags", box (PageStore.getTagsForZestucks ()))
-        pairs.Add("collections", box (PageStore.getCollectionsForZestucks ()))
-        pairs.Add("collection", box collection)
-        pairs.Add("pagination", box pagination)
-        EngineHost.buildContext pairs
-
-    /// Render a fragment template to inner HTML via the Zestucks engine.
-    let private renderFragment (templateBody: string)
-                               (ctx: IDictionary<string, obj>) : string =
-        let engine = EngineHost.instance
-        ZestucksFilters.registerAllFilters engine |> ignore
-        match engine.Render templateBody ctx with
-        | Ok html -> html
-        | Error err ->
-            eprintfn "[Zest] Pagination template error: %O" err
-            templateBody
-
-    /// Apply the layout chain to all generated pages in ONE batched FSI pass
-    /// and write the results. Pagination pages share the same F# layout, so
-    /// entering FSI per page wasted a full evaluation round each; batching cuts
-    /// that to one FSI run per layout-chain level.
-    let private batchRenderAndWrite (pages: ContentPage list)
-                                    (config: SiteConfig) (outputDir: string)
-                                    (layouts: Map<string, string * string>)
-                                    (includes: IDictionary<string, string>)
-                                    (globalData: IDictionary<string, obj>) : unit =
-        if pages.IsEmpty then ()
-        else
-            let tasks =
-                pages |> List.map (fun p -> p, (p.Layout |> Option.defaultValue config.DefaultLayout))
-            let batchedHtml =
-                LayoutChain.applyLayoutsBatched tasks layouts includes config globalData
-
-            // Output shaping lives in _finalize.fsx now; the generator writes
-            // exactly what the layout chain produced.
-
-            System.Threading.Tasks.Parallel.ForEach(pages, fun (page: ContentPage) ->
-                try
-                    let finalHtml =
-                        match batchedHtml.TryFind page.SourcePath with
-                        | Some html -> html
-                        | None -> page.Content
-                    let outPath = Path.Combine(outputDir, page.OutputPath)
-                    let dir = Path.GetDirectoryName outPath
-                    if dir <> null then Directory.CreateDirectory(dir) |> ignore
-                    // Atomic replace keeps the preview server's open read handles valid.
-                    AtomicFile.write outPath (System.Text.Encoding.UTF8.GetBytes finalHtml)
-                with ex ->
-                    // A single failing page must not abort the whole build.
-                    eprintfn "[Zest] Pagination page '%s' failed: %s" page.Url ex.Message) |> ignore
+            | true, n -> col, windowOrDefault n
+            | _ -> col, windowOrDefault perPageFallback
 
     /// Snapshot one window into the shape Zestucks templates expect: a shallow
     /// array of page dicts (url/title/date/tags/description/...).
@@ -223,14 +152,19 @@ module PaginationGenerator =
     /// The index URL (/posts/) renders the first window; subsequent windows
     /// live at /posts/page/N/. Returns the generated pages; the caller batches
     /// the layout pass and writes them.
-    let private generateCollection (filePath: string) (text: string)
+    let private generateCollection (allPages: ContentPage list) (filePath: string) (text: string)
                                    (collection: string) (perPage: int)
                                    (config: SiteConfig) (outputDir: string)
                                    (globalData: IDictionary<string, obj>)
                                    : ContentPage list =
         let meta, _ = FrontMatterParser.parse (Path.GetExtension filePath) text
-        let templateBody = stripFrontMatter text
-        let title = meta.Title |> Option.defaultValue (collection + " archive")
+        let templateBody = ArchiveSupport.stripFrontMatter text
+        let byDateDesc (p: ContentPage) = p.Date |> Option.defaultValue DateTime.MinValue
+        let title =
+            match meta.Title with
+            | Some t -> t
+            | None when String.IsNullOrEmpty collection -> config.Title
+            | None -> collection + " archive"
 
         // All pages in the collection, newest first. The index page itself is
         // excluded because it is the template, not a list item.
@@ -240,13 +174,13 @@ module PaginationGenerator =
         let isRoot = collection.Trim('/').Length = 0
         let collectionPages =
             if isRoot then
-                PageStore.getPages()
+                allPages
                 |> List.filter (fun p -> p.Date.IsSome)
-                |> List.sortByDescending (fun p -> p.Date |> Option.defaultValue DateTime.MinValue)
+                |> List.sortByDescending byDateDesc
             else
                 PageStore.getPagesByCollection collection
                 |> List.filter (fun p -> not (p.Url.Trim('/').Equals(collection, StringComparison.OrdinalIgnoreCase)))
-                |> List.sortByDescending (fun p -> p.Date |> Option.defaultValue DateTime.MinValue)
+                |> List.sortByDescending byDateDesc
 
         let totalItems = collectionPages.Length
         // `max` is shadowed by Attributes.max (the HTML attribute builder),
@@ -262,19 +196,19 @@ module PaginationGenerator =
         // never delete outputs, so a shrunken page count would otherwise leave
         // orphaned page/N/ files from an earlier build. Root pages live directly
         // under <output>/page/; collection pages under <output>/<collection>/page/.
-        let pageDir = Path.Combine(outputDir, baseRel, "page")
-        if Directory.Exists pageDir then Directory.Delete(pageDir, recursive = true)
+        ArchiveSupport.clearGeneratedDir outputDir (Path.Combine(outputDir, baseRel, "page"))
 
         let windows =
             [ for pageIndex in 1 .. totalPages ->
                 let url, outputPath =
                     if pageIndex = 1 then
                         baseUrl,
-                        if isRoot then "index.html"
-                        else Path.Combine(baseRel, "index.html").Replace('\\', '/')
+                        (if isRoot then "index.html"
+                         else SitePaths.normalizeOutputRel (Path.Combine(baseRel, "index.html")))
                     else
                         sprintf "%spage/%d/" baseUrl pageIndex,
-                        Path.Combine(baseRel, "page", string pageIndex, "index.html").Replace('\\', '/')
+                        SitePaths.normalizeOutputRel (
+                            Path.Combine(baseRel, "page", string pageIndex, "index.html"))
                 let prevUrl =
                     match pageIndex with
                     | 1 -> ""
@@ -305,17 +239,17 @@ module PaginationGenerator =
                     match result with
                     | Ok html -> html
                     | Error err ->
-                        eprintfn "[Zest] Pagination script error in '%s': %s" filePath err
+                        Diagnostics.error "[Zest] Pagination script error in '%s': %s" filePath err
                         "")
             else
                 windows
                 |> List.map (fun w ->
                     sourcePath slugName w.PageIndex,
-                    renderFragment templateBody
-                        (buildContext config globalData
-                            (paginationDict (windowItems w.Items) w.PageIndex totalPages totalItems
-                                perPage w.PrevUrl w.NextUrl)
-                            collection))
+                    ArchiveSupport.renderFragment "Pagination" templateBody
+                        (ArchiveSupport.buildContext config globalData
+                            [ "collection", box collection
+                              "pagination", box (paginationDict (windowItems w.Items) w.PageIndex
+                                                     totalPages totalItems perPage w.PrevUrl w.NextUrl) ]))
                 |> Map.ofList
 
         windows
@@ -327,7 +261,7 @@ module PaginationGenerator =
                 Title = title
                 Content = bodies |> Map.tryFind (sourcePath slugName w.PageIndex) |> Option.defaultValue ""
                 Slug = if w.PageIndex = 1 then slugName else sprintf "%s-%d" slugName w.PageIndex
-                Data = dict [ "description", box (sprintf "%s — page %d of %d" collection w.PageIndex totalPages) ]
+                Data = readOnlyDict [ "description", box (sprintf "%s — page %d of %d" collection w.PageIndex totalPages) ]
                 SourcePath = sourcePath slugName w.PageIndex })
 
     /// <summary>
@@ -341,6 +275,12 @@ module PaginationGenerator =
         let perPageDefault = Operators.max 1 config.PaginationPerPage
         let mutable generated = 0
         let generatedPages = ResizeArray<ContentPage>()
+        // Snapshot the page set once: it does not change during generation, and
+        // the root-collection windows need it for every opt-in file.
+        let allPages = PageStore.getPages()
+        // Output paths already claimed, so two index files paginating the same
+        // collection cannot silently overwrite each other's windows.
+        let claimed = HashSet<string>(StringComparer.OrdinalIgnoreCase)
         if Directory.Exists contentDir then
             for filePath in Directory.EnumerateFiles(contentDir, "*.*", SearchOption.AllDirectories) do
                 let ext = Path.GetExtension(filePath).ToLowerInvariant()
@@ -354,22 +294,30 @@ module PaginationGenerator =
                         let text = File.ReadAllText(filePath)
                         match findPaginateDirective filePath text with
                         | Some directive ->
-                            let relPath = Path.GetRelativePath(contentDir, filePath).Replace('\\', '/')
+                            let relPath = SitePaths.normalizeOutputRel (Path.GetRelativePath(contentDir, filePath))
                             let dirFallback =
                                 let d = Path.GetDirectoryName(relPath)
-                                if String.IsNullOrEmpty d then "" else d.Replace('\\', '/')
+                                if String.IsNullOrEmpty d then "" else SitePaths.normalizeOutputRel d
                             let collection, perPage = parseDirective directive dirFallback perPageDefault
                             // A root index file (content/index.zest.fsx) without
                             // an explicit collection paginates the site root; the
                             // directive may also name a collection explicitly.
                             let effectiveCollection =
                                 if dirFallback.Length = 0 && collection = dirFallback then "" else collection
-                            let pages = generateCollection filePath text effectiveCollection perPage
+                            let pages = generateCollection allPages filePath text effectiveCollection perPage
                                             config outputDir globalData
-                            generatedPages.AddRange(pages)
-                            generated <- generated + pages.Length
+                            for page in pages do
+                                if claimed.Add page.OutputPath then
+                                    generatedPages.Add page
+                                    generated <- generated + 1
+                                else
+                                    Diagnostics.error
+                                        "[Zest] Pagination page '%s' would overwrite an already generated page. \
+                                         Check for two @paginate directives on the same collection."
+                                        page.OutputPath
                         | None -> ()
                     with ex ->
-                        eprintfn "[Zest] Pagination scan failed for '%s': %s" filePath ex.Message
-        batchRenderAndWrite (Seq.toList generatedPages) config outputDir layouts includes globalData
+                        Diagnostics.error "[Zest] Pagination scan failed for '%s': %s" filePath ex.Message
+        ArchiveSupport.batchRenderAndWrite "Pagination" (Seq.toList generatedPages)
+            config outputDir layouts includes globalData
         generated

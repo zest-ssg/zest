@@ -188,14 +188,25 @@ module FsiRunner =
     let mutable private ctxFilePath = ""
     let private ctxLock = obj()
 
-    let resetSession () =
+    let private createContextFileLocked () =
+        // Remove the previous context file — each build writes a fresh one
+        // under a new GUID, and stale files would accumulate in %TEMP%.
+        if not (String.IsNullOrEmpty ctxFilePath) && File.Exists ctxFilePath then
+            try File.Delete ctxFilePath with _ -> ()
+        ctxFilePath <- Path.Combine(Path.GetTempPath(), sprintf "zest-ctx-%s.json" (Guid.NewGuid().ToString("N")))
+        writeContextFile ctxFilePath
+
+    let resetSession () = lock ctxLock createContextFileLocked
+
+    /// Return a context-file path guaranteed to exist, creating it on demand.
+    /// Callers must use the returned value (not the mutable field): a
+    /// concurrent `resetSession` would otherwise be able to delete the file
+    /// between the existence check and the FSI invocation.
+    let private ensureContextFile () =
         lock ctxLock (fun () ->
-            // Remove the previous context file — each build writes a fresh one
-            // under a new GUID, and stale files would accumulate in %TEMP%.
-            if not (String.IsNullOrEmpty ctxFilePath) && File.Exists ctxFilePath then
-                try File.Delete ctxFilePath with _ -> ()
-            ctxFilePath <- Path.Combine(Path.GetTempPath(), sprintf "zest-ctx-%s.json" (Guid.NewGuid().ToString("N")))
-            writeContextFile ctxFilePath)
+            if String.IsNullOrEmpty ctxFilePath || not (File.Exists ctxFilePath) then
+                createContextFileLocked ()
+            ctxFilePath)
 
     // ── isPageScript: detect whether a file uses the Zest DSL render pipeline.
     //   .zest.fsx always returns true (the extension guarantees it).
@@ -315,10 +326,10 @@ module FsiRunner =
                               (page: ContentPage) (config: SiteConfig)
                               (globalData: IDictionary<string, obj>) : Result<string, string> =
         try
-            if String.IsNullOrEmpty ctxFilePath || not (File.Exists ctxFilePath) then resetSession ()
+            let ctx = ensureContextFile ()
 
             let dataContent = buildLayoutDataBindings content page config globalData
-            let preamble = buildLayoutPreamble ctxFilePath
+            let preamble = buildLayoutPreamble ctx
             let tmpFsx = Path.Combine(Path.GetTempPath(), sprintf "zest-layout-%s.fsx" (Guid.NewGuid().ToString("N")))
             try
                 File.WriteAllText(tmpFsx, preamble + "\n" + dataContent + "\n" + scriptText, Encoding.UTF8)
@@ -346,10 +357,9 @@ module FsiRunner =
         if tasks.IsEmpty then Map.empty
         else
             try
-                if String.IsNullOrEmpty ctxFilePath || not (File.Exists ctxFilePath) then
-                    resetSession ()
+                let ctx = ensureContextFile ()
 
-                let preamble = buildLayoutPreamble ctxFilePath
+                let preamble = buildLayoutPreamble ctx
                 let sb = System.Text.StringBuilder(preamble.Length + 4096)
                 sb.Append(preamble) |> ignore
 
@@ -445,10 +455,9 @@ module FsiRunner =
             match scriptCache.TryGetValue(hash) with
             | true, e when cacheEnabled -> e.Result
             | _ ->
-                if String.IsNullOrEmpty ctxFilePath || not (File.Exists ctxFilePath) then
-                    resetSession ()
+                let ctx = ensureContextFile ()
 
-                let body = (buildPreamble ctxFilePath) + "\n" + bindings + stripHeaderLines scriptText
+                let body = (buildPreamble ctx) + "\n" + bindings + stripHeaderLines scriptText
 
                 let tmpFsx = Path.Combine(Path.GetTempPath(), sprintf "zest-page-%s.fsx" (Guid.NewGuid().ToString("N")))
                 try
@@ -480,10 +489,9 @@ module FsiRunner =
         if tasks.IsEmpty then Map.empty
         else
             try
-                if String.IsNullOrEmpty ctxFilePath || not (File.Exists ctxFilePath) then
-                    resetSession ()
+                let ctx = ensureContextFile ()
 
-                let preamble = buildPreamble ctxFilePath
+                let preamble = buildPreamble ctx
                 let sb = System.Text.StringBuilder(preamble.Length + 2048)
                 sb.Append(preamble) |> ignore
 

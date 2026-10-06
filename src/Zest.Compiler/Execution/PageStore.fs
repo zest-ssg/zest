@@ -76,13 +76,16 @@ module PageStore =
     let getPageCount () = (!allPagesRef).Length
 
     let getPagesByDateRange (fromDate: string) (toDate: string) =
-        let fromDt = DateTime.Parse(fromDate)
-        let toDt   = DateTime.Parse(toDate)
-        !allPagesRef
-        |> List.filter (fun p ->
-            p.Date.IsSome &&
-            p.Date.Value >= fromDt &&
-            p.Date.Value <= toDt)
+        // Date strings come straight from templates, so a malformed value must
+        // not throw and abort the whole page: it simply matches nothing.
+        match DateTime.TryParse fromDate, DateTime.TryParse toDate with
+        | (true, fromDt), (true, toDt) ->
+            !allPagesRef
+            |> List.filter (fun p ->
+                p.Date.IsSome &&
+                p.Date.Value >= fromDt &&
+                p.Date.Value <= toDt)
+        | _ -> []
 
     // ── Zestucks data helpers ────────────────────────────────────────────
 

@@ -30,8 +30,28 @@ module AssetWriter =
                         Directory.CreateDirectory(dir) |> ignore
                         1uy) |> ignore
             let mutable n = 0
-            // Single file system traversal, parallel processing
-            let files = Directory.GetFiles(src, "*", SearchOption.AllDirectories)
+            // Single file system traversal, parallel processing.
+            // Directory.GetFiles(AllDirectories) throws on an unreadable
+            // sub-directory (and would follow symlinks out of the tree), which
+            // would abort the whole asset copy. Walk manually, skipping
+            // reparse points and swallowing per-directory failures.
+            let enumerateFiles (root: string) =
+                let results = ResizeArray<string>()
+                let rec walk (dir: string) =
+                    try
+                        for f in Directory.EnumerateFiles dir do
+                            let info = FileInfo f
+                            if not (info.Attributes.HasFlag(FileAttributes.ReparsePoint)) then
+                                results.Add f
+                    with _ -> ()
+                    try
+                        for d in Directory.EnumerateDirectories dir do
+                            let info = DirectoryInfo d
+                            if not (info.Attributes.HasFlag(FileAttributes.ReparsePoint)) then walk d
+                    with _ -> ()
+                walk root
+                results.ToArray()
+            let files = enumerateFiles src
             Parallel.ForEach(files, fun (file: string) ->
                 let ext = Path.GetExtension(file).ToLowerInvariant()
                 // `_name.zcss` is a partial: it reaches the output only inlined
@@ -54,7 +74,8 @@ module AssetWriter =
                         let target = Path.Combine(dst, rel)
                         ensureDir target
                         if not (File.Exists target) || srcLastWrite > File.GetLastWriteTimeUtc(target) then
-                            File.Copy(file, target, overwrite = true)
+                            try File.Copy(file, target, overwrite = true)
+                            with ex -> eprintfn "[Zest] WARN: failed to copy asset '%s': %s" file ex.Message
                     System.Threading.Interlocked.Increment(&n) |> ignore) |> ignore
             // Persist the dependency timestamps so the next run can tell a
             // changed partial from an untouched one.

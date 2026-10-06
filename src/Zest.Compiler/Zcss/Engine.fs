@@ -185,9 +185,10 @@ module Zcss =
             else
                 match baseDir with
                 | Some dir ->
-                    let fullPath = Path.GetFullPath(Path.Combine(dir, path))
-                    if File.Exists fullPath then Some(fullPath, File.GetLastWriteTimeUtc(fullPath).Ticks)
-                    else None
+                    match Modules.tryResolveWithinRoot dir path with
+                    | Some fullPath when File.Exists fullPath ->
+                        Some(fullPath, File.GetLastWriteTimeUtc(fullPath).Ticks)
+                    | _ -> None
                 | None -> None)
         |> Seq.toList
 

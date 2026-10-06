@@ -27,19 +27,32 @@ module Markdown =
     let private tableSepPat    = Regex(@"^\|?[\s\-|:]+\|?$",                 RegexOptions.Compiled)
     let private anchorPat      = Regex(@"[^\w]+",                            RegexOptions.Compiled)
 
+    // Schemes that execute script (or otherwise escape the document origin)
+    // when a link/image is activated. Case- and whitespace-insensitive so
+    // `JaVaScRiPt:` and ` javascript:` are both caught.
+    let private dangerousHrefPat = Regex(@"^\s*(?:javascript|vbscript|data|file|blob)\s*:", RegexOptions.IgnoreCase ||| RegexOptions.Compiled)
+    let private dangerousSrcPat  = Regex(@"^\s*(?:javascript|vbscript|file)\s*:",          RegexOptions.IgnoreCase ||| RegexOptions.Compiled)
+
+    let private sanitizeHref (u: string) = if dangerousHrefPat.IsMatch u then "#" else u
+    let private sanitizeSrc  (u: string) = if dangerousSrcPat.IsMatch u then "" else u
+
     let private processInline (text: string) =
         let enc = WebUtility.HtmlEncode
-        imagePat   .Replace(text,   fun m -> sprintf """<img src="%s" alt="%s" />""" (enc m.Groups.[2].Value) (enc m.Groups.[1].Value))
-        |> fun s -> linkPat.Replace(s,   fun m -> sprintf """<a href="%s">%s</a>""" (enc m.Groups.[2].Value) (enc m.Groups.[1].Value))
+        imagePat   .Replace(text,   fun m -> sprintf """<img src="%s" alt="%s" />""" (enc (sanitizeSrc m.Groups.[2].Value)) (enc m.Groups.[1].Value))
+        |> fun s -> linkPat.Replace(s,   fun m -> sprintf """<a href="%s">%s</a>""" (enc (sanitizeHref m.Groups.[2].Value)) (enc m.Groups.[1].Value))
         |> fun s -> boldPat.Replace(s,   fun m -> sprintf "<strong>%s</strong>" (enc m.Groups.[1].Value))
         |> fun s -> italicPat.Replace(s, fun m -> sprintf "<em>%s</em>" (enc m.Groups.[1].Value))
         |> fun s -> strikePat.Replace(s, fun m -> sprintf "<del>%s</del>" (enc m.Groups.[1].Value))
         |> fun s -> inlineCodePat.Replace(s, fun m -> sprintf "<code>%s</code>" (enc m.Groups.[1].Value))
 
     let private parseTableRow (line: string) =
-        // Single Trim + Split with RemoveEmptyEntries avoids Trim('|')+Split intermediate
-        line.Trim().Split('|', StringSplitOptions.RemoveEmptyEntries)
-        |> Array.map (fun c -> c.Trim())
+        // Strip only the optional leading/trailing pipe, then split *keeping*
+        // empty fields: `| a | | c |` is a three-column row whose middle cell
+        // is empty. `RemoveEmptyEntries` would drop it and misalign the row.
+        let t = line.Trim()
+        let t = if t.StartsWith "|" then t.Substring 1 else t
+        let t = if t.EndsWith "|" then t.Substring(0, t.Length - 1) else t
+        t.Split('|') |> Array.map (fun c -> c.Trim())
 
     let private isTableSep (line: string) =
         tableSepPat.IsMatch(line.Trim())

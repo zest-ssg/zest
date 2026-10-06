@@ -1,6 +1,7 @@
 namespace Zest.Compiler.Zcss
 open System
 open System.Collections.Generic
+open System.Globalization
 open System.Text.RegularExpressions
 
 // ============================================================
@@ -18,10 +19,23 @@ module MathEvaluator =
     // Cached regex — created once, reused across all calls
     let private dollarVarPattern = Regex(@"\$([\w-]+)", RegexOptions.Compiled)
 
-    let private tokenize (s: string) : Token list =
+    /// Culture-invariant numeric parse. `Double.TryParse` returns false for
+    /// malformed literals such as `.`, `1.2.3`, `-`, which is how the
+    /// tokenizer detects an unevaluable expression instead of throwing.
+    let internal tryParseNum (s: string) : float option =
+        match Double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture) with
+        | true, v -> Some v
+        | _ -> None
+
+    /// Tokenize a math expression. Returns `None` when the expression contains
+    /// a numeric literal that cannot be parsed, so the caller can fall back to
+    /// emitting the original `calc(...)` verbatim rather than failing the whole
+    /// stylesheet with an unhandled FormatException.
+    let private tokenize (s: string) : Token list option =
         let tokens = ResizeArray<Token>()
+        let mutable ok = true
         let i = ref 0
-        while i.Value < s.Length do
+        while ok && i.Value < s.Length do
             let c = s.[i.Value]
             if Char.IsWhiteSpace c then incr i
             elif c = '(' then tokens.Add LParen; incr i
@@ -46,7 +60,9 @@ module MathEvaluator =
                     let unitStart = i.Value
                     while i.Value < s.Length && (Char.IsLetter s.[i.Value] || s.[i.Value] = '%') do incr i
                     let unit = s.[unitStart..i.Value-1]
-                    tokens.Add(Num(float numStr, unit))
+                    match tryParseNum numStr with
+                    | Some v -> tokens.Add(Num(v, unit))
+                    | None -> ok <- false
                 else
                     tokens.Add(Op c); incr i
             elif Char.IsDigit c || c = '.' then
@@ -58,7 +74,9 @@ module MathEvaluator =
                 let unitStart = i.Value
                 while i.Value < s.Length && (Char.IsLetter s.[i.Value] || s.[i.Value] = '%') do incr i
                 let unit = s.[unitStart..i.Value-1]
-                tokens.Add(Num(float numStr, unit))
+                match tryParseNum numStr with
+                | Some v -> tokens.Add(Num(v, unit))
+                | None -> ok <- false
             elif c = '$' then
                 let sb = Text.StringBuilder("$")
                 incr i
@@ -67,7 +85,7 @@ module MathEvaluator =
                     incr i
                 tokens.Add(Var(sb.ToString()))
             else incr i  // skip unknown chars
-        Seq.toList tokens
+        if ok then Some (Seq.toList tokens) else None
 
     /// Evaluate a math expression, preserving units.
     /// Rules: if operands have the same unit, result keeps that unit.
@@ -95,65 +113,75 @@ module MathEvaluator =
                 match vars.TryGetValue(m.Groups.[1].Value) with
                 | true, v -> v | _ -> m.Value)
 
-            let tokens = tokenize resolved
-            // Simple recursive descent parser
-            let pos = ref 0
-            let peek() = if pos.Value < tokens.Length then Some tokens.[pos.Value] else None
-            let advance() = let t = tokens.[pos.Value] in incr pos; t
+            let fallback () = "calc(" + resolved + ")"
+            match tokenize resolved with
+            | None ->
+                // A malformed numeric literal (e.g. `.`, `1.2.3`) makes the
+                // expression unevaluable; leave it for the browser.
+                fallback ()
+            | Some tokens ->
+                // Simple recursive descent parser
+                let pos = ref 0
+                let peek() = if pos.Value < tokens.Length then Some tokens.[pos.Value] else None
+                let advance() = let t = tokens.[pos.Value] in incr pos; t
 
-            // For + and -, operands must share a unit (or one must be unitless)
-            // for the result to be meaningful at build time. Mismatched units
-            // (e.g. `100% - 2rem`) depend on runtime context and must be left
-            // for the browser — raise so the try/with fallback returns the
-            // original `calc(...)` verbatim.
-            let addNum (n1, u1) (n2, u2) =
-                if u1 <> "" && u2 <> "" && u1 <> u2 then failwith "incompatible units"
-                (n1 + n2, if u1 <> "" then u1 else u2)
-            let subNum (n1, u1) (n2, u2) =
-                if u1 <> "" && u2 <> "" && u1 <> u2 then failwith "incompatible units"
-                (n1 - n2, if u1 <> "" then u1 else u2)
-            let mulNum (n1, u1) (n2, _) = (n1 * n2, u1)
-            let divNum (n1, u1) (n2, _) = if n2 <> 0.0 then (n1 / n2, u1) else (0.0, u1)
+                // For + and -, operands must share a unit (or one must be unitless)
+                // for the result to be meaningful at build time. Mismatched units
+                // (e.g. `100% - 2rem`) depend on runtime context and must be left
+                // for the browser — raise so the try/with fallback returns the
+                // original `calc(...)` verbatim. Division by zero likewise raises
+                // rather than silently producing a wrong number.
+                let addNum (n1, u1) (n2, u2) =
+                    if u1 <> "" && u2 <> "" && u1 <> u2 then failwith "incompatible units"
+                    (n1 + n2, if u1 <> "" then u1 else u2)
+                let subNum (n1, u1) (n2, u2) =
+                    if u1 <> "" && u2 <> "" && u1 <> u2 then failwith "incompatible units"
+                    (n1 - n2, if u1 <> "" then u1 else u2)
+                let mulNum (n1, u1) (n2, _) = (n1 * n2, u1)
+                let divNum (n1, u1) (n2, _) =
+                    if n2 = 0.0 then failwith "division by zero"
+                    (n1 / n2, u1)
 
-            let rec parseExpr() =
-                let left = parseTerm()
-                match peek() with
-                | Some(Op '+') -> advance() |> ignore; let r = parseExpr() in addNum left r
-                | Some(Op '-') -> advance() |> ignore; let r = parseExpr() in subNum left r
-                | _ -> left
+                let rec parseExpr() =
+                    let left = parseTerm()
+                    match peek() with
+                    | Some(Op '+') -> advance() |> ignore; let r = parseExpr() in addNum left r
+                    | Some(Op '-') -> advance() |> ignore; let r = parseExpr() in subNum left r
+                    | _ -> left
 
-            and parseTerm() =
-                let left = parseFactor()
-                match peek() with
-                | Some(Op '*') -> advance() |> ignore; let r = parseTerm() in mulNum left r
-                | Some(Op '/') -> advance() |> ignore; let r = parseTerm() in divNum left r
-                | _ -> left
+                and parseTerm() =
+                    let left = parseFactor()
+                    match peek() with
+                    | Some(Op '*') -> advance() |> ignore; let r = parseTerm() in mulNum left r
+                    | Some(Op '/') -> advance() |> ignore; let r = parseTerm() in divNum left r
+                    | _ -> left
 
-            and parseFactor() =
-                match peek() with
-                | Some LParen ->
-                    advance() |> ignore
-                    let e = parseExpr()
-                    match peek() with Some RParen -> advance() |> ignore | _ -> ()
-                    e
-                | Some(Num(n, u)) -> advance() |> ignore; (n, u)
-                | Some(Var v) ->
-                    advance() |> ignore
-                    let vName = v.TrimStart('$')
-                    match vars.TryGetValue(vName) with
-                    | true, vv ->
-                        let numPart = Regex.Match(vv, @"^-?[\d.]+")
-                        let unitPart = Regex.Match(vv, @"[^\d.-]+$")
-                        if numPart.Success then
-                            (float numPart.Value, if unitPart.Success then unitPart.Value else "")
-                        else (0.0, vv)
+                and parseFactor() =
+                    match peek() with
+                    | Some LParen ->
+                        advance() |> ignore
+                        let e = parseExpr()
+                        match peek() with Some RParen -> advance() |> ignore | _ -> ()
+                        e
+                    | Some(Num(n, u)) -> advance() |> ignore; (n, u)
+                    | Some(Var v) ->
+                        advance() |> ignore
+                        let vName = v.TrimStart('$')
+                        match vars.TryGetValue(vName) with
+                        | true, vv ->
+                            let numPart = Regex.Match(vv, @"^-?[\d.]+")
+                            let unitPart = Regex.Match(vv, @"[^\d.-]+$")
+                            match tryParseNum numPart.Value with
+                            | Some n when numPart.Success ->
+                                (n, if unitPart.Success then unitPart.Value else "")
+                            | _ -> (0.0, vv)
+                        | _ -> (0.0, "")
                     | _ -> (0.0, "")
-                | _ -> (0.0, "")
 
-            try
-                let (value, unit) = parseExpr()
-                let numStr =
-                    if value = floor value then string (int64 value)
-                    else value.ToString("0.######")
-                "calc(" + numStr + unit + ")"
-            with _ -> "calc(" + resolved + ")"
+                try
+                    let (value, unit) = parseExpr()
+                    let numStr =
+                        if value = floor value then string (int64 value)
+                        else value.ToString("0.######")
+                    "calc(" + numStr + unit + ")"
+                with _ -> fallback ()

@@ -88,8 +88,16 @@ module Elements =
     let inputEmail n v            = Element("input", ["type", "email"; "name", n; "value", v], [])
     let inputPass  n v            = Element("input", ["type", "password"; "name", n; "value", v], [])
     let inputHidden n v           = Element("input", ["type", "hidden"; "name", n; "value", v], [])
-    let inputCheckbox n v isChecked = Element("input", ["type", "checkbox"; "name", n; "value", v; (if isChecked then "checked" else ""), "checked"], [])
-    let inputRadio n v isChecked    = Element("input", ["type", "radio"; "name", n; "value", v; (if isChecked then "checked" else ""), "checked"], [])
+    // A boolean attribute is present or absent, never "present with a false
+    // value": the writer emits a pair with an empty value as the bare name
+    // (`checked`). Unchecked therefore contributes no attribute at all.
+    // The reversed pair used to emit `="checked"` — an attribute with an empty
+    // name — on every unchecked input.
+    let private checkedAttr (on: bool) = if on then [ "checked", "" ] else []
+    let inputCheckbox n v isChecked =
+        Element("input", ["type", "checkbox"; "name", n; "value", v] @ checkedAttr isChecked, [])
+    let inputRadio n v isChecked =
+        Element("input", ["type", "radio"; "name", n; "value", v] @ checkedAttr isChecked, [])
     let inputNumber n v           = Element("input", ["type", "number"; "name", n; "value", v], [])
     let inputDate n v             = Element("input", ["type", "date"; "name", n; "value", v], [])
     let inputRange n v            = Element("input", ["type", "range"; "name", n; "value", v], [])
@@ -151,8 +159,6 @@ module Elements =
     let figureEl ch                = Element("figure", [], ch)
     let figcaption ch               = Element("figcaption", [], ch)
     let address ch                 = Element("address", [], ch)
-    let hrEl                       = Element("hr", [], [])
-    let brEl                       = Element("br", [], [])
 
     // ---- Scripting ----
     let noscript ch                = Element("noscript", [], ch)
@@ -169,8 +175,11 @@ module Elements =
     let link   rel href      = Element("link",   ["rel", rel; "href", href], [])
     let stylesheet href      = link "stylesheet" href
     let script src           = Element("script", ["src", src], [])
-    let scriptInline code    = Element("script", [], [Raw code])
-    let style  css           = Element("style",  [], [Raw css])
+    /// Inline script. `</script` inside the code is neutralised so a string
+    /// literal such as `"<\/script>"` cannot end the element early.
+    let scriptInline code    = Element("script", [], [Raw (Escape.escapeRawTagClose "script" code)])
+    /// Inline stylesheet. `</style` is neutralised for the same reason.
+    let style  css           = Element("style",  [], [Raw (Escape.escapeRawTagClose "style" css)])
 
     /// Generic element with attributes and children.
     let el tag attrs ch      = Element(tag, attrs, ch)

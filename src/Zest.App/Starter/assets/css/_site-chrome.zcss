@@ -1,7 +1,8 @@
 /* ---------------------------------------------------------------------------
-   Page shell — header, navigation, main column and footer.
+   Site chrome — the header, the navigation, the main column and the footer.
 
-   The markup these class names target is produced by _layouts/shell.zest.fsx.
+   The markup these class names target is produced by _layouts/shell.zest.fsx,
+   which is the only layout that emits it.
    --------------------------------------------------------------------------- */
 
 .page [

@@ -54,6 +54,9 @@ type BuildProgress() =
 
     /// Atomically increment processed count.
     member this.IncProcessed() = Interlocked.Increment(&processed) |> ignore
+    /// Atomically add `count` to the processed count, for a batch that
+    /// completed as a unit.
+    member this.IncProcessed(count: int) = Interlocked.Add(&processed, count) |> ignore
     /// Atomically increment cached count.
     member this.IncCached() = Interlocked.Increment(&cached) |> ignore
     /// Atomically increment error count.
@@ -64,8 +67,7 @@ type BuildProgress() =
 /// Module-level singleton — set at the start of each build, cleared after.
 module ProgressTracker =
 
-    /// Active progress instance for the current build (None if no build running).
-    let mutable current: BuildProgress option = None
+    let mutable private current: BuildProgress option = None
 
     /// Start tracking a new build. Returns the progress instance.
     let start () =
@@ -76,5 +78,8 @@ module ProgressTracker =
     /// Clear the active progress instance (build complete).
     let clear () = current <- None
 
-    /// Get the active progress instance, if any.
-    let tryGet () = current
+    /// Active progress instance for the current build, if any. Read by the
+    /// CLI's animator thread while the build thread is still running, so the
+    /// read is volatile: without it the animator can keep seeing a stale
+    /// instance after `clear`.
+    let tryGet () = Volatile.Read(&current)

@@ -10,8 +10,21 @@ The site produced by `zest init`.
 ├── _prebuild.fsx             # optional: pre-build script (global data, hooks)
 ├── _finalize.fsx             # optional: post-build script (validate, index)
 ├── _layouts/                 # layouts: .zest.fsx (F#) and .ztk (Zestucks)
+│   ├── shell.zest.fsx        # the document: <html>, <head>, header, footer
+│   ├── default.zest.fsx      # an ordinary page; the engine's fallback layout
+│   ├── post.zest.fsx         # a dated entry: author, date, body, tags
+│   ├── tag.ztk               # one tag's listing, looked up before taxonomy.ztk
+│   └── tags.ztk              # index of every tag, looked up before terms.ztk
 ├── assets/css/main.zcss      # the stylesheet the pages link
 ├── assets/css/_*.zcss        # partials, inlined by main.zcss through @use
+│   ├── _tokens.zcss          # design tokens: colours, font stacks, measure
+│   ├── _typography.zcss      # reset, headings, links, media, quotes, code
+│   ├── _site-chrome.zcss     # header, navigation, main column, footer
+│   ├── _article.zcss         # the paper__* block every page body is built from
+│   ├── _content-blocks.zcss  # theorem, equation, figure, footnotes
+│   ├── _listings.zcss        # home listing, pagination, tag index, archive
+│   ├── _buttons.zcss         # buttons and controls
+│   └── _responsive.zcss      # responsive, print and motion preferences
 ├── content/                  # pages (.md, .zest.fsx, .ztk)
 └── _site/                    # build output
 ```
@@ -23,6 +36,22 @@ convention.
 Every directory is optional. Delete `_config.toml` and the site still builds —
 the title falls back to "My Zest Site" and content is read from `content/`
 when it exists, otherwise from the project root.
+
+## Three names the engine reads
+
+These are looked up by name rather than chosen by you, so they cannot be
+renamed freely:
+
+- `_layouts/default.zest.fsx` — `default` is the layout every page that
+  declares none falls back to. Renaming it needs a matching `default_layout`
+  entry in `_config.toml`, or an unconfigured page renders unwrapped.
+- `_layouts/tag.ztk` and `_layouts/tags.ztk` — the taxonomy generator resolves
+  them by taxonomy name: `tag` before `taxonomy`, `tags` before `terms`. A
+  `category` taxonomy has no template here and falls back to the engine's
+  built-in one; copy these two to `category.ztk` / `categories.ztk` to style it.
+- An underscore in front of a `.zcss` file means partial: the build inlines it
+  into the sheet that `@use`s it and never publishes one of its own, which is
+  why `_site/assets/css/` holds `main.css` and nothing else.
 
 ## How it works
 

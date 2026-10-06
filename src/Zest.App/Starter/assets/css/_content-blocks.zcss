@@ -1,5 +1,6 @@
 /* ---------------------------------------------------------------------------
-   Structural environments — theorem, numbered equation, figure, footnotes.
+   Content blocks — theorem, numbered equation, figure and footnotes, the
+   structures a post body reaches for when it is more than paragraphs.
 
    Authors write these with plain HTML in Markdown (see
    content/posts/theorem-environments.md); no shortcodes are involved.

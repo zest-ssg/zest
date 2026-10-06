@@ -55,20 +55,23 @@ module EngineHost =
     let private candidatePaths (path: string) : string seq =
         let fileName = Path.GetFileName path
         let hasKnownExt =
-            FileTypes.ZestucksFileExtensions
+            FileTypes.ZestucksFamily
             |> List.exists (fun e -> fileName.EndsWith(e, StringComparison.OrdinalIgnoreCase))
+        // Snapshot under the gate: rendering runs on many threads and a
+        // concurrent Add must not tear the enumeration.
+        let dirs = lock searchDirGate (fun () -> searchDirs.ToArray())
         seq {
             // As written.
             yield path
             // Same file with each recognised extension, when none was given.
             if not hasKnownExt then
-                for ext in FileTypes.ZestucksFileExtensions do
+                for ext in FileTypes.ZestucksFamily do
                     yield path + ext
             // Same rules, resolved against every registered search directory.
-            for dir in searchDirs do
+            for dir in dirs do
                 yield Path.Combine(dir, fileName)
                 if not hasKnownExt then
-                    for ext in FileTypes.ZestucksFileExtensions do
+                    for ext in FileTypes.ZestucksFamily do
                         yield Path.Combine(dir, fileName + ext)
         }
 

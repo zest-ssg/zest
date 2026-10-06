@@ -83,7 +83,9 @@ module Partials =
 
     /// Skip first N items and render.
     let skipRender (n: int) (items: 'a list) (render: 'a -> HtmlNode) =
-        items |> List.skip n |> List.map render |> Fragment
+        // `List.skip` throws past the end, so clamp to [0, items.Length].
+        let k = if n <= 0 then 0 elif n >= items.Length then items.Length else n
+        items |> List.skip k |> List.map render |> Fragment
 
     /// Chunk items into groups and render each group.
     let chunkRender (size: int) (items: 'a list) (render: 'a list -> HtmlNode) =
@@ -105,12 +107,21 @@ module Partials =
 
     /// Paginate items and render a page.
     let paginate (page: int) (perPage: int) (items: 'a list) (render: 'a list -> HtmlNode) =
-        let skipped = (page - 1) * perPage
-        items |> List.skip skipped |> List.take perPage |> render
+        // `List.take` throws when fewer than `perPage` items remain (the last
+        // page), and `List.skip` throws past the end; clamp both and guard
+        // against a non-positive page size.
+        if perPage <= 0 then render []
+        else
+            let page' = if page < 1 then 1 else page
+            let raw = (page' - 1) * perPage
+            let skipped = if raw > items.Length then items.Length else raw
+            items |> List.skip skipped |> List.truncate perPage |> render
 
     /// Intersperse a separator between rendered items.
     let intersperse (sep: HtmlNode) (items: HtmlNode list) =
-        items |> List.collect (fun n -> [sep; n]) |> List.tail |> Fragment
+        match items with
+        | [] -> Fragment []
+        | _ -> items |> List.collect (fun n -> [sep; n]) |> List.tail |> Fragment
 
     // ══════════════════════════════════════════════════════════════
     // ── Collection helpers from DslSugar ─────────────────────────

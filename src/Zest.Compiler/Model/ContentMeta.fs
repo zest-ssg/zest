@@ -34,8 +34,11 @@ type ContentMeta = {
     Template:    string option
     /// Collection / group name for multi-collection sites
     Collection:  string option
-    /// All unrecognised keys land here for forward compatibility
-    Extra:       Map<string, string>
+    /// All unrecognised keys land here for forward compatibility.
+    /// Values keep their parsed TOML type (string / int64 / bool / list /
+    /// nested table) so templates can iterate and test them, e.g.
+    /// `{% for t in page.extra.gallery %}` or `{% if page.extra.featured %}`.
+    Extra:       Map<string, obj>
 }
 
 module ContentMeta =

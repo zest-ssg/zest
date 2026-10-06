@@ -20,6 +20,8 @@
     <Compile Include="Model/BuildTypes.fs" />
     <Compile Include="Model/SiteConfig.fs" />
     <Compile Include="Model/SitePaths.fs" />
+    <Compile Include="Model/Slug.fs" />
+    <Compile Include="Model/Diagnostics.fs" />
 
     <!-- Zcss: the ZCSS compiler (syntax → evaluation → parsing → builtins → compilation) -->
     <Compile Include="Zcss/Ast.fs" />
@@ -54,6 +56,7 @@
     <Compile Include="Zestucks/EngineHost.fs" />
 
     <!-- Rendering: nodes, HTML writing, Markdown and page construction -->
+    <Compile Include="Rendering/Escape.fs" />
     <Compile Include="Rendering/Elements.fs" />
     <Compile Include="Rendering/Attributes.fs" />
     <Compile Include="Rendering/Modifiers.fs" />
@@ -89,6 +92,7 @@
     <Compile Include="Build/GlobalData.fs" />
     <Compile Include="Build/AssetWriter.fs" />
     <Compile Include="Build/LayoutChain.fs" />
+    <Compile Include="Build/ArchiveSupport.fs" />
     <Compile Include="Build/PagePipeline.fs" />
     <Compile Include="Build/TaxonomyGenerator.fs" />
     <Compile Include="Build/PaginationGenerator.fs" />

@@ -1,5 +1,6 @@
 /* ---------------------------------------------------------------------------
-   Base — reset, document typography, links, media, quotes, code and booktabs.
+   Typography — reset, document typography, links, media, quotes, code and
+   booktabs tables: the type every partial below builds on.
    --------------------------------------------------------------------------- */
 
 *, *:before, *:after [

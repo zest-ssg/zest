@@ -205,7 +205,9 @@ module Components =
         imgC ("avatar " + sizeClass) src (alt |> Option.defaultValue "Avatar")
 
     // ---- Comment (HTML comment) ----
-    let comment (text: string) = Raw (sprintf "<!-- %s -->" text)
+    /// An HTML comment. The body is escaped so a value containing `-->` cannot
+    /// close the comment early and turn the rest into live markup.
+    let comment (text: string) = Raw (sprintf "<!-- %s -->" (Escape.escapeComment text))
 
     // ══════════════════════════════════════════════════════════════
     // ── Common UI component shortcuts (from DslSugar) ────────────

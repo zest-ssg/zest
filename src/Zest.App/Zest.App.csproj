@@ -74,20 +74,19 @@
     <EmbeddedResource Include="Starter\_finalize.fsx" LogicalName="Zest.App.Starter._finalize.fsx" />
     <EmbeddedResource Include="Starter\README.md" LogicalName="Zest.App.Starter.README.md" />
     <EmbeddedResource Include="Starter\assets\css\main.zcss" LogicalName="Zest.App.Starter.assets\css\main.zcss" />
-    <EmbeddedResource Include="Starter\assets\css\_base.zcss" LogicalName="Zest.App.Starter.assets\css\_base.zcss" />
-    <EmbeddedResource Include="Starter\assets\css\_controls.zcss" LogicalName="Zest.App.Starter.assets\css\_controls.zcss" />
-    <EmbeddedResource Include="Starter\assets\css\_environments.zcss" LogicalName="Zest.App.Starter.assets\css\_environments.zcss" />
+    <EmbeddedResource Include="Starter\assets\css\_article.zcss" LogicalName="Zest.App.Starter.assets\css\_article.zcss" />
+    <EmbeddedResource Include="Starter\assets\css\_buttons.zcss" LogicalName="Zest.App.Starter.assets\css\_buttons.zcss" />
+    <EmbeddedResource Include="Starter\assets\css\_content-blocks.zcss" LogicalName="Zest.App.Starter.assets\css\_content-blocks.zcss" />
     <EmbeddedResource Include="Starter\assets\css\_listings.zcss" LogicalName="Zest.App.Starter.assets\css\_listings.zcss" />
-    <EmbeddedResource Include="Starter\assets\css\_paper.zcss" LogicalName="Zest.App.Starter.assets\css\_paper.zcss" />
     <EmbeddedResource Include="Starter\assets\css\_responsive.zcss" LogicalName="Zest.App.Starter.assets\css\_responsive.zcss" />
-    <EmbeddedResource Include="Starter\assets\css\_shell.zcss" LogicalName="Zest.App.Starter.assets\css\_shell.zcss" />
+    <EmbeddedResource Include="Starter\assets\css\_site-chrome.zcss" LogicalName="Zest.App.Starter.assets\css\_site-chrome.zcss" />
     <EmbeddedResource Include="Starter\assets\css\_tokens.zcss" LogicalName="Zest.App.Starter.assets\css\_tokens.zcss" />
-    <EmbeddedResource Include="Starter\_layouts\shell.zest.fsx" LogicalName="Zest.App.Starter._layouts\shell.zest.fsx" />
-    <EmbeddedResource Include="Starter\_layouts\base.zest.fsx" LogicalName="Zest.App.Starter._layouts\base.zest.fsx" />
+    <EmbeddedResource Include="Starter\assets\css\_typography.zcss" LogicalName="Zest.App.Starter.assets\css\_typography.zcss" />
     <EmbeddedResource Include="Starter\_layouts\default.zest.fsx" LogicalName="Zest.App.Starter._layouts\default.zest.fsx" />
     <EmbeddedResource Include="Starter\_layouts\post.zest.fsx" LogicalName="Zest.App.Starter._layouts\post.zest.fsx" />
-    <EmbeddedResource Include="Starter\_layouts\taxonomy.ztk" LogicalName="Zest.App.Starter._layouts\taxonomy.ztk" />
-    <EmbeddedResource Include="Starter\_layouts\terms.ztk" LogicalName="Zest.App.Starter._layouts\terms.ztk" />
+    <EmbeddedResource Include="Starter\_layouts\shell.zest.fsx" LogicalName="Zest.App.Starter._layouts\shell.zest.fsx" />
+    <EmbeddedResource Include="Starter\_layouts\tag.ztk" LogicalName="Zest.App.Starter._layouts\tag.ztk" />
+    <EmbeddedResource Include="Starter\_layouts\tags.ztk" LogicalName="Zest.App.Starter._layouts\tags.ztk" />
     <EmbeddedResource Include="Starter\content\index.zest.fsx" LogicalName="Zest.App.Starter.content\index.zest.fsx" />
     <EmbeddedResource Include="Starter\content\archive.zest.fsx" LogicalName="Zest.App.Starter.content\archive.zest.fsx" />
     <EmbeddedResource Include="Starter\content\about.md" LogicalName="Zest.App.Starter.content\about.md" />

@@ -376,7 +376,6 @@ module CssWriter =
 
                 | Each(varName, items, body, _) ->
                     for item in items do
-                        let localVars = Dictionary<string, string>(dict [varName, item])
                         let expandedBody =
                             body |> List.map (function
                                 | RuleSet(sel, decls, ch, pos) ->
@@ -394,7 +393,6 @@ module CssWriter =
 
                 | For(varName, from, through, body, _) ->
                     for i in from..through do
-                        let localVars = Dictionary<string, string>(dict [varName, string i])
                         let expandedBody =
                             body |> List.map (function
                                 | RuleSet(sel, decls, ch, pos) ->
@@ -406,7 +404,10 @@ module CssWriter =
                         emitNodes expandedBody parent
 
                 | If(cond, body, elseBody, _) ->
-                    if evalCondition cond (dict []) then
+                    // The condition must see the real variable table: passing an
+                    // empty dictionary made `@if $x == 1` degrade to a string
+                    // comparison of the literal `$x` and evaluate to false.
+                    if evalCondition cond vars then
                         emitNodes body parent
                     else
                         elseBody |> Option.iter (fun eb -> emitNodes eb parent)
@@ -446,7 +447,10 @@ module CssWriter =
                     sb.AppendLine("}") |> ignore
 
                 | Import(path, _) ->
-                    sb.AppendLine(sprintf "@import '%s';" path) |> ignore
+                    // Escape the path so a quote or backslash cannot break out of
+                    // the CSS string and inject arbitrary declarations.
+                    let safePath = path.Replace("\\", "\\\\").Replace("'", "\\'")
+                    sb.AppendLine(sprintf "@import '%s';" safePath) |> ignore
 
                 | Use(path, _, _) ->
                     // @use is handled at preprocessor level; emit as comment
@@ -454,7 +458,11 @@ module CssWriter =
 
                 | Comment(text, _) ->
                     if text.Trim().Length > 0 then
-                        sb.AppendLine(sprintf "/* %s */" text) |> ignore
+                        // Neutralise a `*/` inside the body: CSS comments have no
+                        // escape, but inserting a backslash stops the sequence
+                        // from closing the comment early.
+                        let safeText = text.Replace("*/", "*\\/")
+                        sb.AppendLine(sprintf "/* %s */" safeText) |> ignore
 
                 | Include(name, args, content, _) ->
                     let expanded = expandMixin name args content mixins vars

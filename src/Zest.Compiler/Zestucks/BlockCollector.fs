@@ -15,52 +15,51 @@ open ExpressionCompiler
 module internal BlockCollector =
 
     // ── Block collector (for extends/block inheritance) ──
-    /// Collect all top-level `{% block NAME %}...{% endblock %}` blocks
-    /// from a token array. Returns a map from block name to its body tokens.
-    let rec collectBlocks (tokens: Token[]) : IDictionary<string, Token list> =
-        let blocks = Dictionary<string, Token list>()
-        let len = tokens.Length
-        let mutable i = 0
-        while i < len do
+    /// Collect all top-level `{% block NAME %}...{% endblock %}` blocks within
+    /// `range`. Returns a map from block name to the body's token window (no
+    /// copy: it shares the caller's backing array).
+    let rec collectBlocks (range: TokenRange) : IDictionary<string, TokenRange> =
+        let blocks = Dictionary<string, TokenRange>()
+        let tokens = range.Source
+        let stop = range.Stop
+        let mutable i = range.Start
+        while i < stop do
             match tokens.[i] with
             | TagToken("block", args, _) when args.Length > 0 ->
                 let name = args.[0].Trim('"', '\'')
-                let endIdx = findMatchingEnd (i+1) "block" tokens
+                let endIdx = findMatchingEnd (i+1) stop "block" tokens
                 if endIdx > i then
-                    let body = tokens.[i+1..endIdx-1] |> Array.toList
-                    blocks.[name] <- body
+                    blocks.[name] <- { Source = tokens; Start = i + 1; Count = endIdx - i - 1 }
                     i <- endIdx + 1
                 else i <- i + 1
-            | TagToken("extends", _, _) | TagToken("macro", _, _) ->
-                i <- i + 1
             | _ -> i <- i + 1
-        blocks :> IDictionary<string, Token list>
+        blocks :> IDictionary<string, TokenRange>
 
-    // Array-indexed (O(1) per element) version of findMatchingEnd. The old
-    // list-based version indexed a linked list on every step — O(n²) per tag.
-    and findMatchingEnd (start: int) (tagName: string) (tokens: Token[]) : int =
-        let len = tokens.Length
+    // Array-indexed (O(1) per element) scan bounded to [start, stop). Returns
+    // `stop` when no matching end tag exists inside the window.
+    and findMatchingEnd (start: int) (stop: int) (tagName: string) (tokens: Token[]) : int =
         let mutable depth = 0
-        let mutable result = len
+        let mutable result = stop
         let mutable i = start
-        while i < len do
+        while i < stop do
             match tokens.[i] with
             | TagToken(n, _, _) when n = tagName -> depth <- depth + 1; i <- i + 1
             | TagToken(n, _, _) when n = "end" + tagName ->
-                if depth = 0 then result <- i; i <- len  // found it, save position
+                if depth = 0 then result <- i; i <- stop  // found it, save position
                 else depth <- depth - 1; i <- i + 1
             | _ -> i <- i + 1
         result
 
     /// Collect all top-level `{% macro name(args) %}...{% endmacro %}` definitions
-    /// from a token array. Returns (name, args, body) tuples so they can be
+    /// within `range`. Returns (name, args, body) tuples so they can be
     /// registered into the macro table (used by import / from). Each argument
     /// carries an optional default expression (`arg=default`).
-    let collectMacroDefs (tsArr: Token []) : (string * (string * string option) list * Token list) list =
+    let collectMacroDefs (range: TokenRange) : (string * (string * string option) list * TokenRange) list =
+        let tsArr = range.Source
+        let stop = range.Stop
         let mutable result = []
-        let mutable i = 0
-        let n = tsArr.Length
-        while i < n do
+        let mutable i = range.Start
+        while i < stop do
             match tsArr.[i] with
             | TagToken("macro", a, _) when a.Length > 0 ->
                 let macroText = a |> String.concat " "
@@ -81,8 +80,10 @@ module internal BlockCollector =
                                     else a, None)
                         name, pargs
                     else macroText.Trim(), []
-                let eIdx = findMatchingEnd (i+1) "macro" tsArr
-                let body = if eIdx > i+1 then tsArr.[i+1..eIdx-1] |> Array.toList else []
+                let eIdx = findMatchingEnd (i+1) stop "macro" tsArr
+                let body =
+                    if eIdx > i+1 then { Source = tsArr; Start = i + 1; Count = eIdx - i - 1 }
+                    else TokenRange.empty
                 result <- (mname, margs, body) :: result
                 i <- if eIdx > i then eIdx + 1 else i + 1
             | _ -> i <- i + 1

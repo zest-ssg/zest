@@ -33,9 +33,18 @@ module LayoutChain =
                         if String.IsNullOrEmpty e then name
                         else stripExts (Path.GetFileNameWithoutExtension(name))
                     files.Add(stripExts (Path.GetFileName(f)), f)
-            files
-            |> Seq.map (fun (key, f) -> key, (f, File.ReadAllText(f)))
-            |> Map.ofSeq
+            // `stripExts` collapses `page.html` and `page.zest.fsx` (and
+            // same-named files in different sub-directories) onto one key;
+            // `Map.ofSeq` would silently keep whichever came last, making
+            // layout resolution depend on enumeration order. Keep the first
+            // (sorted for determinism) and warn about the shadowed file.
+            let result = Dictionary<string, string * string>()
+            for (key, f) in files |> Seq.sortBy snd do
+                if result.ContainsKey key then
+                    eprintfn "[Zest] WARN: duplicate layout name '%s' — '%s' is shadowed." key f
+                else
+                    result.[key] <- (f, File.ReadAllText f)
+            result |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
 
     /// Include name → absolute path for the most recent loadIncludes call.
     /// BuildRunner merges the theme and project maps so a page can record which
@@ -54,10 +63,19 @@ module LayoutChain =
             let files = ResizeArray<string * string>()
             for f in Directory.EnumerateFiles(includesDir, "*.*", SearchOption.AllDirectories) do
                 files.Add(Path.GetFileName(f), f)
-            includePathMapRef := files |> Seq.map (fun (name, path) -> name, path) |> Map.ofSeq
+            // Includes are keyed by bare file name, so the same name in two
+            // sub-directories collides. Pick deterministically and warn rather
+            // than letting enumeration order decide which body wins.
+            let chosen = Dictionary<string, string>()
+            for (name, f) in files |> Seq.sortBy snd do
+                if chosen.ContainsKey name then
+                    eprintfn "[Zest] WARN: duplicate include name '%s' — '%s' is shadowed." name f
+                else
+                    chosen.[name] <- f
+            includePathMapRef := chosen |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
             let d = Dictionary<string, string>()
-            for (name, f) in files do
-                d.[name] <- File.ReadAllText(f)
+            for kv in chosen do
+                d.[kv.Key] <- File.ReadAllText(kv.Value)
             d :> IDictionary<string, string>
 
     let internal buildReplacements (page: ContentPage) (config: SiteConfig) (globalData: IDictionary<string, obj>) =
@@ -185,8 +203,11 @@ module LayoutChain =
     /// nest each other cyclically cannot cause unbounded recursion.
     let internal layoutChain (name: string) (layouts: Map<string, string * string>)
                              : (string * string * bool) list =
-        let rec walk (current: string) (depth: int) (acc: (string * string * bool) list) =
-            if depth >= 10 then acc
+        // `visited` stops cycles (A → B → A) as well as self-nesting, so a
+        // layout cycle cannot wrap the same template several times; `depth` is
+        // a belt-and-braces cap on pathological input.
+        let rec walk (current: string) (depth: int) (acc: (string * string * bool) list) (visited: Set<string>) =
+            if depth >= 10 || Set.contains current visited then acc
             else
                 match layouts.TryFind current with
                 | None -> acc
@@ -195,11 +216,11 @@ module LayoutChain =
                         path.EndsWith(FileTypes.ZestScript, StringComparison.OrdinalIgnoreCase)
                         || path.EndsWith(FileTypes.FSharpScript, StringComparison.OrdinalIgnoreCase)
                     let entry = (current, path, isFsx)
+                    let visited = Set.add current visited
                     match nestedLayoutOf text with
-                    | Some nested when nested <> current ->
-                        walk nested (depth + 1) (entry :: acc)
+                    | Some nested -> walk nested (depth + 1) (entry :: acc) visited
                     | _ -> entry :: acc
-        walk name 0 [] |> List.rev
+        walk name 0 [] Set.empty |> List.rev
 
     /// Render one non-F# layout level with the Zestucks engine, with legacy
     /// `{{ page.title }}` placeholder support.

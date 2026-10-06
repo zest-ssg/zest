@@ -97,9 +97,9 @@ module Modifiers =
     // ---- Conditional & list helpers ----
     let showIf  (cond: bool) (node: HtmlNode)    = Conditional(cond, node)
     let hideIf  (cond: bool) (node: HtmlNode)    = Conditional(not cond, node)
-    let each    (items: 'a list) (f: 'a -> HtmlNode) = Repeat(items |> List.map f)
+    let each    (items: 'a list) (f: 'a -> HtmlNode) = Fragment(items |> List.map f)
     let eachI   (items: 'a list) (f: int -> 'a -> HtmlNode) =
-        Repeat(items |> List.mapi f)
+        Fragment(items |> List.mapi f)
 
     // ---- Conditional render with fallback ----
     let renderIf (cond: bool) (node: HtmlNode) (fallback: HtmlNode) =
@@ -236,7 +236,7 @@ module Modifiers =
 
     /// Repeated nodes from a list.
     /// Usage: `rep (items |> List.map (fun i -> li [t i]))`
-    let rep (nodes: HtmlNode list) = Repeat nodes
+    let rep (nodes: HtmlNode list) = Fragment nodes
 
     // ══════════════════════════════════════════════════════════════
     // ── Common HTML element shortcuts (from DslSugar) ────────────
@@ -326,7 +326,7 @@ module Modifiers =
     /// Usage: `validate_cond (not (String.IsNullOrEmpty title)) "Title is required" renderedTitle`
     let validate_cond (condition: bool) (message: string) (node: HtmlNode) : HtmlNode =
         if condition then node
-        else Fragment [Raw (sprintf "<!-- VALIDATION ERROR: %s -->" message); node]
+        else Fragment [Raw (sprintf "<!-- VALIDATION ERROR: %s -->" (Escape.escapeComment message)); node]
 
     /// Guard: render only if the string value is non-empty.
     /// Usage: `guard_str title (fun t -> h 1 t)`

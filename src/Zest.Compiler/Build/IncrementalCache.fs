@@ -4,6 +4,7 @@ open System.Collections.Concurrent
 open System.Collections.Generic
 open System.IO
 open System.Security.Cryptography
+open Zest.Compiler.Model
 
 /// Incremental build cache: tracks each source file's modification time and
 /// content hash, plus a dependency graph, so only the pages whose own content
@@ -29,7 +30,10 @@ open System.Security.Cryptography
 module IncrementalCache =
 
     // ── Cache format ──
-    let private CACHE_FORMAT_VERSION = 3
+    // v4: TSV fields are escaped (paths may contain tabs/commas) and a header
+    //     token carries an inputs signature so config/data/locale changes
+    //     invalidate the whole cache.
+    let private CACHE_FORMAT_VERSION = 4
     let private cacheFilePath (outputDir: string) = Path.Combine(outputDir, ".zest-cache.log")
     let private depsFilePath  (outputDir: string) = Path.Combine(outputDir, ".zest-deps.log")
 
@@ -63,9 +67,7 @@ module IncrementalCache =
 
     /// Compute a short SHA-256 content hash for a file's text.
     let internal contentHashOf (text: string) =
-        use sha = SHA256.Create()
-        let bytes = Text.Encoding.UTF8.GetBytes(text)
-        let hash = sha.ComputeHash(bytes)
+        let hash = SHA256.HashData(Text.Encoding.UTF8.GetBytes(text))
         hash.[0..7] |> Array.map (fun b -> b.ToString("x2")) |> String.concat ""
 
     /// Deterministic content signature over every include body. Used to
@@ -73,11 +75,57 @@ module IncrementalCache =
     /// timestamps. Keys are sorted so the signature is stable regardless of
     /// dictionary order.
     let internal computeIncludesSignature (includes: IDictionary<string, string>) : string =
-        use sha = SHA256.Create()
         let sb = System.Text.StringBuilder()
         for kv in includes |> Seq.sortBy (fun kv -> kv.Key) do
             sb.Append(kv.Key).Append('\t').AppendLine(kv.Value) |> ignore
-        Convert.ToHexString(sha.ComputeHash(Text.Encoding.UTF8.GetBytes(sb.ToString())))
+        Convert.ToHexString(SHA256.HashData(Text.Encoding.UTF8.GetBytes(sb.ToString())))
+
+    /// Signature over the inputs that are *not* individual content files but
+    /// still change the rendered output: the site configuration, global data
+    /// (`_data`, params, menus), prebuild-provided globals and locale strings.
+    /// Persisted as a header token so any change forces a full rebuild instead
+    /// of silently reusing pages produced under the previous settings.
+    let internal computeInputsSignature (config: SiteConfig) (globalData: IDictionary<string, obj>) (aux: seq<string * string>) : string =
+        let sb = System.Text.StringBuilder()
+        sb.AppendLine(sprintf "%A" config) |> ignore
+        for kv in globalData |> Seq.sortBy (fun kv -> kv.Key) do
+            sb.Append(kv.Key).Append('=').AppendLine(string kv.Value) |> ignore
+        // Prebuild-declared filters/helpers are not part of globalData but do
+        // change the rendered output.
+        for (k, v) in aux |> Seq.sortBy fst do
+            sb.Append(k).Append('=').AppendLine(v) |> ignore
+        Convert.ToHexString(SHA256.HashData(Text.Encoding.UTF8.GetBytes(sb.ToString())))
+
+    // ── TSV escaping ──
+    // Cache fields are separated by tabs and the dependency list by commas;
+    // a file name may legitimately contain either. Escape on write and reverse
+    // on read so a path can never split a field or a dependency entry.
+    let private escapeField (s: string) =
+        if isNull s then ""
+        else
+            s.Replace("\\", "\\\\")
+             .Replace("\t", "\\t")
+             .Replace("\n", "\\n")
+             .Replace("\r", "\\r")
+             .Replace(",", "\\c")
+
+    let private unescapeField (s: string) =
+        if isNull s || s.IndexOf('\\') < 0 then s
+        else
+            let sb = System.Text.StringBuilder(s.Length)
+            let mutable i = 0
+            while i < s.Length do
+                if s.[i] = '\\' && i + 1 < s.Length then
+                    match s.[i+1] with
+                    | '\\' -> sb.Append('\\') |> ignore; i <- i + 2
+                    | 't' -> sb.Append('\t') |> ignore; i <- i + 2
+                    | 'n' -> sb.Append('\n') |> ignore; i <- i + 2
+                    | 'r' -> sb.Append('\r') |> ignore; i <- i + 2
+                    | 'c' -> sb.Append(',') |> ignore; i <- i + 2
+                    | _ -> sb.Append(s.[i]) |> ignore; i <- i + 1
+                else
+                    sb.Append(s.[i]) |> ignore; i <- i + 1
+            sb.ToString()
 
     [<Struct>]
     type internal CacheEntry = {
@@ -142,7 +190,7 @@ module IncrementalCache =
     // File.Move(tmp, path, overwrite: true) on .NET 6+ to avoid the
     // delete-then-move race window. If the write step fails, the function
     // returns early without touching the existing cache file.
-    let private atomicWrite (path: string) (write: StreamWriter -> unit) =
+    let private atomicWrite (path: string) (write: StreamWriter -> unit) : bool =
         let tmp = path + ".tmp"
         let mutable ok = false
         try
@@ -154,11 +202,17 @@ module IncrementalCache =
             eprintfn "[Zest] WARN: Failed to write cache %s: %s" path ex.Message
             try File.Delete(tmp) with _ -> ()
         if ok then
+            // Only report success once the rename actually happened, so the
+            // caller can keep its dirty flag set when the write fails and the
+            // cache will be retried on the next build.
             try
                 File.Move(tmp, path, overwrite = true)
+                true
             with ex ->
                 eprintfn "[Zest] WARN: Failed to finalise cache %s: %s" path ex.Message
                 try File.Delete(tmp) with _ -> ()
+                false
+        else false
 
     /// Rebuild the forward dependency graph (srcDependencies) from the
     /// reverse graph (dependencyGraph). Called after loading the deps file.
@@ -267,11 +321,12 @@ module IncrementalCache =
                     if not (line.StartsWith("#")) then
                         let parts = line.Split([|'\t'|])
                         if parts.Length >= 4 then
+                            let srcPath = unescapeField parts.[0]
                             match Int64.TryParse(parts.[1]) with
-                            | true, ticks when File.Exists(parts.[0]) ->
-                                buildCache.[parts.[0]] <-
+                            | true, ticks when File.Exists(srcPath) ->
+                                buildCache.[srcPath] <-
                                     { Mtime = DateTime(ticks, DateTimeKind.Utc)
-                                      OutputPath = parts.[2]
+                                      OutputPath = unescapeField parts.[2]
                                       ContentHash = parts.[3] }
                             | _ -> ()
                     line <- reader.ReadLine()
@@ -301,11 +356,15 @@ module IncrementalCache =
                     elif not (line.StartsWith("#")) then
                         let parts = line.Split([|'\t'|], 2)
                         if parts.Length = 2 then
+                            let key = unescapeField parts.[0]
                             if inTemplates then
-                                templateHashes.[parts.[0]] <- parts.[1]
+                                templateHashes.[key] <- parts.[1]
                             else
-                                let pages = parts.[1].Split(',') |> Array.filter (fun s -> s <> "")
-                                dependencyGraph.[parts.[0]] <- HashSet<string>(pages)
+                                let pages =
+                                    parts.[1].Split(',')
+                                    |> Array.filter (fun s -> s <> "")
+                                    |> Array.map unescapeField
+                                dependencyGraph.[key] <- HashSet<string>(pages)
                     line <- reader.ReadLine()
                 rebuildForwardGraph ()
                 templatesFound
@@ -317,7 +376,12 @@ module IncrementalCache =
     /// signature and cache-format version gate the on-disk page cache; template
     /// reconciliation runs on every call so the in-process rebuild path (dev and
     /// preview servers) reuses resident pages but still notices template edits.
-    let internal loadCache (outputDir: string) (templates: (string * string) list) =
+    /// The inputs signature observed by the last `loadCache`, written back into
+    /// the header by `saveCache` so the next build can detect a config/data/
+    /// locale change.
+    let private inputsSignatureRef = ref ""
+
+    let internal loadCache (outputDir: string) (templates: (string * string) list) (inputsSignature: string) =
         // Clean up legacy cache files from older Zest versions
         // (.json from v0, .toml from transitional naming, and bare files).
         for oldSuffix in [ ".json"; ".toml"; "" ] do
@@ -325,6 +389,8 @@ module IncrementalCache =
                 let oldPath = Path.Combine(outputDir, baseName + oldSuffix)
                 try if File.Exists(oldPath) then File.Delete(oldPath)
                 with _ -> ()
+
+        inputsSignatureRef := inputsSignature
 
         if buildCache.IsEmpty then
             let path = cacheFilePath outputDir
@@ -347,11 +413,20 @@ module IncrementalCache =
                     match headerToken header "ver" with
                     | Some v -> v = string CACHE_FORMAT_VERSION
                     | None -> false
+                let inputsOk =
+                    match headerToken header "inputs" with
+                    | Some v -> v = inputsSignature
+                    | None -> false
                 if not engineOk then
                     eprintfn "[Zest] Engine changed since last build — forcing full rebuild."
                     clearCache ()
                 elif not versionOk then
                     eprintfn "[Zest] Cache format changed — forcing full rebuild."
+                    clearCache ()
+                elif not inputsOk then
+                    // Site config, global data or locales changed: the cached
+                    // pages may carry stale titles, permalinks or menus.
+                    eprintfn "[Zest] Site config/data changed — forcing full rebuild."
                     clearCache ()
                 else
                     loadPageCache outputDir
@@ -373,35 +448,42 @@ module IncrementalCache =
             clearCache ()
 
     /// Save the persistent cache (atomic write, stale entries pruned).
+    /// Dirty flags are cleared only after a successful write, so a failed write
+    /// is retried on the next build instead of being silently dropped.
     let internal saveCache (outputDir: string) =
         let engSig = engineSignature ()
-        let header = sprintf "# zest-cache v%d | engine=%s | ver=%d" CACHE_FORMAT_VERSION engSig CACHE_FORMAT_VERSION
+        let header =
+            sprintf "# zest-cache v%d | engine=%s | ver=%d | inputs=%s"
+                CACHE_FORMAT_VERSION engSig CACHE_FORMAT_VERSION (!inputsSignatureRef)
         lock sigLock (fun () -> lastWrittenSig <- engSig)
 
         if !cacheDirty then
-            atomicWrite (cacheFilePath outputDir) (fun writer ->
-                writer.WriteLine(header)
-                for kv in buildCache do
-                    if File.Exists(kv.Key) then
-                        writer.Write(kv.Key); writer.Write('\t')
-                        writer.Write(kv.Value.Mtime.Ticks); writer.Write('\t')
-                        writer.Write(kv.Value.OutputPath); writer.Write('\t')
-                        writer.WriteLine(kv.Value.ContentHash))
-            cacheDirty := false
+            let wrote =
+                atomicWrite (cacheFilePath outputDir) (fun writer ->
+                    writer.WriteLine(header)
+                    for kv in buildCache do
+                        if File.Exists(kv.Key) then
+                            writer.Write(escapeField kv.Key); writer.Write('\t')
+                            writer.Write(kv.Value.Mtime.Ticks); writer.Write('\t')
+                            writer.Write(escapeField kv.Value.OutputPath); writer.Write('\t')
+                            writer.WriteLine(kv.Value.ContentHash))
+            if wrote then cacheDirty := false
 
         if !depsDirty || !templatesDirty then
-            atomicWrite (depsFilePath outputDir) (fun writer ->
-                writer.WriteLine(header)
-                writer.WriteLine(templatesSection)
-                for kv in templateHashes do
-                    writer.Write(kv.Key); writer.Write('\t')
-                    writer.WriteLine(kv.Value)
-                writer.WriteLine(depsSection)
-                for kv in dependencyGraph do
-                    writer.Write(kv.Key); writer.Write('\t')
-                    writer.WriteLine(String.concat "," kv.Value))
-            depsDirty := false
-            templatesDirty := false
+            let wrote =
+                atomicWrite (depsFilePath outputDir) (fun writer ->
+                    writer.WriteLine(header)
+                    writer.WriteLine(templatesSection)
+                    for kv in templateHashes do
+                        writer.Write(escapeField kv.Key); writer.Write('\t')
+                        writer.WriteLine(kv.Value)
+                    writer.WriteLine(depsSection)
+                    for kv in dependencyGraph do
+                        writer.Write(escapeField kv.Key); writer.Write('\t')
+                        writer.WriteLine(kv.Value |> Seq.map escapeField |> String.concat ","))
+            if wrote then
+                depsDirty := false
+                templatesDirty := false
 
     // ── Rebuild checks ──
 

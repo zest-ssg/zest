@@ -117,7 +117,9 @@ module Evaluator =
     // to resolve `p.primary`-style references; safe because it requires a
     // dot, which CSS values never contain outside of numbers/units.
     let private bareDottedRe = Regex(@"(?<![\w$.])(([a-zA-Z_]\w*)\.([\w-]+))", RegexOptions.Compiled)
-    let private numericPat   = Regex(@"^[\d.]+(px|rem|em|%|vh|vw|r|p|v|s|ms)?$", RegexOptions.Compiled)
+    // An optional leading sign is required so `-1 < 0` compares numerically
+    // instead of falling through to the string-comparison branch.
+    let private numericPat   = Regex(@"^-?[\d.]+(px|rem|em|%|vh|vw|r|p|v|s|ms)?$", RegexOptions.Compiled)
     let private stripUnitPat = Regex(@"[a-z%]+", RegexOptions.Compiled)
 
     /// Resolve $name references (SCSS-style) - e.g. $primary → #3b82f6.
@@ -189,7 +191,12 @@ module Evaluator =
             let varValue = m.Groups.[2].Value
             let bodyExpr = m.Groups.[3].Value
             let resolvedVal = resolvePass varValue vars
-            let substituted = bodyExpr.Replace(varName, resolvedVal)
+            // Replace only whole-identifier occurrences: a naive String.Replace
+            // would rewrite `x` inside `max`, corrupting the body. The
+            // MatchEvaluator form also keeps `$` in the replacement literal.
+            let binder =
+                Regex(@"(?<![\w$.-])" + Regex.Escape varName + @"(?![\w-])", RegexOptions.Compiled)
+            let substituted = binder.Replace(bodyExpr, fun _ -> resolvedVal)
             resolvePass substituted vars
 
     /// Evaluate a boolean condition (returns true/false).  Used by if/then/else in values and @if directive.
@@ -260,9 +267,13 @@ module Evaluator =
     let resolveValue (value: string) (vars: IDictionary<string, string>) : string =
         let mutable result = resolvePipes value
         let mutable stable = false
+        let mutable iterations = 0
         // Repeated passes resolve chained references (e.g. `$a` → `$b` → `#fff`);
-        // stop as soon as a pass produces no change instead of always doing 4.
-        while not stable do
+        // stop as soon as a pass produces no change. The iteration cap bounds
+        // mutually-referential variables (`$a: $b; $b: $a`), which would
+        // otherwise oscillate forever and hang the whole build.
+        while not stable && iterations < 8 do
+            iterations <- iterations + 1
             let next = resolvePass result vars
             if next = result then stable <- true
             else result <- next

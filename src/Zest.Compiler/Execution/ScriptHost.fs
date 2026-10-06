@@ -39,7 +39,10 @@ module ScriptHost =
     let private maxErrorLines = 20
 
     /// Render a string as a valid F# string literal, for generated source.
+    /// `null` is treated as the empty string so a null config field (e.g. an
+    /// omitted `title`) cannot crash script generation with a NullReferenceException.
     let fsharpLiteral (value: string) : string =
+        let value = if isNull value then "" else value
         let sb = StringBuilder(value.Length + 2)
         sb.Append('"') |> ignore
         for ch in value do

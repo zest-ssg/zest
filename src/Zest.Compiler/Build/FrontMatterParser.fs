@@ -36,8 +36,11 @@ open Zest.Compiler.Model
 module FrontMatterParser =
 
     let private knownKeys =
+        // `category` (singular) must be listed alongside `categories` and `tag`:
+        // otherwise a TOML `category = "…"` is parsed into `Categories` *and*
+        // leaks into `Extra` as a duplicate key.
         set [ "layout"; "title"; "permalink"; "description"
-              "date"; "tags"; "tag"; "categories"; "draft"
+              "date"; "tags"; "tag"; "categories"; "category"; "draft"
               "author"; "updated"; "weight"; "order"
               "template"; "collection" ]
 
@@ -112,21 +115,34 @@ module FrontMatterParser =
     /// Find the line indices of a +++ delimited TOML block within pre-split lines.
     /// Returns (openIdx, closeIdx, tomlBlock, bodyText).
     let private findTomlBlock (lines: string[]) : (int * int * string * string) option =
-        match lines |> Array.tryFindIndex (fun l -> l.Trim() = "+++") with
-        | Some openIdx ->
+        // The opening `+++` is only a front-matter delimiter when it is the
+        // first non-blank line of the document. Scanning the whole file would
+        // mistake a `+++` thematic break in the body for a header and strip
+        // the Markdown between two such lines.
+        let mutable openIdx = -1
+        let mutable i = 0
+        while openIdx < 0 && i < lines.Length do
+            let t = lines.[i].Trim()
+            if t = "" then i <- i + 1
+            elif t = "+++" then openIdx <- i
+            else i <- lines.Length   // first real line is not `+++` → no TOML header
+        if openIdx < 0 then None
+        else
             let after = lines |> Array.skip (openIdx + 1)
             match after |> Array.tryFindIndex (fun l -> l.Trim() = "+++") with
             | Some closeRel ->
                 let closeIdx = openIdx + 1 + closeRel
                 let tomlLines = lines.[openIdx + 1 .. closeIdx - 1]
                 let tomlBlock = String.Join("\n", tomlLines).Trim()
+                // Preserve the body verbatim — only the delimiter's own line
+                // break is consumed, so leading blank lines in the content
+                // (significant inside code blocks) survive.
                 let body =
                     if closeIdx + 1 < lines.Length then
-                        String.Join("\n", lines.[closeIdx + 1 ..]).TrimStart('\n', '\r')
+                        String.Join("\n", lines.[closeIdx + 1 ..])
                     else ""
                 Some (openIdx, closeIdx, tomlBlock, body)
             | None -> None
-        | None -> None
 
     let private metaFromTomlTable (table: TomlTable) : ContentMeta =
         let mutable m = ContentMeta.empty

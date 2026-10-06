@@ -1,13 +1,13 @@
 namespace Zest.Compiler.Rendering
 open System
-open System.Collections.Generic
-open System.Net
-open System.Text
-open System.Text.RegularExpressions
 open Zest.Compiler.Model
+
 // ============================================================
 // HTML Renderer
 // ============================================================
+//
+// The output boundary: nodes go in, escaped text comes out. All escaping is
+// delegated to Escape so there is exactly one implementation of it.
 
 module HtmlWriter =
 
@@ -27,22 +27,32 @@ module HtmlWriter =
         "template"; "noscript"; "canvas"; "video"; "audio"; "picture"
     ]
 
+    /// Escape text for an HTML comment body, for callers that build a `Raw`
+    /// comment node.
+    let escapeComment = Escape.escapeComment
+
+    let private renderAttrs (attrs: (string * string) list) : string =
+        attrs
+        |> List.map (fun (k, v) ->
+            if not (Escape.isValidAttrName k) then
+                // Dropped rather than emitted: a name containing whitespace or
+                // `=` adds attributes of its own.
+                Escape.reportInvalidAttrName k
+                ""
+            // An empty value is the DSL's spelling of a boolean attribute.
+            elif String.IsNullOrEmpty v then sprintf " %s" k
+            else sprintf " %s=\"%s\"" k (Escape.escapeAttrValue v))
+        |> String.concat ""
+
     let rec renderNode (node: HtmlNode) : string =
         match node with
-        | Text s -> WebUtility.HtmlEncode s
+        | Text s -> Escape.escapeText s
         | Raw  s -> s
-        | Fragment ns     -> ns |> List.map renderNode |> String.concat ""
+        | Fragment ns           -> ns |> List.map renderNode |> String.concat ""
         | Conditional(true,  n) -> renderNode n
         | Conditional(false, _) -> ""
-        | Repeat items         -> items |> List.map renderNode |> String.concat ""
         | Element(tag, attrs, ch) ->
-            let attrStr =
-                attrs
-                |> List.map (fun (k, v) ->
-                    // Skip empty attribute values for boolean attributes
-                    if String.IsNullOrEmpty v then sprintf " %s" k
-                    else sprintf " %s=\"%s\"" k (WebUtility.HtmlEncode v))
-                |> String.concat ""
+            let attrStr = renderAttrs attrs
             if voidTags.Contains tag then
                 // W3C: void elements must NOT have a trailing slash
                 sprintf "<%s%s>" tag attrStr
@@ -58,19 +68,13 @@ module HtmlWriter =
     let rec private renderNodePretty (indent: int) (node: HtmlNode) : string =
         let ws = String.replicate indent "  "
         match node with
-        | Text s -> WebUtility.HtmlEncode s
+        | Text s -> Escape.escapeText s
         | Raw  s -> s
         | Fragment ns -> ns |> List.map (renderNodePretty indent) |> String.concat ""
         | Conditional(true, n) -> renderNodePretty indent n
         | Conditional(false, _) -> ""
-        | Repeat items -> items |> List.map (renderNodePretty indent) |> String.concat ""
         | Element(tag, attrs, ch) ->
-            let attrStr =
-                attrs
-                |> List.map (fun (k, v) ->
-                    if String.IsNullOrEmpty v then sprintf " %s" k
-                    else sprintf " %s=\"%s\"" k (WebUtility.HtmlEncode v))
-                |> String.concat ""
+            let attrStr = renderAttrs attrs
             if voidTags.Contains tag then
                 sprintf "%s<%s%s>" ws tag attrStr
             elif ch.IsEmpty then

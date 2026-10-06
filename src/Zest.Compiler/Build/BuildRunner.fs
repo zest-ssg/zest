@@ -20,6 +20,10 @@ open ProgressTracker
 /// Core build pipeline with parallel content processing and optimised I/O.
 module BuildRunner =
 
+    /// Raised when configuration validation fails, so the build can stop
+    /// before touching the file system. Carries the messages already recorded.
+    exception private InvalidConfig of string list
+
     /// Total size of every file below `dir`, in bytes. Used for the build
     /// report handed to _finalize.fsx; an unreadable file counts as zero
     /// rather than failing the build.
@@ -50,12 +54,21 @@ module BuildRunner =
         try
             progress.Phase <- BuildPhase.Initializing
 
+            // Normalise then validate the configuration before any file-system
+            // work: clamp harmless out-of-range values, and report every
+            // problem at once instead of failing mysteriously mid-build.
+            let config = SiteConfigValidation.normalize config
+            let configErrors = SiteConfigValidation.validate config
+            if not configErrors.IsEmpty then
+                for e in configErrors do errors.Add e
+                raise (InvalidConfig configErrors)
+
             FsiRunner.resetSession()
             PageEvaluator.resetZestucksCache()
 
             // Strict mode disables Zest extension filters so only the
             // Nunjucks-compatible filter set remains available.
-            let isStrict = config.ZestucksCompatibility = "strict"
+            let isStrict = config.IsStrictZestucks
             ZestucksFilters.setStrictMode isStrict
             if isStrict then
                 eprintfn "[Zest] Zestucks strict mode — Zest extension filters disabled."
@@ -78,10 +91,16 @@ module BuildRunner =
             progress.OutputDir <- outputDir
 
             Directory.CreateDirectory(outputDir) |> ignore
-            // Fast cleanup: delete and recreate to avoid per-file enumeration
+            // Clean build: delete and recreate to avoid per-file enumeration.
+            // Refuse to delete anything that is not a strict sub-directory of
+            // the project root — a misconfigured `output` such as "." or ".."
+            // must never wipe the project or an unrelated directory.
             if not config.EnableIncrementalBuild then
-                try Directory.Delete(outputDir, recursive = true); Directory.CreateDirectory(outputDir) |> ignore
-                with _ -> ()
+                if isSafeToClean root outputDir then
+                    try Directory.Delete(outputDir, recursive = true); Directory.CreateDirectory(outputDir) |> ignore
+                    with _ -> ()
+                else
+                    eprintfn "[Zest] WARN: refusing to clean output directory '%s' (not inside the project root)." outputDir
 
             let layouts = LayoutChain.loadLayouts layoutsDir
             let globalData = loadGlobalData dataDir
@@ -91,19 +110,6 @@ module BuildRunner =
             // relying on timestamps.
             LayoutChain.setIncludesSignature (computeIncludesSignature includes)
             PageStore.setIncludes includes
-
-            // Load the incremental cache only after layouts and includes are in
-            // hand. The cache diffs per-template content hashes and marks only
-            // the pages depending on a changed template stale, so an edit
-            // rebuilds the affected pages instead of the whole site.
-            if config.EnableIncrementalBuild then
-                let templatePairs =
-                    [ for (_, (path, text)) in Map.toList layouts -> path, text
-                      for kv in includes do
-                          match (LayoutChain.getIncludePathMap ()).TryFind kv.Key with
-                          | Some path -> yield path, kv.Value
-                          | None -> () ]
-                loadCache outputDir templatePairs
 
             // Inject site config into globalData without unnecessary full clone
             let gData = globalData
@@ -203,21 +209,35 @@ module BuildRunner =
                     gDict.["locale." + langKv.Key + "." + transKv.Key] <- box transKv.Value
             PageStore.setGlobalData gDict
 
+            // ── Load the incremental cache ──
+            // Runs once layouts, includes, global data, prebuild filters and
+            // locales are all known, so the inputs signature covers everything
+            // that can change a rendered page. A signature mismatch forces a
+            // full rebuild instead of reusing pages built under old settings.
+            if config.EnableIncrementalBuild then
+                let templatePairs =
+                    [ for (_, (path, text)) in Map.toList layouts -> path, text
+                      for kv in includes do
+                          match (LayoutChain.getIncludePathMap ()).TryFind kv.Key with
+                          | Some path -> yield path, kv.Value
+                          | None -> () ]
+                let aux =
+                    [ for kv in prebuildResult.Filters -> "filter:" + kv.Key, kv.Value
+                      for kv in prebuildResult.GlobalFunctions -> "fn:" + kv.Key, "" ]
+                loadCache outputDir templatePairs (computeInputsSignature config gDict aux)
+
             // ── Content pipeline: discover → evaluate → write output ──
             markPhase "setup"
             progress.Phase <- BuildPhase.Discovering
-            let struct(total, contentProcessed, contentCached, evalResults) =
+            let pipelineResult =
                 PagePipeline.processContent contentDir outputDir config gDict layouts includes progress
             markPhase "content"
 
-            processed <- contentProcessed
-            cached    <- contentCached
+            processed <- pipelineResult.Processed
+            cached    <- pipelineResult.Cached
 
-            // Collect any errors from evaluation results
-            for r in evalResults do
-                match r with
-                | Error e -> errors.Add(e)
-                | _ -> ()
+            // The pipeline collects its own failures; surface them on the report.
+            for e in pipelineResult.Errors do errors.Add e
 
             // ── Generate taxonomy archive pages (e.g. /tags/, /tags/<term>/) ──
             // Runs after content so PageStore already holds every page and tag.
@@ -278,14 +298,27 @@ module BuildRunner =
 
             sw.Stop()
             ProgressTracker.clear ()
-            { TotalPages     = total
+            { TotalPages     = pipelineResult.TotalFiles
               ProcessedPages = processed
               CachedPages    = cached
               AssetsCopied   = assets
               DurationMs     = sw.ElapsedMilliseconds
               OutputDir      = outputDir
               Errors         = errors |> Seq.toList }
-        with ex ->
+        with
+        | InvalidConfig _ ->
+            // The validation messages are already in `errors`; adding a
+            // generic "Build failed" line would only bury them.
+            sw.Stop()
+            ProgressTracker.clear ()
+            { TotalPages     = 0
+              ProcessedPages = processed
+              CachedPages    = cached
+              AssetsCopied   = assets
+              DurationMs     = sw.ElapsedMilliseconds
+              OutputDir      = ""
+              Errors         = errors |> Seq.toList }
+        | ex ->
             errors.Add(sprintf "Build failed: %s" ex.Message)
             sw.Stop()
             ProgressTracker.clear ()

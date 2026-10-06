@@ -113,21 +113,19 @@ module FileTypes =
     // ── Aggregate sets ─────────────────────────────────────
 
     /// Every extension rendered by the Zestucks engine: the native `.ztk`
-    /// and the Nunjucks-compatible `.njk`.
+    /// and the Nunjucks-compatible `.njk`. This is also the extension lookup
+    /// order used when a template refers to another one by bare name
+    /// (`{% extends "base" %}`), so the two roles share one list.
     /// Used by PageEvaluator, FrontMatterParser, PagePipeline, LayoutChain.
     let ZestucksFamily =
         [ Zestucks; Nunjucks ]
 
-    /// Extensions Zestucks reads from disk, in lookup order. Used when a
-    /// template refers to another one by bare name (`{% extends "base" %}`).
-    let ZestucksFileExtensions =
-        [ Zestucks; Nunjucks ]
-
     /// All content extensions processed by the build pipeline.
-    /// Includes Zest Pages, Markdown, HTML, and Zestucks-family templates.
+    /// Includes Zest Pages, Markdown, HTML (both `.html` and `.htm`), and
+    /// Zestucks-family templates.
     /// Plain `.fsx` is deliberately absent — those scripts are not content.
     let Content =
-        [ ZestScript; Markdown; MarkdownLong; Html ]
+        [ ZestScript; Markdown; MarkdownLong; Html; HtmlLong ]
         @ ZestucksFamily
 
     /// All asset extensions (copied or lightly processed, not rendered as pages).

@@ -1,3 +1,14 @@
+// PagePipeline.fs
+//
+// Content discovery, evaluation and output writing — fully parallelised.
+//
+// Structure: `processContent` is a sequence of named phases (discover, extract
+// metadata, evaluate Markdown, evaluate F# pages, write). Each phase used to be
+// inlined into one 300-line function, which made the incremental-cache decision
+// appear in four places and drift.
+//
+// Dependencies: Zest.Compiler.Model, Zest.Compiler.Rendering, Zest.Compiler.Zestucks, Zest.Compiler.Execution
+
 namespace Zest.Compiler.Build
 open System
 open System.Collections.Concurrent
@@ -7,17 +18,31 @@ open System.Threading
 open System.Threading.Tasks
 open Zest.Compiler.Model
 open Zest.Compiler.Rendering
-open Zest.Compiler.Build
 open Zest.Compiler.Zestucks
-open Zest.Compiler.Build
 open Zest.Compiler.Execution
+
+/// Outcome of the content pipeline.
+type ContentPipelineResult =
+    { /// Files the pipeline considered (content files plus `*.html`).
+      TotalFiles: int
+      /// Pages evaluated and written this build.
+      Processed: int
+      /// Pages skipped because the incremental cache still considered them fresh.
+      Cached: int
+      /// Pages that made it through the pipeline, for the generators that run
+      /// afterwards.
+      Pages: ContentPage list
+      /// Failures. A non-empty list fails the build.
+      Errors: string list }
 
 /// Content discovery, evaluation, and output writing pipeline — fully parallelized.
 module PagePipeline =
 
     /// Extensions routed by the content pipeline, excluding the Zest Page
     /// suffix handled separately below.
-    /// Excludes .html — HTML is handled separately (native-mode Zestucks preprocessing).
+    ///
+    /// `*.html` / `*.htm` are absent on purpose: they are not routed pages but
+    /// native-mode Zestucks input, handled by `processHtmlFiles`.
     let private processableExts =
         [ FileTypes.Zestucks; FileTypes.Nunjucks
           FileTypes.Markdown; FileTypes.MarkdownLong ]
@@ -33,7 +58,102 @@ module PagePipeline =
         FileTypes.isZestPage path
         || (processableExts |> List.exists ((=) (Path.GetExtension(path).ToLowerInvariant())))
 
+    /// File text, read once per build.
+    ///
+    /// Every phase needs a file's text: metadata extraction, the incremental
+    /// decision, evaluation and the content hash. Re-reading it — or hashing it
+    /// again — per phase was the single largest avoidable cost in a rebuild.
+    type private FileCache() =
+        let texts = ConcurrentDictionary<string, string>(StringComparer.Ordinal)
+        member _.Text(path: string) =
+            texts.GetOrAdd(path, fun p -> File.ReadAllText p)
+
+    /// The single incremental-rebuild decision per file, memoised for the build.
+    ///
+    /// The decision used to be recomputed in four separate filters; each
+    /// recomputation re-hashed the revision file, and a cache entry updated
+    /// between two of them could make the same file simultaneously "needs
+    /// rebuild" and "cached".
+    let private rebuildDecisions (config: SiteConfig) (files: FileCache) =
+        let decisions = ConcurrentDictionary<string, bool>(StringComparer.Ordinal)
+        fun (path: string) ->
+            if not config.EnableIncrementalBuild then true
+            else decisions.GetOrAdd(path, fun p -> IncrementalCache.needsRebuildWithText p (files.Text p))
+
+    /// Record a page evaluation result, routing the failure case into `errors`.
+    let private recordResult (errors: ConcurrentBag<string>) (pages: ConcurrentBag<ContentPage>)
+                             (result: Result<ContentPage, string>) =
+        match result with
+        | Ok page -> pages.Add page
+        | Error e -> errors.Add e
+
+    /// Route `*.html` / `*.htm` through the Zestucks compatibility layer so
+    /// `{{ }}` and `{% %}` resolve against the full page and site context.
+    /// Plain HTML with no template syntax is copied byte-for-byte.
+    let private processHtmlFiles (contentDir: string) (outputDir: string) (config: SiteConfig)
+                                 (globalData: IDictionary<string, obj>)
+                                 (files: FileCache) (htmlFiles: string[])
+                                 (progress: BuildProgress) (errors: ConcurrentBag<string>) : int =
+        if htmlFiles.Length = 0 then 0
+        else
+            // Snapshot globalData for thread-safe iteration inside Parallel.ForEach.
+            // Dictionary<K,V>.GetEnumerator is not safe for concurrent enumeration
+            // (it can corrupt internal state even for read-only access).
+            let gdSnapshot = globalData |> Seq.map (fun kv -> kv.Key, kv.Value) |> Seq.toArray
+            let mutable count = 0
+            Parallel.ForEach(htmlFiles, fun htmlFile ->
+                try
+                    let relPath = SitePaths.normalizeOutputRel (Path.GetRelativePath(contentDir, htmlFile))
+                    // Resolved under outputDir and rejected if it escapes.
+                    let destPath = SitePaths.assertWithinOutput outputDir relPath
+                    let destDir = Path.GetDirectoryName(destPath)
+                    if not (String.IsNullOrEmpty destDir) then Directory.CreateDirectory(destDir) |> ignore
+                    let content = files.Text htmlFile
+                    if content.Contains("{{") || content.Contains("{%") then
+                        let engine = EngineHost.instance
+                        // Full page + site context so HTML can reference
+                        // {{ page.title }}, {{ site.* }}, pages, etc.
+                        let pairs = ResizeArray<string * obj>()
+                        for (key, value) in gdSnapshot do pairs.Add("site." + key, value)
+                        pairs.Add("site.title", box config.Title)
+                        pairs.Add("site.description", box config.Description)
+                        pairs.Add("site.base_url", box config.BaseUrl)
+                        pairs.Add("site.author", box config.Author)
+                        pairs.Add("site.language", box config.Language)
+                        let pageTitle =
+                            match PageEvaluator.extractMetaWithText htmlFile config content with
+                            | Some m when not (String.IsNullOrEmpty m.Title) -> m.Title
+                            | _ -> Path.GetFileNameWithoutExtension htmlFile
+                        pairs.Add("page.title", box pageTitle)
+                        // The page's Data dictionary holds description plus every
+                        // front-matter extra; surface them as page.* keys.
+                        match PageEvaluator.extractMetaWithText htmlFile config content with
+                        | Some m -> for kv in m.Data do pairs.Add("page." + kv.Key, kv.Value)
+                        | None -> ()
+                        pairs.Add("pages", box (PageStore.getPagesForZestucks () |> Array.map box))
+                        pairs.Add("tags", box (PageStore.getTagsForZestucks ()))
+                        pairs.Add("collections", box (PageStore.getCollectionsForZestucks ()))
+                        let ctx = EngineHost.buildContext pairs
+                        match engine.Render content ctx with
+                        | Ok rendered ->
+                            AtomicFile.write destPath (Text.Encoding.UTF8.GetBytes rendered)
+                        | Error err ->
+                            Diagnostics.error "[Zest] HTML template error in '%s': %O" htmlFile err
+                            AtomicFile.write destPath (Text.Encoding.UTF8.GetBytes content)
+                    else
+                        AtomicFile.write destPath (Text.Encoding.UTF8.GetBytes content)
+                    Interlocked.Increment(&count) |> ignore
+                with ex ->
+                    errors.Add(sprintf "Failed to process HTML '%s': %s" htmlFile ex.Message)
+                    progress.IncErrors()) |> ignore
+            progress.IncProcessed count
+            // The pipeline reports one progress tick per generated file so the
+            // bar matches TotalFiles, which counts HTML files too.
+            count
+
+    /// <summary>
     /// Process all content files: discover, evaluate, and write output.
+    /// </summary>
     let internal processContent
         (contentDir: string)
         (outputDir: string)
@@ -42,7 +162,7 @@ module PagePipeline =
         (layouts: Map<string, string * string>)
         (includes: IDictionary<string, string>)
         (progress: BuildProgress)
-        =
+        : ContentPipelineResult =
 
         // Wrap globalData for thread-safe concurrent enumeration.
         // Regular Dictionary.GetEnumerator corrupts when enumerated
@@ -51,203 +171,147 @@ module PagePipeline =
         let safeIncludes = ConcurrentDictionary<string, string>(includes)
 
         let errors = ConcurrentBag<string>()
-        let mutable processed = 0
-        let mutable cached    = 0
+        let files = FileCache()
+        let needsRebuild = rebuildDecisions config files
 
-        let allFiles =
+        // ── Discovery: one file-system traversal, partitioned in memory ──
+        let allHtml, routedFiles =
             if not (Directory.Exists contentDir) then
-                Directory.CreateDirectory(contentDir) |> ignore; [||]
+                Directory.CreateDirectory(contentDir) |> ignore
+                [||], [||]
             else
-                // Single file system traversal — enumerate once, filter in memory
                 Directory.EnumerateFiles(contentDir, "*.*", SearchOption.AllDirectories)
                 |> Seq.filter (fun f ->
-                    isRoutedFile f
-                    && not (FileTypes.isReservedFile f)
+                    not (FileTypes.isReservedFile f)
                     && not (SitePaths.isExcludedWithConfig contentDir config f))
                 |> Seq.distinct
                 |> Seq.toArray
+                |> Array.partition (fun f ->
+                    let e = Path.GetExtension(f).ToLowerInvariant()
+                    e = FileTypes.Html || e = FileTypes.HtmlLong)
 
-        progress.TotalFiles <- allFiles.Length
+        let allFiles = routedFiles |> Array.filter isRoutedFile
+        progress.TotalFiles <- allFiles.Length + allHtml.Length
 
-        // ── .html files: native-mode Zestucks preprocessing ──
-        // In native mode, HTML files are routed through the Zestucks compat
-        // layer so `{{ }}` / `{% %}` syntax resolves against the full page +
-        // site context (like .ztk content). Plain HTML without template
-        // syntax is copied verbatim.
-        if Directory.Exists contentDir then
-            let htmlFiles = Directory.GetFiles(contentDir, "*.html", SearchOption.AllDirectories)
-                            |> Array.filter (fun f -> not (SitePaths.isExcludedWithConfig contentDir config f))
-            if htmlFiles.Length > 0 then
-                // Snapshot globalData for thread-safe iteration inside Parallel.ForEach.
-                // Dictionary<K,V>.GetEnumerator is not safe for concurrent enumeration
-                // (can corrupt internal state even for read-only access across threads).
-                let gdSnapshot = safeData |> Seq.map (fun kv -> kv.Key, kv.Value) |> Seq.toArray
-                Parallel.ForEach(htmlFiles, fun htmlFile ->
-                    let relPath = Path.GetRelativePath(contentDir, htmlFile)
-                    let destPath = Path.Combine(outputDir, relPath)
-                    let destDir = Path.GetDirectoryName(destPath)
-                    if destDir <> null then Directory.CreateDirectory(destDir) |> ignore
-                    let content = File.ReadAllText(htmlFile)
-                    if content.Contains("{{") || content.Contains("{%") then
-                        let engine = EngineHost.instance
-                        // Build the full page + site context so HTML can
-                        // reference {{ page.title }}, {{ site.* }}, pages, etc.
-                        let pairs = ResizeArray<string * obj>()
-                        for (key, value) in gdSnapshot do pairs.Add(key, value)
-                        pairs.Add("site.title", box config.Title)
-                        pairs.Add("site.description", box config.Description)
-                        pairs.Add("site.base_url", box config.BaseUrl)
-                        pairs.Add("site.author", box config.Author)
-                        pairs.Add("site.language", box config.Language)
-                        // Extract page meta (title/slug from frontmatter if present)
-                        try
-                            let meta = PageEvaluator.extractMetaWithText htmlFile config content
-                            match meta with
-                            | Some m ->
-                                let title =
-                                    if String.IsNullOrEmpty m.Title then Path.GetFileNameWithoutExtension htmlFile
-                                    else m.Title
-                                pairs.Add("page.title", box title)
-                                // Surface the page's Data dictionary (which holds
-                                // description + all frontmatter extras) as page.* keys.
-                                for kv in m.Data do pairs.Add("page." + kv.Key, box kv.Value)
-                            | None -> ()
-                        with _ -> ()
-                        pairs.Add("pages", box (PageStore.getPagesForZestucks () |> Array.map box))
-                        pairs.Add("tags", box (PageStore.getTagsForZestucks ()))
-                        pairs.Add("collections", box (PageStore.getCollectionsForZestucks ()))
-                        let ctx = EngineHost.buildContext pairs
-                        match engine.Render content ctx with
-                        | Ok rendered ->
-                            // Atomic replace so the preview server's open
-                            // read handle is never invalidated mid-stream.
-                            AtomicFile.write destPath (System.Text.Encoding.UTF8.GetBytes rendered)
-                        | Error _ ->
-                            AtomicFile.write destPath (System.Text.Encoding.UTF8.GetBytes content)
-                    else
-                        AtomicFile.write destPath (System.Text.Encoding.UTF8.GetBytes content)
-                    Interlocked.Increment(&processed) |> ignore
-                    progress.IncProcessed()) |> ignore
+        // ── `*.html`: native-mode Zestucks preprocessing ──
+        let htmlProcessed = processHtmlFiles contentDir outputDir config globalData files allHtml progress errors
 
-        let total = allFiles.Length
+        let mutable processed = htmlProcessed
+        let mutable cached = 0
 
-        // ── First pass: fast metadata extraction for collections API ──
-        // Parallel file read + metadata extraction.
-        // The fileContentCache avoids double ReadAllText in later phases.
-        // Draft pages (meta.Draft = true) are collected for _drafts but excluded
-        // from the main page set to prevent them from appearing in production builds.
-        // Files declaring `@paginate` are skipped here too — PaginationGenerator
-        // takes over their URL entirely, so they must not surface as pages.
+        // ── First pass: metadata extraction for the collections API ──
+        // Draft pages are excluded from the main page set so they never appear
+        // in production builds. Files declaring `@paginate` are skipped too —
+        // PaginationGenerator owns their URL entirely.
         progress.Phase <- BuildPhase.Discovering
-        let fileContentCache = ConcurrentDictionary<string, string>()
-        let draftPages = ConcurrentBag<ContentPage>()
-        let paginateFiles = ConcurrentDictionary<string, bool>()
+        let paginateFiles = ConcurrentDictionary<string, bool>(StringComparer.Ordinal)
         let metaPages =
-            // Parallel: read file + extract meta concurrently
-            // Uses Partitioner for better chunk distribution than Parallel.ForEach on arrays.
             allFiles
             |> Array.Parallel.map (fun f ->
                 try
-                    let text = File.ReadAllText(f)
-                    fileContentCache.[f] <- text
-                    let meta = PageEvaluator.extractMetaWithText f config text
-                    f, meta
-                with _ -> f, None)
+                    let text = files.Text f
+                    f, PageEvaluator.extractMetaWithText f config text
+                with ex ->
+                    // A metadata failure means this file cannot become a page.
+                    // It must be reported, not dropped: silently losing a page
+                    // produces a site that is missing content with a green build.
+                    errors.Add(sprintf "Failed to read metadata from '%s': %s" f ex.Message)
+                    f, None)
             |> Array.choose (fun (f, metaOpt) ->
-                metaOpt |> Option.bind (fun (page: ContentPage) ->
-                    if page.Draft then
-                        draftPages.Add(page)
-                        None
+                metaOpt
+                |> Option.filter (fun (page: ContentPage) ->
+                    if page.Draft then false
                     elif page.Data.ContainsKey "paginate" then
                         paginateFiles.TryAdd(f, true) |> ignore
-                        None
-                    else Some page))
+                        false
+                    else true))
             |> Array.toList
         PageStore.setAllPages metaPages
-        PageStore.setDraftPages (draftPages |> Seq.toList)
         FsiRunner.resetSession ()
 
-        // Exclude pagination templates from normal evaluation/writing — the
-        // PaginationGenerator owns their output paths.
-        let paginatedAllFiles = allFiles |> Array.filter (fun f -> not (paginateFiles.ContainsKey f))
+        // Pagination templates are excluded from normal evaluation and writing.
+        let writable = allFiles |> Array.filter (fun f -> not (paginateFiles.ContainsKey f))
+        let isMarkdown (f: string) =
+            let e = Path.GetExtension(f).ToLowerInvariant()
+            e = FileTypes.Markdown || e = FileTypes.MarkdownLong
+        let mdFiles = writable |> Array.filter isMarkdown
+        let fsxFiles = writable |> Array.filter (isMarkdown >> not)
 
-        let mdFiles  = paginatedAllFiles |> Array.filter (fun f -> let e = Path.GetExtension(f).ToLowerInvariant() in e = FileTypes.Markdown || e = FileTypes.MarkdownLong)
-        let fsxFiles = paginatedAllFiles |> Array.filter (fun f -> let e = Path.GetExtension(f).ToLowerInvariant() in e <> FileTypes.Markdown && e <> FileTypes.MarkdownLong)
+        let pages = ConcurrentBag<ContentPage>()
 
-        let evalResults = ConcurrentBag<Result<ContentPage, string>>()
-
-        // Markdown pages — skip cached in incremental mode, parallel evaluation
+        // ── Markdown pages ──
         progress.Phase <- BuildPhase.Evaluating
         let mdToEval =
-            if config.EnableIncrementalBuild then
-                mdFiles |> Array.filter (fun f ->
-                    let text = fileContentCache.GetOrAdd(f, fun _ -> File.ReadAllText f)
-                    if IncrementalCache.needsRebuildWithText f text then true
-                    else
-                        Interlocked.Increment(&cached) |> ignore
-                        progress.IncCached()
-                        false)
-            else mdFiles
+            mdFiles
+            |> Array.filter (fun f ->
+                if needsRebuild f then true
+                else
+                    Interlocked.Increment(&cached) |> ignore
+                    progress.IncCached()
+                    false)
 
         if mdToEval.Length > 0 then
             Parallel.ForEach(mdToEval, fun f ->
                 try
-                    // Use cached text from first-pass metadata extraction
-                    // to avoid a second File.ReadAllText on the same file.
-                    let text = fileContentCache.GetOrAdd(f, fun _ -> File.ReadAllText(f))
-                    evalResults.Add(PageEvaluator.evaluateWithText f config safeData text)
+                    let result = PageEvaluator.evaluateWithText f config safeData (files.Text f)
+                    recordResult errors pages result
                     progress.IncProcessed()
                 with ex ->
                     errors.Add(sprintf "Failed '%s': %s" f ex.Message)
                     progress.IncErrors()) |> ignore
 
-        // FSI scripts: batch evaluate in a single FSI process for performance
-        let fsxResults =
-            if fsxFiles.Length > 0 then
+        // ── F# pages: batched in a single FSI process ──
+        let batchResults =
+            if fsxFiles.Length = 0 then Map.empty
+            else
                 let scriptsToEval =
                     fsxFiles
                     |> Array.choose (fun f ->
                         try
-                            let text = fileContentCache.GetOrAdd(f, fun _ -> File.ReadAllText(f))
-                            if config.EnableIncrementalBuild && not (IncrementalCache.needsRebuildWithText f text) then None
-                            elif FsiRunner.isPageScript f text then
-                                Some (f, text)
+                            let text = files.Text f
+                            if not (needsRebuild f) then None
+                            elif FsiRunner.isPageScript f text then Some(f, text)
                             else None
-                        with _ -> None)
+                        with ex ->
+                            errors.Add(sprintf "Failed to read '%s': %s" f ex.Message)
+                            None)
                     |> Array.toList
 
-                if scriptsToEval.IsEmpty then
+                if not scriptsToEval.IsEmpty then
+                    FsiRunner.evaluatePageScriptsBatch scriptsToEval
+                else
+                    // Nothing to batch, but non-page scripts (or a build with
+                    // incremental rebuilds disabled) still need evaluating.
                     if not config.EnableIncrementalBuild then
                         Parallel.ForEach(fsxFiles, fun f ->
                             try
-                                let text = fileContentCache.GetOrAdd(f, fun _ -> File.ReadAllText(f))
-                                evalResults.Add(PageEvaluator.evaluateWithText f config safeData text)
+                                let result = PageEvaluator.evaluateWithText f config safeData (files.Text f)
+                                recordResult errors pages result
                                 progress.IncProcessed()
                             with ex ->
                                 errors.Add(sprintf "Failed '%s': %s" f ex.Message)
                                 progress.IncErrors()) |> ignore
                     Map.empty
-                else
-                    let batchResults = FsiRunner.evaluatePageScriptsBatch scriptsToEval
-                    batchResults
-            else Map.empty
 
-        // Process batch results and evaluate non-page scripts individually — parallelized
-        let processFsxFile f =
+        let processFsxFile (f: string) =
             try
-                let text = fileContentCache.GetOrAdd(f, fun _ -> File.ReadAllText(f))
-                if config.EnableIncrementalBuild && not (IncrementalCache.needsRebuildWithText f text) then
+                if not (needsRebuild f) then
                     Interlocked.Increment(&cached) |> ignore
                     progress.IncCached()
                 else
-                    match Map.tryFind f fsxResults with
-                    | Some batchResult ->
-                        match batchResult with
-                        | Ok htmlContent -> evalResults.Add(PageEvaluator.buildPage f config safeData text htmlContent)
-                        | Error evalErr ->
-                            eprintfn "[Zest] WARN: Script evaluation failed '%s': %s — falling back to Markdown mode" f evalErr
-                            evalResults.Add(PageEvaluator.evaluateWithText f config safeData text)
-                    | None -> evalResults.Add(PageEvaluator.evaluateWithText f config safeData text)
+                    match Map.tryFind f batchResults with
+                    | Some (Ok htmlContent) ->
+                        recordResult errors pages
+                            (PageEvaluator.buildPage f config safeData (files.Text f) htmlContent)
+                    | Some (Error evalErr) ->
+                        Diagnostics.warn
+                            "[Zest] Script evaluation failed for '%s': %s — falling back to Markdown mode."
+                            f evalErr
+                        recordResult errors pages
+                            (PageEvaluator.evaluateWithText f config safeData (files.Text f))
+                    | None ->
+                        recordResult errors pages
+                            (PageEvaluator.evaluateWithText f config safeData (files.Text f))
                     progress.IncProcessed()
             with ex ->
                 errors.Add(sprintf "Failed '%s': %s" f ex.Message)
@@ -255,30 +319,22 @@ module PagePipeline =
 
         Parallel.ForEach(fsxFiles, fun f -> processFsxFile f) |> ignore
 
-        // Write output — lock-safe atomic writes that never conflict with the
-        // preview server's open read handles. Layout chains are applied to all
-        // rebuild pages in ONE batched pass (FSI per chain level) instead of
-        // re-entering FSI per page, which was the dominant build cost.
-        let mutable localProcessed = 0
-        let mutable localCached    = 0
+        // ── Write ──
         progress.Phase <- BuildPhase.Writing
-
-        // Partition results first: failures surface as errors; pages that the
-        // incremental cache still considers fresh are counted and skipped.
-        let rebuildPages = ResizeArray<ContentPage>()
-        for r in evalResults do
-            match r with
-            | Error e -> errors.Add(e); progress.IncErrors()
-            | Ok page ->
-                let srcText = fileContentCache.GetOrAdd(page.SourcePath, fun _ -> File.ReadAllText page.SourcePath)
-                if config.EnableIncrementalBuild && not (IncrementalCache.needsRebuildWithText page.SourcePath srcText) then
-                    Interlocked.Increment(&localCached) |> ignore
+        let rebuildPages =
+            pages
+            |> Seq.filter (fun page ->
+                if needsRebuild page.SourcePath then true
                 else
-                    rebuildPages.Add(page)
+                    Interlocked.Increment(&cached) |> ignore
+                    progress.IncCached()
+                    false)
+            |> Seq.toArray
 
-        // One batched layout pass over every page that needs a rebuild.
+        // One batched layout pass over every page that needs a rebuild
+        // (FSI per chain level) instead of re-entering FSI per page.
         let batchedHtml =
-            if rebuildPages.Count = 0 then Map.empty
+            if rebuildPages.Length = 0 then Map.empty
             else
                 let tasks =
                     rebuildPages
@@ -289,49 +345,43 @@ module PagePipeline =
         // Output shaping is deliberately absent here: HTML pretty-printing and
         // minification are post-build work performed by _finalize.fsx, which
         // sees the finished output tree instead of a per-page temp result.
-
-        // Write each result in parallel. The content hash for the cache comes
-        // from the first-pass file cache, so no second ReadAllText is needed.
+        let mutable written = 0
         Parallel.ForEach(rebuildPages, fun page ->
             try
-                let outPath = Path.Combine(outputDir, page.OutputPath)
+                let outPath = SitePaths.assertWithinOutput outputDir page.OutputPath
                 let dir = Path.GetDirectoryName outPath
-                if dir <> null then Directory.CreateDirectory dir |> ignore
+                if not (String.IsNullOrEmpty dir) then Directory.CreateDirectory dir |> ignore
                 let layoutName = page.Layout |> Option.defaultValue config.DefaultLayout
-                match batchedHtml.TryFind page.SourcePath with
-                | Some _ ->
-                    // Record every template this page rendered through: each
-                    // level of the layout chain plus the includes those layouts
-                    // reference. A later edit to any of them then scopes the
-                    // rebuild to exactly the affected pages.
-                    let includePaths = LayoutChain.getIncludePathMap ()
-                    for (lname, lpath, _) in LayoutChain.layoutChain layoutName layouts do
-                        IncrementalCache.recordDependency page.SourcePath lpath
-                        match layouts.TryFind lname with
-                        | Some (_, ltext) ->
-                            for includePath in LayoutChain.collectIncludePaths ltext safeIncludes includePaths do
-                                IncrementalCache.recordDependency page.SourcePath includePath
-                        | None -> ()
-                    let finalHtml = batchedHtml.[page.SourcePath]
-                    AtomicFile.write outPath (System.Text.Encoding.UTF8.GetBytes finalHtml)
-                    let srcText = fileContentCache.GetOrAdd(page.SourcePath, fun _ -> File.ReadAllText page.SourcePath)
-                    IncrementalCache.updateCacheWithHash page.SourcePath outPath finalHtml srcText
-                    Interlocked.Increment(&localProcessed) |> ignore
-                | None ->
-                    // No layout result (missing top layout) — write the raw content.
-                    AtomicFile.write outPath (System.Text.Encoding.UTF8.GetBytes page.Content)
-                    let srcText = fileContentCache.GetOrAdd(page.SourcePath, fun _ -> File.ReadAllText page.SourcePath)
-                    IncrementalCache.updateCacheWithHash page.SourcePath outPath page.Content srcText
-                    Interlocked.Increment(&localProcessed) |> ignore
+                let finalHtml =
+                    match batchedHtml.TryFind page.SourcePath with
+                    | Some html ->
+                        // Record every template this page rendered through: each
+                        // level of the layout chain plus the includes those
+                        // layouts reference. A later edit to any of them then
+                        // scopes the rebuild to exactly the affected pages.
+                        let includePaths = LayoutChain.getIncludePathMap ()
+                        for (lname, lpath, _) in LayoutChain.layoutChain layoutName layouts do
+                            IncrementalCache.recordDependency page.SourcePath lpath
+                            match layouts.TryFind lname with
+                            | Some (_, ltext) ->
+                                for includePath in LayoutChain.collectIncludePaths ltext safeIncludes includePaths do
+                                    IncrementalCache.recordDependency page.SourcePath includePath
+                            | None -> ()
+                        html
+                    | None ->
+                        // No layout result (missing top layout) — write raw content.
+                        page.Content
+                AtomicFile.write outPath (Text.Encoding.UTF8.GetBytes finalHtml)
+                IncrementalCache.updateCacheWithHash page.SourcePath outPath finalHtml (files.Text page.SourcePath)
+                Interlocked.Increment(&written) |> ignore
             with ex ->
                 // A single page must never abort the whole build.
                 errors.Add(sprintf "Failed to write '%s': %s" page.SourcePath ex.Message)
                 progress.IncErrors()) |> ignore
-        processed <- processed + localProcessed
-        cached    <- cached + localCached
+        processed <- processed + written
 
-        // Collect any errors from the error bag
-        for e in errors do
-            evalResults.Add(Error e)
-
-        struct(total, processed, cached, evalResults)
+        { TotalFiles = allFiles.Length + allHtml.Length
+          Processed = processed
+          Cached = cached
+          Pages = pages |> Seq.toList
+          Errors = errors |> Seq.toList }

@@ -157,38 +157,52 @@ module Cache =
             eprintfn "[Zest] WARN: Failed to save ZCSS cache: %s" ex.Message
 
     /// Load entries from disk, skipping lines whose source file is gone.
+    /// The header is validated against the current format version: a cache
+    /// written by a different version is ignored entirely rather than
+    /// mis-parsed into entries that would be reused as wrong stylesheets.
     let load (cacheFile: string) =
         try
             if File.Exists cacheFile then
                 use reader = new StreamReader(cacheFile, Encoding.UTF8)
-                let mutable line = reader.ReadLine()
-                while line <> null do
-                    if not (line.StartsWith("#")) then
-                        let parts = line.Split('\t')
-                        if parts.Length >= 4 then
-                            match Int64.TryParse(parts.[1]) with
-                            | true, mtime when File.Exists(parts.[0]) ->
-                                let deps =
-                                    if parts.Length >= 5 && parts.[4].Length > 0 then
-                                        parts.[4].Split(',')
-                                        |> Array.choose (fun d ->
-                                            let idx = d.LastIndexOf('|')
-                                            if idx > 0 then
-                                                let mutable m = 0L
-                                                if Int64.TryParse(d.[idx+1..], &m) then Some(unb64 d.[..idx-1], m) else None
-                                            else None)
-                                        |> Array.toList
-                                    else []
-                                entries.[parts.[0]] <-
-                                    { Mtime = mtime; ContentHash = parts.[2]
-                                      Css = try unb64 parts.[3] with _ -> ""
-                                      DepMtimes = deps }
-                                // Rebuild the dependency graphs from the entry.
-                                for (depPath, _) in deps do
-                                    let rev = dependents.GetOrAdd(depPath, fun _ -> HashSet<string>())
-                                    lock rev (fun () -> rev.Add(parts.[0]) |> ignore)
-                            | _ -> ()
-                    line <- reader.ReadLine()
+                let header = reader.ReadLine()
+                let expected = sprintf "# zest-zcss-cache v%d" CACHE_FORMAT_VERSION
+                if header <> expected then
+                    eprintfn "[Zest] ZCSS cache format changed — ignoring '%s'." cacheFile
+                else
+                    let mutable line = reader.ReadLine()
+                    while line <> null do
+                        if not (line.StartsWith("#")) then
+                            let parts = line.Split('\t')
+                            // The writer always emits exactly 5 fields; anything
+                            // else means a truncated/corrupt line, which must be
+                            // skipped rather than partially interpreted.
+                            if parts.Length = 5 then
+                                match Int64.TryParse(parts.[1]) with
+                                | true, mtime when File.Exists(parts.[0]) ->
+                                    let deps =
+                                        if parts.[4].Length > 0 then
+                                            parts.[4].Split(',')
+                                            |> Array.choose (fun d ->
+                                                let idx = d.LastIndexOf('|')
+                                                if idx > 0 then
+                                                    let mutable m = 0L
+                                                    if Int64.TryParse(d.[idx+1..], &m) then Some(unb64 d.[..idx-1], m) else None
+                                                else None)
+                                            |> Array.toList
+                                        else []
+                                    match (try Some (unb64 parts.[3]) with _ -> None) with
+                                    | None -> ()   // corrupt CSS payload — skip the entry
+                                    | Some css ->
+                                        entries.[parts.[0]] <-
+                                            { Mtime = mtime; ContentHash = parts.[2]
+                                              Css = css
+                                              DepMtimes = deps }
+                                        // Rebuild the dependency graphs from the entry.
+                                        for (depPath, _) in deps do
+                                            let rev = dependents.GetOrAdd(depPath, fun _ -> HashSet<string>())
+                                            lock rev (fun () -> rev.Add(parts.[0]) |> ignore)
+                                | _ -> ()
+                        line <- reader.ReadLine()
         with ex ->
             eprintfn "[Zest] WARN: Failed to load ZCSS cache: %s" ex.Message
 

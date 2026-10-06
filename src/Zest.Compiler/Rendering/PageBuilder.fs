@@ -234,7 +234,12 @@ type PageBuilder () =
     /// Usage: `spaced (hr ()) [ p [text "A"]; p [text "B"] ]`
     [<CustomOperation "spaced">]
     member _.Spaced(s: ContentPage, sep: HtmlNode, items: HtmlNode list) =
-        let spaced = items |> List.collect (fun n -> [sep; n]) |> List.tail
+        // `List.tail` throws on an empty list; an empty item list simply adds
+        // nothing.
+        let spaced =
+            match items with
+            | [] -> []
+            | _ -> items |> List.collect (fun n -> [sep; n]) |> List.tail
         { s with ContentNodes = s.ContentNodes @ spaced }
 
     // ── raw_html: inject raw HTML string ──────────────────────────

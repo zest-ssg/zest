@@ -1,6 +1,6 @@
 +++
 title = "About this template"
-layout = "base"
+layout = "default"
 description = "What ships in this blog template and how to make it yours."
 +++
 

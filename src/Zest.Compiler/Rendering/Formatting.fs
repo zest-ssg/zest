@@ -164,7 +164,9 @@ module Formatting =
         let sb = StringBuilder(html)
         for attr in booleanAttributes do
             sb.Replace(sprintf @"%s=""%s""" attr attr, attr) |> ignore
-        html
+        // Must return the mutated builder, not the original string: returning
+        // `html` silently discarded every substitution.
+        sb.ToString()
 
     /// Remove optional closing tags (in Extreme mode only).
     let private removeOptionalClosingTags (html: string) : string =
@@ -173,7 +175,7 @@ module Formatting =
             let pattern = sprintf @"</%s>" tag
             // Only remove if followed by another opening tag or whitespace-then-tag
             sb.Replace(pattern, "") |> ignore
-        html
+        sb.ToString()
 
     /// Remove whitespace between tags: >\s+< → ><.
     let private removeInterTagWhitespace (html: string) : string =
@@ -592,15 +594,28 @@ module Formatting =
     // JavaScript Minification & Formatting
     // ================================================================
 
-    /// Minify JavaScript: removes comments, collapses whitespace,
-    /// shortens variable names where safe.
+    /// Minify JavaScript: removes comments and collapses whitespace around
+    /// structural punctuation. String, template and comment literals are
+    /// protected first so their contents are never rewritten.
     let minifyJs (js: string) : string =
-        let mutable result = js
+        // Protect string/template literals up front: the whitespace rules below
+        // would otherwise turn `a = "x = y"` into `a="x=y"`, corrupting the JS.
+        let protectedBlocks = ResizeArray<string>()
+        let mutable idx = 0
+        let placeholder (original: string) =
+            let key = sprintf "\x00JSPROTECT%d\x00" idx
+            protectedBlocks.Add original
+            idx <- idx + 1
+            key
 
-        // Remove single-line comments (but not URLs: //example.com)
-        result <- Regex.Replace(result, @"(?<!:)//.*$", "", RegexOptions.Multiline)
+        let literalPat = Regex(
+            @"`(?:\\.|[^`\\])*`|""(?:\\.|[^""\\\n])*""|'(?:\\.|[^'\\\n])*'",
+            RegexOptions.Compiled)
+        let mutable result = literalPat.Replace(js, fun m -> placeholder m.Value)
 
-        // Remove multi-line comments /* ... */
+        // Remove comments (string literals are already hidden, so a `//` inside
+        // a string or a URL is safe). `(?<!:)` keeps `http://…` intact.
+        result <- Regex.Replace(result, @"(?<!:)//[^\n]*", "")
         result <- Regex.Replace(result, @"/\*.*?\*/", "", RegexOptions.Singleline)
 
         // Collapse whitespace
@@ -608,13 +623,10 @@ module Formatting =
         result <- Regex.Replace(result, @"[ \t]+", " ")
         result <- Regex.Replace(result, @"\n\s*", "")
 
-        // Remove whitespace around operators and brackets
+        // Remove whitespace only around punctuation whose meaning cannot change
+        // (`+`/`-`/`*`/`/` are deliberately left alone: `a - -b` collapsing to
+        // `a--b` is a syntax error, and `/` may open a regex literal).
         result <- Regex.Replace(result, @"\s*=\s*", "=")
-        result <- Regex.Replace(result, @"\s*\+\s*", "+")
-        result <- Regex.Replace(result, @"\s*-\s*", "-")
-        result <- Regex.Replace(result, @"\s*\*\s*", "*")
-        result <- Regex.Replace(result, @"\s*/\s*", "/")
-        result <- Regex.Replace(result, @"\s*%\s*", "%")
         result <- Regex.Replace(result, @"\s*,\s*", ",")
         result <- Regex.Replace(result, @"\s*;\s*", ";")
         result <- Regex.Replace(result, @"\s*:\s*", ":")
@@ -624,19 +636,22 @@ module Formatting =
         result <- Regex.Replace(result, @"\s*\)\s*", ")")
         result <- Regex.Replace(result, @"\s*\[\s*", "[")
         result <- Regex.Replace(result, @"\s*\]\s*", "]")
-        result <- Regex.Replace(result, @"\s*<\s*", "<")
-        result <- Regex.Replace(result, @"\s*>\s*", ">")
         result <- Regex.Replace(result, @"\s*\?\s*", "?")
         result <- Regex.Replace(result, @"\s*&&\s*", "&&")
         result <- Regex.Replace(result, @"\s*\|\|\s*", "||")
         result <- Regex.Replace(result, @"\s*===\s*", "===")
         result <- Regex.Replace(result, @"\s*!==\s*", "!==")
 
-        // Preserve spaces after keywords that need them
+        // Preserve single spaces after keywords that require them
         result <- Regex.Replace(result, @"\b(var|let|const|function|return|if|else|for|while|do|switch|case|throw|new|typeof|instanceof|in|of|class|extends|import|export|from|as|default|yield|await|async|static|get|set|try|catch|finally|delete|void|with)\s+", "$1 ")
 
         // Remove unnecessary semicolons (before closing brace)
         result <- Regex.Replace(result, @";}", "}")
+
+        // Restore literals
+        if idx > 0 then
+            for i = 0 to idx - 1 do
+                result <- result.Replace(sprintf "\x00JSPROTECT%d\x00" i, protectedBlocks.[i])
 
         result.Trim()
 

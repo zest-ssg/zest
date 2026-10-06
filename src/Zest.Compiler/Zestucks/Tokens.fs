@@ -72,3 +72,25 @@ module internal Tokens =
         | VarToken  of string * int      // expression, source line
         | TagToken  of string * string list * int  // tag + args, source line
         | CmtToken  of string * int      // comment, source line
+
+    /// A zero-copy window into a shared Token[]. The renderer recurses into
+    /// block bodies by narrowing a range instead of slicing/copying tokens, so
+    /// a deeply nested template stays O(n) in allocations instead of building a
+    /// fresh list (and then array) at every nesting level.
+    [<Struct>]
+    type TokenRange =
+        { Source: Token[]
+          Start: int
+          Count: int }
+        /// Index one past the last token in the window (exclusive).
+        member this.Stop = this.Start + this.Count
+        member this.IsEmpty = this.Count <= 0
+        member this.Item
+            with get (i: int) = this.Source.[this.Start + i]
+
+    module TokenRange =
+        let empty : TokenRange = { Source = [||]; Start = 0; Count = 0 }
+        let ofArray (a: Token[]) : TokenRange = { Source = a; Start = 0; Count = a.Length }
+        let ofList (l: Token list) : TokenRange =
+            let a = List.toArray l
+            { Source = a; Start = 0; Count = a.Length }

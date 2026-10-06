@@ -12,15 +12,26 @@ open System.Collections.Generic
 
 /// <summary>
 /// Represents an HTML content tree node.
-/// Can be a plain text node, a tagged element, or a fragment (list of nodes).
 /// </summary>
+/// <remarks>
+/// The tree is deliberately small. A node is either text, an element, a list of
+/// children (<c>Fragment</c>), pre-escaped markup (<c>Raw</c>), or a node that
+/// may be dropped at render time (<c>Conditional</c>).
+///
+/// There is no separate "repeat" case: repeating is <c>Fragment</c> over a
+/// mapped list, which is what every helper already produced.
+/// </remarks>
 type HtmlNode =
     | Text of string
     | Element of tag: string * attributes: (string * string) list * children: HtmlNode list
     | Fragment of HtmlNode list
-    | Raw of string  // Raw HTML that won't be escaped
+    /// Pre-escaped markup. Only reachable through <c>RawNode</c>-style helpers
+    /// in the DSL, and only for markup the DSL itself produced.
+    | Raw of string
+    /// Rendered only when the condition is true. The condition is evaluated
+    /// where the node is constructed (the DSL is eager), which keeps the
+    /// renderer free of closures.
     | Conditional of condition: bool * node: HtmlNode
-    | Repeat of items: HtmlNode list
 
 /// <summary>
 /// A page produced by a .zest.fsx template, ready for layout wrapping and output.
@@ -29,7 +40,8 @@ type ContentPage = {
     /// URL path, e.g. "/" or "/posts/hello-world/"
     Url: string
 
-    /// Relative output path from output root, e.g. "index.html" or "posts/hello-world/index.html"
+    /// Relative output path from output root, e.g. "index.html" or "posts/hello-world/index.html".
+    /// Always uses forward slashes, on every platform — see SitePaths.normalizeOutputRel.
     OutputPath: string
 
     /// Layout name (without extension), e.g. "default"
@@ -44,8 +56,12 @@ type ContentPage = {
     /// Raw content nodes before rendering (for DSL use)
     ContentNodes: HtmlNode list
 
-    /// Front-matter-style metadata
-    Data: IDictionary<string, obj>
+    /// Front-matter-style metadata.
+    ///
+    /// Read-only on purpose: pages are handed to parallel renderers, and a
+    /// writable dictionary shared between them is a cross-page state leak.
+    /// Producers build a private Dictionary and publish it here.
+    Data: IReadOnlyDictionary<string, obj>
 
     /// Custom permalink override
     Permalink: string option
@@ -76,6 +92,11 @@ type ContentPage = {
 /// Default page constructor.
 /// </summary>
 module ContentPage =
+    /// A page with every field at its zero value.
+    ///
+    /// Safe to share: `Data` is an immutable read-only dictionary, so the value
+    /// can be used as the base of `{ ContentPage.empty with ... }` from any
+    /// number of threads without them seeing each other's writes.
     let empty =
         { Url = ""
           OutputPath = ""
@@ -83,7 +104,7 @@ module ContentPage =
           Title = ""
           Content = ""
           ContentNodes = []
-          Data = dict []
+          Data = readOnlyDict []
           Permalink = None
           Tags = []
           Categories = []

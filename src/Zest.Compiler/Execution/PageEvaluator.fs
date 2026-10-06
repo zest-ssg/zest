@@ -153,12 +153,12 @@ module PageEvaluator =
         meta.Updated |> Option.iter (fun v -> d.["updated"] <- box (v.ToString("yyyy-MM-dd")))
         meta.Description |> Option.iter (fun v -> d.["description"] <- box v)
 
-    let private buildPageData (globalData: IDictionary<string, obj>) (meta: ContentMeta) =
+    let private buildPageData (globalData: IDictionary<string, obj>) (meta: ContentMeta) : IReadOnlyDictionary<string, obj> =
         let d = Dictionary<string, obj>()
         for kv in globalData do d.[kv.Key] <- kv.Value
         for kv in meta.Extra   do d.[kv.Key] <- box kv.Value
         applyMetaFields d meta
-        d :> IDictionary<string, obj>
+        d :> IReadOnlyDictionary<string, obj>
 
     /// Fast metadata extraction with pre-loaded text — avoids double File.ReadAllText.
     let extractMetaWithText (filePath: string) (config: SiteConfig) (text: string) : ContentPage option =
@@ -195,7 +195,7 @@ module PageEvaluator =
                     Date       = meta.Date
                     Updated    = meta.Updated
                     Draft      = meta.Draft
-                    Data       = d :> IDictionary<string, obj> }
+                    Data       = d :> IReadOnlyDictionary<string, obj> }
         with ex ->
             eprintfn "[Zest] WARN: extractMeta failed for '%s': %s" filePath ex.Message
             None

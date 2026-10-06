@@ -24,6 +24,9 @@ module PagedResult =
     /// Paginate a list of items.
     let paginate<'a> (items: 'a list) (pageSize: int) (pageUrlFn: int -> string) : PaginatedResult<'a> list =
         let total = items.Length
+        // A non-positive page size would divide by zero (and `List.chunkBySize`
+        // would throw); treat it as a single page-size of 1.
+        let pageSize = if pageSize < 1 then 1 else pageSize
         let pages = (total + pageSize - 1) / pageSize
         [ for i in 0 .. pages - 1 ->
             let pageItems = items |> List.skip (i * pageSize) |> List.truncate pageSize
