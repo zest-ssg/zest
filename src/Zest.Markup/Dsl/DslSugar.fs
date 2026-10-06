@@ -247,7 +247,7 @@ module DslSugar =
     /// Join items with commas (e.g. tag lists).
     let joinComma (items: string list) = String.concat ", " items
 
-    /// Join items with a custom separator (alias for `joinWith`).
+    /// Join items with a custom separator — the single definition of `joinWith`.
     let joinWith (sep: string) (items: string list) = String.concat sep items
 
     // ── Collection helpers ──────────────────────────────────────

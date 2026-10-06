@@ -80,20 +80,17 @@ module Components =
     let btnSuccess ch = buttonClass "btn btn-success" ch
     let btnDanger ch = buttonClass "btn btn-danger" ch
 
-    // ---- Figure / media ----
-    let figure src alt cap =
-        elem "figure" [] [
-            voidElem "img" [attr "src" src; attr "alt" alt]
-            elem "figcaption" [] [text cap]
-        ]
-
-    // ---- Details / summary ----
-    let details summary ch =
-        elem "details" [] (elem "summary" [] [text summary] :: ch)
+    // ---- Figure / details ----
+    // The composed `figure src alt cap` / `details summary ch` variants used to
+    // live here and shadowed the `Dsl` element builders, so the same call site
+    // meant different things depending on whether the script added `open Dsl`.
+    // The `Dsl` builders are the single source now:
+    //   figure [ img src alt; figcaption [ text cap ] ]
+    //   details (summary [ text heading ] :: ch)
 
     // ---- Utility helpers ----
     let each items f = items |> List.map f |> String.concat ""
-    let joinWith sep items = String.concat sep items
+    // `joinWith` lives in `DslSugar` alone — same signature, same output.
     let opt v = match v with Some x -> x | None -> ""
     let renderIf cond node fallback = if cond then node else fallback
     let renderOpt v f = match v with Some x -> f x | None -> ""
