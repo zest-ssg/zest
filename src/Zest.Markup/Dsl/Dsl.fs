@@ -114,6 +114,19 @@ module Dsl =
     let meter ch = elem "meter" [] ch
     let output ch = elem "output" [] ch
 
+    // ---- Form elements ----
+    let fieldset ch = elem "fieldset" [] ch
+    let legend ch = elem "legend" [] ch
+
+    // ---- Media / embedded elements ----
+    // `iframe` gets an explicit closing tag: the HTML parser ignores a
+    // self-closing slash on non-void elements and would nest the siblings.
+    let video src ch = elem "video" [attr "src" src] ch
+    let audio src ch = elem "audio" [attr "src" src] ch
+    let iframe src = elem "iframe" [attr "src" src] []
+    let canvas id ch = elem "canvas" [attr "id" id] ch
+    let svg ch = elem "svg" [] ch
+
     // ---- Class-shortcut variants for new semantic elements ----
     let figureClass cls ch = elem "figure" [attr "class" cls] ch
     let timeClass cls datetime ch = elem "time" [attr "datetime" datetime; attr "class" cls] ch
@@ -167,6 +180,45 @@ module Dsl =
     let imgClass cls src alt = voidElem "img" [attr "src" src; attr "alt" alt; attr "class" cls]
     let codeBlock lang c = elem "pre" [] [elem "code" [attr "class" ("lang-" + lang)] [c]]
 
+    // ---- Class-shortcut helpers for the remaining content elements ----
+    let abbrClass cls title ch = elem "abbr" [attr "title" title; attr "class" cls] ch
+    let strongClass cls ch = elem "strong" [attr "class" cls] ch
+    let emClass cls ch = elem "em" [attr "class" cls] ch
+    let smallClass cls ch = elem "small" [attr "class" cls] ch
+    let markClass cls ch = elem "mark" [attr "class" cls] ch
+    let delClass cls ch = elem "del" [attr "class" cls] ch
+    let insClass cls ch = elem "ins" [attr "class" cls] ch
+    let bClass cls ch = elem "b" [attr "class" cls] ch
+    let iClass cls ch = elem "i" [attr "class" cls] ch
+    let uClass cls ch = elem "u" [attr "class" cls] ch
+    let sClass cls ch = elem "s" [attr "class" cls] ch
+    let qClass cls ch = elem "q" [attr "class" cls] ch
+    let subClass cls ch = elem "sub" [attr "class" cls] ch
+    let supClass cls ch = elem "sup" [attr "class" cls] ch
+    let kbdClass cls ch = elem "kbd" [attr "class" cls] ch
+    let sampClass cls ch = elem "samp" [attr "class" cls] ch
+    let dfnClass cls ch = elem "dfn" [attr "class" cls] ch
+    let addressClass cls ch = elem "address" [attr "class" cls] ch
+    let dtClass cls ch = elem "dt" [attr "class" cls] ch
+    let ddClass cls ch = elem "dd" [attr "class" cls] ch
+    let figcaptionClass cls ch = elem "figcaption" [attr "class" cls] ch
+    let summaryClass cls ch = elem "summary" [attr "class" cls] ch
+    let progressClass cls ch = elem "progress" [attr "class" cls] ch
+    let meterClass cls ch = elem "meter" [attr "class" cls] ch
+    let outputClass cls ch = elem "output" [attr "class" cls] ch
+    let theadClass cls ch = elem "thead" [attr "class" cls] ch
+    let tbodyClass cls ch = elem "tbody" [attr "class" cls] ch
+    let trClass cls ch = elem "tr" [attr "class" cls] ch
+    let thClass cls ch = elem "th" [attr "class" cls] ch
+    let tdClass cls ch = elem "td" [attr "class" cls] ch
+    let fieldsetClass cls ch = elem "fieldset" [attr "class" cls] ch
+    let legendClass cls ch = elem "legend" [attr "class" cls] ch
+    let videoClass cls src ch = elem "video" [attr "src" src; attr "class" cls] ch
+    let audioClass cls src ch = elem "audio" [attr "src" src; attr "class" cls] ch
+    let iframeClass cls src = elem "iframe" [attr "src" src; attr "class" cls] []
+    let canvasClass cls id ch = elem "canvas" [attr "id" id; attr "class" cls] ch
+    let svgClass cls ch = elem "svg" [attr "class" cls] ch
+
     // ---- Link shortcuts ----
     let aBlank url t = elem "a" [attr "href" url; attr "target" "_blank"; attr "rel" "noopener noreferrer"] [text t]
     let aHref url t = elem "a" [attr "href" url] [text t]
@@ -211,6 +263,43 @@ module Dsl =
     let tableC = tableClass
     let imgC = imgClass
     let aC = aClass
+    let abbrC = abbrClass
+    let strongC = strongClass
+    let emC = emClass
+    let smallC = smallClass
+    let markC = markClass
+    let delC = delClass
+    let insC = insClass
+    let bC = bClass
+    let iC = iClass
+    let uC = uClass
+    let sC = sClass
+    let qC = qClass
+    let subC = subClass
+    let supC = supClass
+    let kbdC = kbdClass
+    let sampC = sampClass
+    let dfnC = dfnClass
+    let addressC = addressClass
+    let dtC = dtClass
+    let ddC = ddClass
+    let figcaptionC = figcaptionClass
+    let summaryC = summaryClass
+    let progressC = progressClass
+    let meterC = meterClass
+    let outputC = outputClass
+    let theadC = theadClass
+    let tbodyC = tbodyClass
+    let trC = trClass
+    let thC = thClass
+    let tdC = tdClass
+    let fieldsetC = fieldsetClass
+    let legendC = legendClass
+    let videoC = videoClass
+    let audioC = audioClass
+    let iframeC = iframeClass
+    let canvasC = canvasClass
+    let svgC = svgClass
 
     // ---- Conditional helpers ----
     let showIf cond ch = if cond then ch else ""
